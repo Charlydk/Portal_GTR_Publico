@@ -23,6 +23,23 @@ dist-ssr
 *.sln
 *.sw?
 
-__pycache__/
-
+# Archivos de entorno y credenciales (CRÍTICO para seguridad)
 .env
+.env.local
+
+# Directorios de dependencias
+/node_modules
+/venv
+backend/venv/
+
+# Archivos y directorios de caché, build y temporales
+/dist
+/build
+/media
+/__pycache__
+*.pyc
+*.log
+.pytest_cache/
+.vscode/
+.idea/
+.DS_Store
