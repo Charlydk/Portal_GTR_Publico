@@ -12,6 +12,8 @@ from dependencies import get_current_analista
 from sql_app import models
 from pydantic import BaseModel
 
+from dependencies import require_role
+from enums import UserRole
 
 # --- FUNCIONES DE UTILIDAD ---
 def formatear_rut(rut: str) -> str:
@@ -70,7 +72,7 @@ router = APIRouter(
 async def consultar_empleado(
     consulta: ConsultaHHEE,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(get_current_analista)
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     token = await geovictoria_service.obtener_token_geovictoria()
     if not token:
@@ -143,7 +145,7 @@ async def consultar_empleado(
 async def cargar_horas_extras(
     request_body: CargarHHEERequest,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(get_current_analista)
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     mensajes_respuesta = []
 
@@ -219,7 +221,7 @@ async def cargar_horas_extras(
 @router.get("/pendientes", summary="Consulta todos los registros pendientes de HHEE")
 async def consultar_pendientes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(get_current_analista)
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     query = select(models.ValidacionHHEE).filter(
         models.ValidacionHHEE.estado == 'Pendiente por Corrección',

@@ -16,6 +16,7 @@ from sql_app import models
 from schemas.models import Analista, AnalistaCreate, CampanaSimple
 from schemas.auth_schemas import Token, TokenData
 from security import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from sql_app.crud import get_analista_by_email
 
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
@@ -56,9 +57,6 @@ async def startup_event():
     #    await conn.run_sync(models.Base.metadata.create_all)
     print("Base de datos y tablas verificadas/creadas.")
 
-async def get_analista_by_email(email: str, db: AsyncSession) -> Optional[models.Analista]:
-    result = await db.execute(select(models.Analista).filter(models.Analista.email == email))
-    return result.scalars().first()
 
 async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> models.Analista:
     credentials_exception = HTTPException(

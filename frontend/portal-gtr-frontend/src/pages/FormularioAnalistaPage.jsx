@@ -256,6 +256,7 @@ function FormularioAnalistaPage() {
             <option value="ANALISTA">Analista</option>
             <option value="RESPONSABLE">Responsable</option>
             <option value="SUPERVISOR">Supervisor</option>
+            <option value="SUPERVISOR_OPERACIONES">Supervisor de Operaciones</option>
           </select>
           {!isRoleEditable && id && (
             <small className="form-text text-muted">Solo un Supervisor puede cambiar el rol de un analista existente.</small>

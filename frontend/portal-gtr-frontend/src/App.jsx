@@ -296,7 +296,7 @@ function App() {
             <Route
                 path="/hhee/portal"
                 element={
-                  <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
+                  <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE','SUPERVISOR_OPERACIONES']}>
                     <PortalHHEEPage />
                   </PrivateRoute>
                 }

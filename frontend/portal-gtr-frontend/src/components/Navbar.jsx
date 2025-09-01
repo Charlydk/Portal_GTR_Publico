@@ -54,10 +54,15 @@ function Navbar() {
                                         <Link className="nav-link" to="/campanas">Campañas</Link>
                                     </li>
                                 )}
-                                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                                {/* Enlaces solo para GTR Admins (Supervisor y Responsable) */}
+                                {['SUPERVISOR', 'RESPONSABLE'].includes(user.role) && (
                                     <li className="nav-item">
                                         <Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link>
-                                    </li>,
+                                    </li>
+                                )}
+
+                                {/* Enlace al Portal HHEE (GTR Admins + Supervisor de Operaciones) */}
+                                {['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role) && (
                                     <li className="nav-item">
                                         <Link className="nav-link" to="/hhee/portal">Portal HHEE</Link>
                                     </li>

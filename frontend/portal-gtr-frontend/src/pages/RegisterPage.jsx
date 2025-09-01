@@ -174,6 +174,7 @@ function RegisterPage() {
                   <option value="ANALISTA">Analista</option>
                   <option value="RESPONSABLE">Responsable</option>
                   <option value="SUPERVISOR">Supervisor</option>
+                  <option value="SUPERVISOR_OPERACIONES">Supervisor de Operaciones</option>
                 </select>
               </div>
               <div className="d-grid gap-2">

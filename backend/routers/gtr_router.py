@@ -14,7 +14,8 @@ from sqlalchemy import func
 from database import get_db
 from sql_app import models
 from enums import UserRole, ProgresoTarea, EstadoIncidencia
-from dependencies import get_current_analista, require_role # <-- Apuntando al lugar correcto
+from dependencies import get_current_analista, require_role
+from sql_app.crud import get_analista_by_email
 
 # --- IMPORTS COMPLETOS DE SCHEMAS PARA GTR ---
 from schemas.models import (
