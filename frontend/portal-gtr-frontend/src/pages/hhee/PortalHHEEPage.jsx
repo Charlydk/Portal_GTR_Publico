@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Container, Form, Button, Card, Spinner, Alert, Table, Row, Col } from 'react-bootstrap';
+import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, Col } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { API_BASE_URL } from '../../api';
 import ResultadoFila from '../../components/hhee/ResultadoFila';
@@ -15,8 +15,25 @@ function PortalHHEEPage() {
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
     const [validaciones, setValidaciones] = useState({});
+    const [guardadoResumen, setGuardadoResumen] = useState(null);
     const { authToken } = useAuth();
     const [isPendientesView, setIsPendientesView] = useState(false);
+
+
+    const formatRut = (rutString) => {
+        if (!rutString) return "";
+        let rutLimpio = rutString.replace(/[^0-9kK]/g, '').toUpperCase();
+        if (rutLimpio.length <= 1) return rutLimpio;
+        
+        const cuerpo = rutLimpio.slice(0, -1);
+        const dv = rutLimpio.slice(-1);
+        return cuerpo + '-' + dv;
+    };
+
+    const handleRutBlur = (e) => {
+        const rutFormateado = formatRut(e.target.value);
+        setRut(rutFormateado);
+    };
 
     const formatDate = (date) => {
         const year = date.getFullYear();
@@ -83,6 +100,7 @@ function PortalHHEEPage() {
         setSuccess(null);
         setResultados([]);
         setNombreAgente('');
+        setGuardadoResumen(null);
         setIsPendientesView(false); // Vista Individual
 
         try {
@@ -110,6 +128,7 @@ function PortalHHEEPage() {
         setSuccess(null);
         setResultados([]);
         setNombreAgente('');
+        setGuardadoResumen(null);
         setIsPendientesView(true); // Vista de Pendientes
 
         try {
@@ -184,6 +203,7 @@ function PortalHHEEPage() {
         setLoading(true);
         setError(null);
         setSuccess(null);
+        setGuardadoResumen(null); // Limpiamos resumen previo
 
         const validacionesParaEnviar = resultados.map(dia => {
             const validacion = validaciones[dia.fecha];
@@ -219,13 +239,11 @@ function PortalHHEEPage() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail);
-            setSuccess(data.mensaje);
-
-            if (isPendientesView) {
-                handleCargarPendientes();
-            } else {
-                handleConsulta({ preventDefault: () => {} });
-            }
+            setSuccess(data.mensaje); // Muestra el mensaje de éxito de la API
+            setResultados([]); // Limpia la tabla de resultados
+            setNombreAgente(''); // Limpia el nombre del agente
+            setGuardadoResumen(validacionesParaEnviar); // Guarda los datos enviados para mostrarlos en el resumen
+            
         } catch (err) {
             setError(err.message);
         } finally {
@@ -242,7 +260,7 @@ function PortalHHEEPage() {
                     <Form onSubmit={handleConsulta}>
                     <Row className="align-items-end g-3 mb-2">
                             <Col md={4}>
-                                <Form.Group controlId="rut-consulta"><Form.Label>RUT del Empleado</Form.Label><Form.Control type="text" placeholder="Ej: 12345678-9" value={rut} onChange={(e) => setRut(e.target.value)} required /></Form.Group>
+                                <Form.Group controlId="rut-consulta"><Form.Label>RUT del Empleado</Form.Label><Form.Control type="text" placeholder="Ej: 12345678-9" value={rut} onChange={(e) => setRut(e.target.value)} onBlur={handleRutBlur} required /></Form.Group>
                             </Col>
                             <Col md={2}>
                                 {/* 1. Mover Período Rápido al lado del RUT */}
@@ -270,7 +288,41 @@ function PortalHHEEPage() {
             {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
             {success && <Alert variant="success" onClose={() => setSuccess(null)} dismissible>{success}</Alert>}
 
-            {resultados.length > 0 && (
+                    {/* --- INICIO DEL NUEVO BLOQUE DE CÓDIGO --- */}
+            {guardadoResumen ? (
+                // Si hay un resumen guardado, muestra esta tarjeta
+                <Card className="shadow-sm mt-4">
+                    <Card.Header as="h4" className="bg-success text-white">Resumen de la Carga</Card.Header>
+                    <Card.Body>
+                        <Alert variant="success">¡Los datos se han guardado correctamente!</Alert>
+                        <ListGroup variant="flush">
+                            {guardadoResumen.map((item, index) => (
+                                <ListGroup.Item key={index}>
+                                    <strong>Fecha: {item.fecha}</strong>
+                                    {isPendientesView && <span> | <strong>RUT: {item.rut_con_formato}</strong></span>}
+                                    <ul>
+                                        {item.turno_es_incorrecto ? (
+                                            <li className="text-warning">Marcado como Pendiente: {item.nota}</li>
+                                        ) : (
+                                            <>
+                                                {item.hhee_aprobadas_inicio > 0 && <li>HHEE Antes: {decimalToHHMM(item.hhee_aprobadas_inicio)}</li>}
+                                                {item.hhee_aprobadas_fin > 0 && <li>HHEE Después: {decimalToHHMM(item.hhee_aprobadas_fin)}</li>}
+                                                {item.hhee_aprobadas_descanso > 0 && <li>HHEE Descanso: {decimalToHHMM(item.hhee_aprobadas_descanso)}</li>}
+                                            </>
+                                        )}
+                                    </ul>
+                                </ListGroup.Item>
+                            ))}
+                        </ListGroup>
+                        <div className="text-center mt-3">
+                            <Button variant="primary" onClick={() => setGuardadoResumen(null)}>
+                                Realizar nueva consulta
+                            </Button>
+                        </div>
+                    </Card.Body>
+                </Card>
+            ) : resultados.length > 0 && (
+                // Si NO hay resumen pero SÍ hay resultados de una consulta, muestra la tabla normal
                 <Card className="shadow-sm">
                     <Card.Header className="d-flex justify-content-between align-items-center">
                         <h4>Resultados para: {formatFullName(nombreAgente)}</h4>
@@ -279,41 +331,41 @@ function PortalHHEEPage() {
                         </Button>
                     </Card.Header>
                     <Card.Body className='pt-0' style={{ maxHeight: '60vh', overflow: 'auto' }}>
-                    <Table striped bordered hover>
-                        <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'white' }}>
-                            <tr>
-                                {isPendientesView && <th>Agente</th>}
-                                <th>Fecha</th>
-                                <th>Turno / Marcas</th>
-                                <th>HHEE Declaradas (OP)</th>
-                                <th>HHEE Aprobadas (RRHH)</th>
-                                <th>Marcar como Pendiente</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {resultados.map((dia) => {
-                                // Apply the formatting to the nombre_apellido property
-                                const formattedDia = {
-                                    ...dia,
-                                    nombre_apellido: formatFullName(dia.nombre_apellido)
-                                };
-                                return (
-                                    <ResultadoFila
-                                        key={dia.rut_con_formato ? `${dia.rut_con_formato}-${dia.fecha}` : dia.fecha}
-                                        dia={formattedDia}
-                                        validacionDia={validaciones[dia.fecha]}
-                                        onValidationChange={handleValidationChange}
-                                        onSimpleChange={handleSimpleChange}
-                                        onRevalidar={handleRevalidar}
-                                        isPendientesView={isPendientesView}
-                                    />
-                                );
-                            })}
-                        </tbody>
-                    </Table>
-                </Card.Body>
+                        <Table striped bordered hover>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'white' }}>
+                                <tr>
+                                    {isPendientesView && <th>Agente</th>}
+                                    <th>Fecha</th>
+                                    <th>Turno / Marcas</th>
+                                    <th>HHEE Declaradas (OP)</th>
+                                    <th>HHEE Aprobadas (RRHH)</th>
+                                    <th>Marcar como Pendiente</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {resultados.map((dia) => {
+                                    const formattedDia = {
+                                        ...dia,
+                                        nombre_apellido: formatFullName(dia.nombre_apellido)
+                                    };
+                                    return (
+                                        <ResultadoFila
+                                            key={dia.rut_con_formato ? `${dia.rut_con_formato}-${dia.fecha}` : dia.fecha}
+                                            dia={formattedDia}
+                                            validacionDia={validaciones[dia.fecha]}
+                                            onValidationChange={handleValidationChange}
+                                            onSimpleChange={handleSimpleChange}
+                                            onRevalidar={handleRevalidar}
+                                            isPendientesView={isPendientesView}
+                                        />
+                                    );
+                                })}
+                            </tbody>
+                        </Table>
+                    </Card.Body>
                 </Card>
             )}
+            {/* --- FIN DEL NUEVO BLOQUE DE CÓDIGO --- */}
         </Container>
     );
 }

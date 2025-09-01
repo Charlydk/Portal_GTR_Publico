@@ -12,6 +12,24 @@ from dependencies import get_current_analista
 from sql_app import models
 from pydantic import BaseModel
 
+
+# --- FUNCIONES DE UTILIDAD ---
+def formatear_rut(rut: str) -> str:
+    """Limpia y formatea un RUT al formato XXXXXXXX-K."""
+    if not isinstance(rut, str):
+        return ""
+    # 1. Quitar puntos y guiones
+    rut_limpio = rut.replace('.', '').replace('-', '')
+    # 2. Convertir a mayúsculas por si la 'k' está en minúscula
+    rut_limpio = rut_limpio.upper()
+    # 3. Separar el cuerpo del dígito verificador
+    cuerpo = rut_limpio[:-1]
+    dv = rut_limpio[-1]
+    # 4. Devolver en el formato estándar
+    return f"{cuerpo}-{dv}"
+
+# --- FIN: FUNCIONES DE UTILIDAD ---
+
 class ConsultaHHEE(BaseModel):
     rut: str
     fecha_inicio: date
@@ -130,6 +148,7 @@ async def cargar_horas_extras(
     mensajes_respuesta = []
 
     for validacion in request_body.validaciones:
+        rut_formateado = formatear_rut(validacion.rut_con_formato)
         query_existentes = select(models.ValidacionHHEE).filter_by(
             rut=validacion.rut_con_formato, 
             fecha_hhee=validacion.fecha
@@ -255,3 +274,5 @@ async def consultar_pendientes(
         "datos_periodo": resultados_enriquecidos,
         "nombre_agente": "Múltiples Agentes con Pendientes"
     }
+    
+    
