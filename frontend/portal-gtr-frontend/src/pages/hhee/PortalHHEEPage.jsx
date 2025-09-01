@@ -239,7 +239,7 @@ function PortalHHEEPage() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail);
-            setSuccess(data.mensaje); // Muestra el mensaje de éxito de la API
+            //setSuccess(data.mensaje); // Muestra el mensaje de éxito de la API (reemplazamos por el resumen)
             setResultados([]); // Limpia la tabla de resultados
             setNombreAgente(''); // Limpia el nombre del agente
             setGuardadoResumen(validacionesParaEnviar); // Guarda los datos enviados para mostrarlos en el resumen
