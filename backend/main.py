@@ -201,22 +201,3 @@ async def read_users_me(current_analista: models.Analista = Depends(get_current_
     
     return analista_response
 
-
-
-@app.put("/reset-password/{email}", summary="[TEMPORAL] Resetear la contraseña de un usuario")
-async def reset_password(email: str, db: AsyncSession = Depends(get_db)):
-    """
-    Endpoint de utilidad para resetear la contraseña de un usuario a 'nuevacontraseña'.
-    ¡Eliminar en producción!
-    """
-    analista = await get_analista_by_email(email, db)
-    if not analista:
-        raise HTTPException(status_code=404, detail="Analista no encontrado")
-
-    # La nueva contraseña será "nuevacontraseña"
-    new_hashed_password = get_password_hash("nuevacontraseña")
-
-    analista.hashed_password = new_hashed_password
-    await db.commit()
-
-    return {"mensaje": f"La contraseña para {email} ha sido reseteada a: nuevacontraseña"}
