@@ -15,6 +15,8 @@ from pydantic import BaseModel
 from dependencies import require_role
 from enums import UserRole
 
+import bleach
+
 # --- FUNCIONES DE UTILIDAD ---
 def formatear_rut(rut: str) -> str:
     """Limpia y formatea un RUT al formato XXXXXXXX-K."""
@@ -152,8 +154,8 @@ async def cargar_horas_extras(
     for validacion in request_body.validaciones:
         rut_formateado = formatear_rut(validacion.rut_con_formato)
         query_existentes = select(models.ValidacionHHEE).filter_by(
-            rut=validacion.rut_con_formato, 
-            fecha_hhee=validacion.fecha
+        rut=rut_formateado,
+        fecha_hhee=validacion.fecha
         )
         result_existentes = await db.execute(query_existentes)
         registros_existentes = result_existentes.scalars().all()
@@ -173,10 +175,14 @@ async def cargar_horas_extras(
             for registro in registros_existentes:
                 await db.delete(registro)
             datos_para_bd = {
-                "rut": validacion.rut_con_formato, "nombre_apellido": validacion.nombre_apellido,
-                "campaña": validacion.campaña, "fecha_hhee": validacion.fecha,
-                "estado": "Pendiente por Corrección", "notas": validacion.nota,
-                "supervisor_carga": current_user.email, "tipo_hhee": "General"
+                "rut": rut_formateado,
+                "nombre_apellido": bleach.clean(validacion.nombre_apellido), # Limpiamos
+                "campaña": bleach.clean(validacion.campaña) if validacion.campaña else None, # Limpiamos
+                "fecha_hhee": validacion.fecha,
+                "estado": "Pendiente por Corrección",
+                "notas": bleach.clean(validacion.nota) if validacion.nota else None, # Limpiamos la nota
+                "supervisor_carga": current_user.email,
+                "tipo_hhee": "General"
             }
             db.add(models.ValidacionHHEE(**datos_para_bd))
             mensajes_respuesta.append(f"Día {validacion.fecha}: marcado como 'Pendiente'.")
@@ -184,10 +190,14 @@ async def cargar_horas_extras(
 
         # ... (el resto de la lógica de guardado se queda igual que antes) ...
         base_datos_bd = {
-            "rut": validacion.rut_con_formato, "nombre_apellido": validacion.nombre_apellido,
-            "campaña": validacion.campaña, "fecha_hhee": validacion.fecha,
-            "supervisor_carga": current_user.email, "estado": "Validado", "notas": None
-        }
+        "rut": rut_formateado,
+        "nombre_apellido": bleach.clean(validacion.nombre_apellido), # Limpiamos
+        "campaña": bleach.clean(validacion.campaña) if validacion.campaña else None, # Limpiamos
+        "fecha_hhee": validacion.fecha,
+        "supervisor_carga": current_user.email,
+        "estado": "Validado",
+        "notas": None # En este caso las notas siempre son nulas, no hace falta limpiar
+    }
         hhee_a_procesar = {
             "Antes de Turno": validacion.hhee_aprobadas_inicio,
             "Después de Turno": validacion.hhee_aprobadas_fin,
