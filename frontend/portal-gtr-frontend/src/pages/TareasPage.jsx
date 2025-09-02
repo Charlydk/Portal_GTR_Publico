@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge, Form } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useNavigate } from 'react-router-dom';
 
 function TareasPage() {
@@ -32,15 +32,15 @@ function TareasPage() {
             // Supervisores obtienen todo
             if (user.role !== 'ANALISTA') {
                 const [analistasRes, campanasRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                    fetch(`${API_BASE_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+                    fetch(`${GTR_API_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                    fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
                 ]);
                 if (!analistasRes.ok) throw new Error('No se pudo cargar la lista de analistas.');
                 if (!campanasRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
                 setAnalistas(await analistasRes.json());
                 setCampanas(await campanasRes.json());
             } else { // Analistas obtienen solo sus campañas
-                const userRes = await fetch(`${API_BASE_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+                const userRes = await fetch(`${GTR_API_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
                 if (!userRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
                 const userData = await userRes.json();
                 setCampanas(userData.campanas_asignadas || []);
@@ -69,8 +69,8 @@ function TareasPage() {
             if (filtros.fechaHasta) params.append('fecha_hasta', filtros.fechaHasta);
             
             const queryString = params.toString();
-            const campaignTasksUrl = `${API_BASE_URL}/tareas/?${queryString}`;
-            const generatedTasksUrl = `${API_BASE_URL}/tareas_generadas_por_avisos/?${queryString}`;
+            const campaignTasksUrl = `${GTR_API_URL}/tareas/?${queryString}`;
+            const generatedTasksUrl = `${GTR_API_URL}/tareas_generadas_por_avisos/?${queryString}`;
 
             const [campaignTasksResponse, generatedTasksResponse] = await Promise.all([
                 fetch(campaignTasksUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }),

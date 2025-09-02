@@ -1,3 +1,7 @@
+import os
+import redis.asyncio as redis
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -7,8 +11,7 @@ from typing import List, Optional
 from enums import UserRole
 from datetime import timedelta
 from sqlalchemy.orm import selectinload
-
-
+from contextlib import asynccontextmanager
 
 # --- IMPORTS CENTRALIZADOS ---
 from database import get_db, engine
@@ -18,15 +21,33 @@ from schemas.auth_schemas import Token, TokenData
 from security import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from sql_app.crud import get_analista_by_email
 
-
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
 from routers import gtr_router, hhee_router
 from dependencies import get_current_analista, require_role
 
-# --- CREACIÓN Y CONFIGURACIÓN DE LA APP ---
+# --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Código que se ejecuta ANTES de que la aplicación inicie
+    print("--- Iniciando aplicación y conectando a Redis... ---")
+    redis_url = os.getenv("REDIS_URL", "redis://localhost")
+    try:
+        redis_connection = redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+        await FastAPILimiter.init(redis_connection)
+        print("Conectado a Redis y limitador inicializado.")
+    except Exception as e:
+        print(f"No se pudo conectar a Redis: {e}")
+    
+    yield  # La aplicación se ejecuta aquí
+    
+    # Código que se ejecuta DESPUÉS de que la aplicación termine
+    print("--- Aplicación finalizada. ---")
+
+# --- 2. CREACIÓN Y CONFIGURACIÓN DE LA APP (USANDO LA FUNCIÓN YA DEFINIDA) ---
 app = FastAPI(
     title="Portal Unificado API",
-    description="API para los portales GTR y HHEE."
+    description="API para los portales GTR y HHEE.",
+    lifespan=lifespan
 )
 
 origins = [
@@ -42,62 +63,8 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- INCLUSIÓN DE ROUTERS ---
-app.include_router(gtr_router.router)
+app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router)
-
-
-# --- DEPENDENCIAS Y ENDPOINTS GLOBALES (AUTENTICACIÓN) ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-@app.on_event("startup")
-async def startup_event():
-    # Descomenta estas líneas UNA SOLA VEZ para crear la tabla
-    #async with engine.begin() as conn:
-    #    await conn.run_sync(models.Base.metadata.create_all)
-    print("Base de datos y tablas verificadas/creadas.")
-
-
-async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> models.Analista:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="No se pudieron validar las credenciales",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = decode_access_token(token)
-        if payload is None: raise credentials_exception
-        email: str = payload.get("sub")
-        if email is None: raise credentials_exception
-        token_data = TokenData(email=email)
-    except Exception:
-        raise credentials_exception
-
-    # --- CONSULTA SIMPLIFICADA ---
-    # Cargamos solo al analista y sus campañas asignadas.
-    # El resto de la información (tareas, avisos, etc.) se cargará
-    # específicamente en los endpoints que la necesiten.
-    result = await db.execute(
-        select(models.Analista).filter(models.Analista.email == token_data.email)
-        .options(selectinload(models.Analista.campanas_asignadas))
-    )
-    analista = result.scalars().first()
-    # --- FIN DE LA SIMPLIFICACIÓN ---
-
-    if analista is None:
-        raise credentials_exception
-
-    return analista
-
-def require_role(required_roles: List[UserRole]):
-    def role_checker(current_analista: models.Analista = Depends(get_current_analista)):
-        if current_analista.role.value not in [r.value for r in required_roles]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="No tienes permiso para realizar esta acción."
-            )
-        return current_analista
-    return role_checker
 
 @app.post("/register/", response_model=Analista, status_code=status.HTTP_201_CREATED, summary="Registrar un nuevo Analista")
 async def register_analista(analista: AnalistaCreate, db: AsyncSession = Depends(get_db)):
@@ -119,7 +86,13 @@ async def register_analista(analista: AnalistaCreate, db: AsyncSession = Depends
     await db.refresh(db_analista)
     return db_analista
 
-@app.post("/token", response_model=Token, summary="Obtener Token de Acceso (Login)")
+@app.post(
+    "/token",
+    response_model=Token,
+    summary="Obtener Token de Acceso (Login)",
+    # 👇 AÑADIMOS LA DEPENDENCIA DEL LIMITADOR AQUÍ 👇
+    dependencies=[Depends(RateLimiter(times=5, minutes=1))]
+)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     """
     Permite a un analista iniciar sesión y obtener un token JWT.

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api'
 import { useAuth } from '../hooks/useAuth';
 
 function FormularioAvisoPage() {
@@ -32,8 +32,8 @@ function FormularioAvisoPage() {
     if (!authToken) return;
     try {
       const [analistasRes, campanasRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-        fetch(`${API_BASE_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+        fetch(`${GTR_API_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+        fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
       ]);
 
       if (!analistasRes.ok) {
@@ -61,7 +61,7 @@ function FormularioAvisoPage() {
   const fetchAvisoData = useCallback(async () => {
     if (!id || !authToken) return;
     try {
-      const response = await fetch(`${API_BASE_URL}/avisos/${id}`, {
+      const response = await fetch(`${GTR_API_URL}/avisos/${id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -154,7 +154,7 @@ function FormularioAvisoPage() {
     };
 
     const method = isEditing ? 'PUT' : 'POST';
-    const url = isEditing ? `${API_BASE_URL}/avisos/${id}` : `${API_BASE_URL}/avisos/`;
+    const url = isEditing ? `${GTR_API_URL}/avisos/${id}` : `${GTR_API_URL}/avisos/`;
 
     try {
       const response = await fetch(url, {

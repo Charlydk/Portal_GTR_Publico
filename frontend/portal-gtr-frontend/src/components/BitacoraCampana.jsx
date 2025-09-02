@@ -1,6 +1,6 @@
 // src/components/BitacoraCampana.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';import { Card, Form, Button, Alert, Spinner, Table, Badge, Row, Col } from 'react-bootstrap';
 import HistorialComentarios from './HistorialComentarios';
 
@@ -41,7 +41,7 @@ const BitacoraCampana = ({ campanaId, campanaNombre }) => {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/${campanaId}/bitacora?fecha=${currentDate}`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/bitacora?fecha=${currentDate}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -82,7 +82,7 @@ const BitacoraCampana = ({ campanaId, campanaNombre }) => {
       es_incidencia: false,
     };
     try {
-      const response = await fetch(`${API_BASE_URL}/bitacora_entries/`, {
+      const response = await fetch(`${GTR_API_URL}/bitacora_entries/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify(newEntry),

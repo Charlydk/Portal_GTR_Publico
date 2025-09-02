@@ -1,7 +1,7 @@
 // src/pages/FormularioAnalistaPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth'; // ¡NUEVO! Importa useAuth
 
 function FormularioAnalistaPage() {
@@ -30,7 +30,7 @@ function FormularioAnalistaPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${API_BASE_URL}/analistas/${id}`, {
+        const response = await fetch(`${GTR_API_URL}/analistas/${id}`, {
           headers: {
             'Authorization': `Bearer ${authToken}`, // Envía el token para la carga
           },
@@ -83,7 +83,7 @@ function FormularioAnalistaPage() {
 
       if (id) { // Modo edición
         method = 'PUT';
-        url = `${API_BASE_URL}/analistas/${id}`;
+        url = `${GTR_API_URL}/analistas/${id}`;
         dataToSend = {
           nombre: formData.nombre,
           apellido: formData.apellido,
@@ -93,7 +93,7 @@ function FormularioAnalistaPage() {
         };
       } else { // Modo creación (registro)
         method = 'POST';
-        url = `${API_BASE_URL}/analistas/`; // El endpoint /analistas/ es para crear (protegido)
+        url = `${GTR_API_URL}/analistas/`; // El endpoint /analistas/ es para crear (protegido)
         dataToSend = {
           nombre: formData.nombre,
           apellido: formData.apellido,

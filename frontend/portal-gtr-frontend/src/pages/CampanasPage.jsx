@@ -1,7 +1,7 @@
 // src/pages/CampanasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth'; // Importa useAuth
 
 function CampanasPage() {
@@ -15,7 +15,7 @@ function CampanasPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/`, {
         headers: {
           'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
         },
@@ -55,7 +55,7 @@ function CampanasPage() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/${campanaId}`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación

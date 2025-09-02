@@ -1,7 +1,7 @@
 // src/pages/DetalleIncidenciaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 // CORRECCIÓN: Añadimos 'Modal' a la lista de importaciones
 import { Container, Card, Spinner, Alert, ListGroup, Badge, Form, Button, Row, Col, Modal } from 'react-bootstrap';
@@ -56,7 +56,7 @@ function DetalleIncidenciaPage() {
     const fetchIncidencia = useCallback(async () => {
         //setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/${id}`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${id}`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
             if (!response.ok) throw new Error('No se pudo cargar la incidencia.');
@@ -81,7 +81,7 @@ function DetalleIncidenciaPage() {
         setIsSubmitting(true);
         setError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/${id}/actualizaciones`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/actualizaciones`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -106,7 +106,7 @@ function DetalleIncidenciaPage() {
         setIsSubmitting(true);
         setError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/${id}/asignar`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/asignar`, {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
@@ -135,7 +135,7 @@ function DetalleIncidenciaPage() {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/${id}/estado`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/estado`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',

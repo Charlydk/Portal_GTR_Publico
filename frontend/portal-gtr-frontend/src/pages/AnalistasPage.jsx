@@ -1,7 +1,7 @@
 // src/pages/AnalistasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 function AnalistasPage() {
   const [analistas, setAnalistas] = useState([]);
@@ -14,7 +14,7 @@ function AnalistasPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/`, {
         headers: {
           'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
         },
@@ -57,7 +57,7 @@ function AnalistasPage() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/${analistaId}`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación

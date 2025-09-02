@@ -62,34 +62,36 @@ export const AuthProvider = ({ children }) => {
     // Función de login
     const login = async (email, password) => {
         setLoading(true);
-        setError(null); // Limpiamos errores anteriores
+        setError(null);
         try {
             const response = await fetch(`${API_BASE_URL}/token`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ username: email, password: password }).toString(),
             });
-
+    
             if (!response.ok) {
+                if (response.status === 429) {
+                    throw new Error("Demasiados intentos. Por favor, espera un minuto.");
+                }
                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error en el inicio de sesión');
+                throw new Error(errorData.detail || 'Email o contraseña incorrectos.');
             }
-
+    
             const data = await response.json();
             localStorage.setItem('authToken', data.access_token);
             setAuthToken(data.access_token);
-            // El useEffect se encargará de llamar a fetchUserProfile con el nuevo token
-
+            // El useEffect se encargará de cargar el perfil
+            return true; // <--- CAMBIO CLAVE: Devolvemos true si fue exitoso
+    
         } catch (error) {
             console.error("Error de login:", error);
-            setError(error.message); // AHORA ESTA LÍNEA FUNCIONARÁ
+            setError(error.message);
+            return false; // <--- CAMBIO CLAVE: Devolvemos false si hubo un error
         } finally {
             setLoading(false);
         }
     };
-
     // Función de logout
     const logout = () => {
         localStorage.removeItem('authToken');

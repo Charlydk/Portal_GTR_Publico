@@ -1,6 +1,6 @@
 // src/pages/RegisterPage.jsx
-import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { API_BASE_URL } from '../api'; // Asegúrate de que esta ruta sea correcta
 
 function RegisterPage() {
@@ -15,7 +15,6 @@ function RegisterPage() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
   const handleChange = (e) => {
     const { name, value } = e.target;

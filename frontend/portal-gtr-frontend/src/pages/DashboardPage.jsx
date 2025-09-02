@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { API_BASE_URL } from '../api';
+import { API_BASE_URL, GTR_API_URL } from '../api';
 import { Link } from 'react-router-dom';
 
 // Componente reutilizable para los widgets de estadísticas
@@ -45,13 +45,16 @@ function DashboardPage() {
                 allAvisosRes,
                 acusesReciboRes,
                 tareasDisponiblesRes,
-                statsRes, // Nueva petición para las estadísticas
+                statsRes,
             ] = await Promise.all([
+                // Esta NO cambia porque está en main.py
                 fetch(`${API_BASE_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${API_BASE_URL}/avisos/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${API_BASE_URL}/analistas/${user.id}/acuses_recibo_avisos`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${API_BASE_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${API_BASE_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+            
+                // VVV TODAS ESTAS AHORA USAN GTR_API_URL VVV
+                fetch(`${GTR_API_URL}/avisos/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetch(`${GTR_API_URL}/analistas/${user.id}/acuses_recibo_avisos`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetch(`${GTR_API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } })
             ]);
 
             // Procesamiento de datos de usuario, tareas y campañas
@@ -100,7 +103,7 @@ function DashboardPage() {
             return;
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/avisos/${avisoId}/acuse_recibo`, {
+            const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}/acuse_recibo`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

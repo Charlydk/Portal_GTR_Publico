@@ -1,6 +1,6 @@
 // src/components/HistorialComentarios.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';import { Card, Form, Button, Alert, Spinner, ListGroup, Badge } from 'react-bootstrap';
 
 const HistorialComentarios = ({ campanaId }) => {
@@ -47,7 +47,7 @@ const HistorialComentarios = ({ campanaId }) => {
     
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/${campanaId}/comentarios_generales`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -82,7 +82,7 @@ const HistorialComentarios = ({ campanaId }) => {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/${campanaId}/comentarios_generales`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

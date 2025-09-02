@@ -1,7 +1,7 @@
 // src/pages/DetalleAvisoPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function DetalleAvisoPage() {
@@ -16,7 +16,7 @@ function DetalleAvisoPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/avisos/${avisoId}`, {
+            const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}`, {
                 headers: {
                     'Authorization': `Bearer ${authToken}`,
                 },
@@ -56,7 +56,8 @@ function DetalleAvisoPage() {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/avisos/${avisoId}/acuse_recibo`, {
+            const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}/acuse_recibo`, {
+
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

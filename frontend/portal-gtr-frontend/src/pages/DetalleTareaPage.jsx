@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, Modal, Form } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import HistorialTarea from '../components/HistorialTarea';
 import { formatDateTime } from '../utils/dateFormatter';
@@ -35,7 +35,7 @@ function DetalleTareaPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas/${id}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -67,7 +67,7 @@ function DetalleTareaPage() {
     setSubmittingComentario(true);
     setError(null);
     try {
-        const response = await fetch(`${API_BASE_URL}/tareas/${id}/comentarios`, {
+        const response = await fetch(`${GTR_API_URL}/tareas/${id}/comentarios`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -99,7 +99,7 @@ function DetalleTareaPage() {
     setLoadingHistorial(true);
     setErrorHistorial(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${id}/historial_estados`, {
+      const response = await fetch(`${GTR_API_URL}/tareas/${id}/historial_estados`, {
         headers: { 'Authorization': `Bearer ${authToken}` },
       });
       if (!response.ok) {
@@ -124,7 +124,7 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${tarea.id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -159,7 +159,7 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/checklist_items/${checklistItemId}`, {
+      const response = await fetch(`${GTR_API_URL}/checklist_items/${checklistItemId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -199,7 +199,7 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/tareas/${tarea.id}`, {
+        const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -241,7 +241,7 @@ const handleDejarTarea = async () => {
   setSuccess(null);
 
   try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${tarea.id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
           method: 'PUT',
           headers: {
               'Content-Type': 'application/json',
@@ -279,7 +279,7 @@ const handleDejarTarea = async () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${tarea.id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`,

@@ -1,7 +1,7 @@
 // src/pages/AvisosPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api'; // <-- CAMBIO
 import { useAuth } from '../hooks/useAuth';
 import { Button, Spinner, Alert, Table } from 'react-bootstrap';
 
@@ -15,7 +15,7 @@ function AvisosPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/avisos/`, {
+      const response = await fetch(`${GTR_API_URL}/avisos/`, { // <-- CAMBIO
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -53,7 +53,7 @@ function AvisosPage() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/avisos/${avisoId}`, {
+      const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}`, { // <-- CAMBIO
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -73,33 +73,16 @@ function AvisosPage() {
   };
 
   const formatDateTime = (apiDateString) => {
-    // Si no hay fecha, devuelve N/A
-    if (!apiDateString) {
-        return 'N/A';
-    }
-
-    // --- LA CORRECCIÓN DEFINITIVA ---
-    // Le añadimos la 'Z' al final para forzar a que JavaScript
-    // interprete el string como una fecha en formato UTC universal.
+    if (!apiDateString) return 'N/A';
     const date = new Date(apiDateString + 'Z');
-    // --------------------------------
-
-    // Verificamos si la fecha parseada es válida
-    if (isNaN(date.getTime())) {
-        return 'Fecha inválida';
-    }
-
-    // A partir de aquí, el resto del código funciona como se espera
+    if (isNaN(date.getTime())) return 'Fecha inválida';
     const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Los meses son de 0 a 11
+    const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
-    
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-
-    return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-};
+    return `${day}/${month}/${year}, ${hours}:${minutes}`;
+  };
 
   if (loading) {
     return (
@@ -107,7 +90,6 @@ function AvisosPage() {
         <Spinner animation="border" role="status">
           <span className="visually-hidden">Cargando avisos...</span>
         </Spinner>
-        <p>Cargando lista de avisos...</p>
       </div>
     );
   }
@@ -116,9 +98,6 @@ function AvisosPage() {
     return (
       <div className="container mt-4">
         <Alert variant="danger">{error}</Alert>
-        {!authToken && (
-          <Link to="/login" className="btn btn-primary mt-3">Ir a Iniciar Sesión</Link>
-        )}
       </div>
     );
   }
@@ -138,10 +117,9 @@ function AvisosPage() {
             <tr>
               <th>ID</th>
               <th>Título</th>
-              <th>Contenido</th>
               <th>Creador</th>
               <th>Campaña</th>
-              <th>Fecha Vencimiento</th>
+              <th>Vencimiento</th>
               <th>Acciones</th>
             </tr>
           </thead>
@@ -150,18 +128,9 @@ function AvisosPage() {
               <tr key={aviso.id}>
                 <td>{aviso.id}</td>
                 <td>{aviso.titulo}</td>
-                {/* CORRECCIÓN: Añadimos una comprobación.
-                  Si 'aviso.contenido' existe, lo acortamos. Si no, mostramos 'N/A'.
-                  Esto evita el error si el contenido es null o undefined.
-                */}
-                <td>
-                  {aviso.contenido 
-                    ? `${aviso.contenido.substring(0, 50)}${aviso.contenido.length > 50 ? '...' : ''}` 
-                    : 'N/A'}
-                </td>
-                <td>{aviso.creador ? `${aviso.creador.nombre} ${aviso.creador.apellido}` : aviso.creador_id || 'N/A'}</td>
-                <td>{aviso.campana ? aviso.campana.nombre : aviso.campana_id || 'N/A'}</td>
-                <td>{aviso.fecha_vencimiento ? formatDateTime(aviso.fecha_vencimiento) : 'N/A'}</td>
+                <td>{aviso.creador ? `${aviso.creador.nombre} ${aviso.creador.apellido}` : 'N/A'}</td>
+                <td>{aviso.campana ? aviso.campana.nombre : 'General'}</td>
+                <td>{formatDateTime(aviso.fecha_vencimiento)}</td>
                 <td>
                   <Link to={`/avisos/${aviso.id}`} className="btn btn-info btn-sm me-2">Ver</Link>
                   {user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (

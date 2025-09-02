@@ -1,7 +1,7 @@
 // src/pages/ListaIncidenciasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Card, Spinner, Alert, Table, Badge } from 'react-bootstrap';
 
@@ -14,7 +14,7 @@ function ListaIncidenciasPage() {
     const fetchIncidencias = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
             if (!response.ok) throw new Error('No se pudieron cargar las incidencias.');

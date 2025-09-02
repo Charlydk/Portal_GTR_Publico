@@ -1,7 +1,7 @@
 // src/pages/DetalleCampanaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Row, Col, Tab, Nav, Badge } from 'react-bootstrap';
 import BitacoraCampana from '../components/BitacoraCampana';
@@ -28,7 +28,7 @@ function DetalleCampanaPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/campanas/${id}`, {
+            const response = await fetch(`${GTR_API_URL}/campanas/${id}`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
             if (!response.ok) {
@@ -51,7 +51,7 @@ function DetalleCampanaPage() {
         if (!user || !authToken || isProcessing) return;
         setIsProcessing(true);
         setError(null);
-        const endpoint = `${API_BASE_URL}/analistas/${user.id}/campanas/${campana.id}`;
+        const endpoint = `${GTR_API_URL}/analistas/${user.id}/campanas/${campana.id}`;
         const method = action === 'assign' ? 'POST' : 'DELETE';
         try {
             const response = await fetch(endpoint, {

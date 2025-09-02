@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Card, Button, Alert, Spinner, Badge } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import HistorialTarea from '../components/HistorialTarea';
 
@@ -30,7 +30,7 @@ function DetalleTareaGeneradaPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas_generadas_por_avisos/${id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -64,7 +64,7 @@ function DetalleTareaGeneradaPage() {
     setLoadingHistorial(true);
     setErrorHistorial(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas_generadas_por_avisos/${id}/historial_estados`, {
+      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}/historial_estados`, {
         headers: { 'Authorization': `Bearer ${authToken}` },
       });
       if (!response.ok) {
@@ -89,7 +89,7 @@ function DetalleTareaGeneradaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas_generadas_por_avisos/${tarea.id}`, {
+      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${tarea.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

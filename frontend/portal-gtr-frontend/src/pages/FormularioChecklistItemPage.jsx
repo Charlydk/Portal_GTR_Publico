@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function FormularioChecklistItemPage() {
@@ -30,7 +30,7 @@ function FormularioChecklistItemPage() {
     setError(null);
     try {
       if (tareaId) {
-        const specificTaskResponse = await fetch(`${API_BASE_URL}/tareas/${tareaId}`, {
+        const specificTaskResponse = await fetch(`${GTR_API_URL}/tareas/${tareaId}`, {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (!specificTaskResponse.ok) {
@@ -39,7 +39,7 @@ function FormularioChecklistItemPage() {
       }
 
       if (isEditing) {
-        const itemResponse = await fetch(`${API_BASE_URL}/checklist_items/${id}`, {
+        const itemResponse = await fetch(`${GTR_API_URL}/checklist_items/${id}`, {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (!itemResponse.ok) throw new Error('Error al cargar el checklist item.');
@@ -84,7 +84,7 @@ function FormularioChecklistItemPage() {
         tarea_id: parseInt(formData.tarea_id),
       };
 
-      const url = isEditing ? `${API_BASE_URL}/checklist_items/${id}` : `${API_BASE_URL}/checklist_items/`;
+      const url = isEditing ? `${GTR_API_URL}/checklist_items/${id}` : `${GTR_API_URL}/checklist_items/`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const response = await fetch(url, {

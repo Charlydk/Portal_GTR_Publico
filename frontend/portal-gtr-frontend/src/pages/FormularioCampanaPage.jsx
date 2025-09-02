@@ -1,7 +1,7 @@
 // src/pages/FormularioCampanaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
 
@@ -36,7 +36,7 @@ function FormularioCampanaPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/${id}`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/${id}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
         },
@@ -81,7 +81,7 @@ function FormularioCampanaPage() {
     };
 
     const method = isEditing ? 'PUT' : 'POST';
-    const url = isEditing ? `${API_BASE_URL}/campanas/${id}` : `${API_BASE_URL}/campanas/`;
+    const url = isEditing ? `${GTR_API_URL}/campanas/${id}` : `${GTR_API_URL}/campanas/`;
 
     try {
       const response = await fetch(url, {

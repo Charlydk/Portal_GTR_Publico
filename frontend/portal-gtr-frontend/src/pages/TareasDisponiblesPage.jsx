@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function TareasDisponiblesPage() {
@@ -31,7 +31,7 @@ function TareasDisponiblesPage() {
             return;
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/campanas/tareas_disponibles/`, {
+            const response = await fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, {
                 headers: { 'Authorization': `Bearer ${authToken}` },
             });
             if (!response.ok) {

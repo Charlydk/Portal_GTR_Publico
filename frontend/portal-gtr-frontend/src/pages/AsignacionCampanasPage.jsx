@@ -1,7 +1,7 @@
 // src/pages/AsignacionCampanasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, ListGroup, Button, Alert, Spinner } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth'; // Importamos useAuth para obtener el token y el rol
 
 function AsignacionCampanasPage() {
@@ -23,7 +23,7 @@ function AsignacionCampanasPage() {
     if (!authToken) return; // No intentar si no hay token
 
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
@@ -45,7 +45,7 @@ function AsignacionCampanasPage() {
     if (!authToken) return; // No intentar si no hay token
 
     try {
-      const response = await fetch(`${API_BASE_URL}/campanas/`, {
+      const response = await fetch(`${GTR_API_URL}/campanas/`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
@@ -81,7 +81,7 @@ function AsignacionCampanasPage() {
   // Función para asignar una campaña a un analista
   const handleAssignCampaign = async (analistaId, campanaId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/${analistaId}/campanas/${campanaId}`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}/campanas/${campanaId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -107,7 +107,7 @@ function AsignacionCampanasPage() {
   // Función para desasignar una campaña de un analista
   const handleUnassignCampaign = async (analistaId, campanaId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/${analistaId}/campanas/${campanaId}`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}/campanas/${campanaId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`,

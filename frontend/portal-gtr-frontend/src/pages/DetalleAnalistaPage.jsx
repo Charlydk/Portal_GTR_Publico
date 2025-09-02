@@ -1,7 +1,7 @@
 // src/pages/DetalleAnalistaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function DetalleAnalistaPage() {
@@ -29,7 +29,7 @@ function DetalleAnalistaPage() {
         throw new Error("ID de analista inválido.");
       }
 
-      const response = await fetch(`${API_BASE_URL}/analistas/${analistaId}`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
         },
@@ -104,7 +104,7 @@ function DetalleAnalistaPage() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/${analista.id}`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analista.id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${authToken}`, // Envía el token
@@ -149,7 +149,7 @@ function DetalleAnalistaPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/analistas/${analista.id}/password`, {
+      const response = await fetch(`${GTR_API_URL}/analistas/${analista.id}/password`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

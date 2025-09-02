@@ -1,30 +1,26 @@
 // src/pages/LoginPage.jsx
-import React, { useState } from 'react'; // Asegúrate de que React y useState están importados
-import { useNavigate, Link } from 'react-router-dom'; // ¡NUEVO! Importa Link
-import { useAuth } from '../hooks/useAuth'; // Importa el hook de autenticación
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth(); // Obtiene la función de login del contexto
-  const navigate = useNavigate(); // Hook para navegar programáticamente
+  // Obtenemos el error y el loading directamente del contexto de autenticación
+  const { login, error: authError, loading } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError(null); // Limpia errores anteriores
-    setLoading(true); // Activa el estado de carga
+    // Llamamos a la función login y guardamos su resultado (true o false)
+    const loginExitoso = await login(email, password);
 
-    try {
-      await login(email, password); // Llama a la función de login del contexto
-      navigate('/'); // Redirige al dashboard o a la página principal después del login exitoso
-    } catch (err) {
-      setError(err.message || 'Error desconocido al iniciar sesión.'); // Muestra el error
-    } finally {
-      setLoading(false); // Desactiva el estado de carga
+    // Solo navegamos a la página principal si el login fue exitoso
+    if (loginExitoso) {
+        navigate('/');
     }
-  };
+    // Si no fue exitoso, no hacemos nada, y el error se mostrará en la página.
+};
 
   return (
     <div className="container mt-5">
@@ -32,9 +28,10 @@ function LoginPage() {
         <div className="col-md-6">
           <div className="card shadow-lg p-4">
             <h2 className="card-title text-center mb-4">Iniciar Sesión</h2>
-            {error && (
+            {/* Usamos el authError del contexto para mostrar el mensaje */}
+            {authError && (
               <div className="alert alert-danger" role="alert">
-                {error}
+                {authError}
               </div>
             )}
             <form onSubmit={handleSubmit}>

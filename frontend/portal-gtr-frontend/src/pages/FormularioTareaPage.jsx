@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function FormularioTareaPage() {
@@ -36,7 +36,7 @@ function FormularioTareaPage() {
     try {
       // Fetch all analysts if current user is SUPERVISOR or RESPONSABLE
       if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
-        const analistasResponse = await fetch(`${API_BASE_URL}/analistas/`, {
+        const analistasResponse = await fetch(`${GTR_API_URL}/analistas/`, {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (!analistasResponse.ok) throw new Error('Error al cargar analistas.');
@@ -48,10 +48,10 @@ function FormularioTareaPage() {
 
       // Fetch all campaigns if current user is SUPERVISOR or RESPONSABLE
       // Or fetch only assigned campaigns if current user is ANALISTA
-      let campanasUrl = `${API_BASE_URL}/campanas/`;
+      let campanasUrl = `${GTR_API_URL}/campanas/`;
       if (user.role === 'ANALISTA') {
         // Fetch campaigns assigned to the current analyst
-        const analistaMeResponse = await fetch(`${API_BASE_URL}/users/me/`, {
+        const analistaMeResponse = await fetch(`${GTR_API_URL}/users/me/`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (!analistaMeResponse.ok) throw new Error('Error al cargar campañas asignadas del analista.');
@@ -68,7 +68,7 @@ function FormularioTareaPage() {
 
        // If editing, fetch task data
        if (isEditing) {
-        const tareaResponse = await fetch(`${API_BASE_URL}/tareas/${id}`, {
+        const tareaResponse = await fetch(`${GTR_API_URL}/tareas/${id}`, {
           headers: { 'Authorization': `Bearer ${authToken}` }
         });
         if (!tareaResponse.ok) throw new Error('Error al cargar la tarea.');
@@ -141,7 +141,7 @@ function FormularioTareaPage() {
           payload.analista_id = user.id;
       }
 
-      const url = isEditing ? `${API_BASE_URL}/tareas/${id}` : `${API_BASE_URL}/tareas/`;
+      const url = isEditing ? `${GTR_API_URL}/tareas/${id}` : `${GTR_API_URL}/tareas/`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const response = await fetch(url, {

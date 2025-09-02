@@ -1,7 +1,7 @@
 // src/pages/FormularioIncidenciaPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Form, Button, Container, Card, Spinner, Alert, Row, Col } from 'react-bootstrap';
 
@@ -31,7 +31,7 @@ function FormularioIncidenciaPage() {
         const fetchCampanas = async () => {
             if (!authToken) return;
             try {
-                const response = await fetch(`${API_BASE_URL}/campanas/`, {
+                const response = await fetch(`${GTR_API_URL}/campanas/`, {
                     headers: { 'Authorization': `Bearer ${authToken}` },
                 });
                 if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
@@ -71,7 +71,7 @@ function FormularioIncidenciaPage() {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/incidencias/`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
