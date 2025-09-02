@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge, Form } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL } from '../api';
+import { API_BASE_URL, GTR_API_URL } from '../api';
 import { useNavigate } from 'react-router-dom';
 
 function TareasPage() {
@@ -40,7 +40,7 @@ function TareasPage() {
                 setAnalistas(await analistasRes.json());
                 setCampanas(await campanasRes.json());
             } else { // Analistas obtienen solo sus campañas
-                const userRes = await fetch(`${GTR_API_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+                const userRes = await fetch(`${API_BASE_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
                 if (!userRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
                 const userData = await userRes.json();
                 setCampanas(userData.campanas_asignadas || []);
