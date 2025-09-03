@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, Col } from 'react-bootstrap';
+import React, { useState, useEffect } from 'react';
+import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, Col, Badge  } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { API_BASE_URL } from '../../api';
 import ResultadoFila from '../../components/hhee/ResultadoFila';
@@ -19,6 +19,51 @@ function PortalHHEEPage() {
     const { authToken } = useAuth();
     const [isPendientesView, setIsPendientesView] = useState(false);
 
+
+
+    // --- 1. NUEVO ESTADO PARA LOS TOTALES ---
+    const [totalesResumen, setTotalesResumen] = useState({
+        declaradas: 0,
+        aprobadasRRHH: 0,
+    });
+
+    // --- 2. useEffect PARA CALCULAR LOS TOTALES EN TIEMPO REAL ---
+    useEffect(() => {
+        if (resultados.length > 0) {
+            let totalDeclaradas = 0;
+            let totalAprobadasRRHH = 0;
+
+            resultados.forEach(dia => {
+                // Sumar lo ya aprobado por RRHH (viene de GeoVictoria)
+                totalAprobadasRRHH += (dia.hhee_autorizadas_antes_gv || 0);
+                totalAprobadasRRHH += (dia.hhee_autorizadas_despues_gv || 0);
+
+                // Sumar lo que el supervisor está validando en esta sesión
+                const validacionDia = validaciones[dia.fecha];
+                if (validacionDia) {
+                    if (validacionDia.antes.habilitado) {
+                        totalDeclaradas += hhmmToDecimal(validacionDia.antes.valor);
+                    }
+                    if (validacionDia.despues.habilitado) {
+                        totalDeclaradas += hhmmToDecimal(validacionDia.despues.valor);
+                    }
+                    if (validacionDia.descanso.habilitado) {
+                        totalDeclaradas += hhmmToDecimal(validacionDia.descanso.valor);
+                    }
+                }
+
+                // Sumar lo que ya fue validado en sesiones anteriores
+                totalDeclaradas += (dia.hhee_aprobadas_inicio || 0);
+                totalDeclaradas += (dia.hhee_aprobadas_fin || 0);
+                totalDeclaradas += (dia.hhee_aprobadas_descanso || 0);
+            });
+
+            setTotalesResumen({
+                declaradas: totalDeclaradas,
+                aprobadasRRHH: totalAprobadasRRHH,
+            });
+        }
+    }, [validaciones, resultados]); // Se recalcula si cambian las validaciones o los resultados
 
     const formatRut = (rutString) => {
         if (!rutString) return "";
@@ -324,11 +369,27 @@ function PortalHHEEPage() {
             ) : resultados.length > 0 && (
                 // Si NO hay resumen pero SÍ hay resultados de una consulta, muestra la tabla normal
                 <Card className="shadow-sm">
-                    <Card.Header className="d-flex justify-content-between align-items-center">
-                        <h4>Resultados para: {formatFullName(nombreAgente)}</h4>
-                        <Button variant="success" onClick={handleGuardar} disabled={loading}>
-                            Guardar Validaciones
-                        </Button>
+                <Card.Header>
+                        <Row className="align-items-center">
+                            <Col md={5}>
+                                <h4>Resultados para: {nombreAgente}</h4>
+                            </Col>
+                            <Col md={5}>
+                                <div className="text-center">
+                                    <span className="me-3">
+                                        Declaradas (OP): <Badge bg="success">{decimalToHHMM(totalesResumen.declaradas)}</Badge>
+                                    </span>
+                                    <span>
+                                        Aprobadas (RRHH): <Badge bg="primary">{decimalToHHMM(totalesResumen.aprobadasRRHH)}</Badge>
+                                    </span>
+                                </div>
+                            </Col>
+                            <Col md={2} className="text-end">
+                                <Button variant="success" onClick={handleGuardar} disabled={loading}>
+                                    Guardar
+                                </Button>
+                            </Col>
+                        </Row>
                     </Card.Header>
                     <Card.Body className='pt-0' style={{ maxHeight: '60vh', overflow: 'auto' }}>
                         <Table bordered hover>
