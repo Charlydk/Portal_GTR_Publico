@@ -1,6 +1,6 @@
 // src/pages/LoginPage.jsx
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 function LoginPage() {
@@ -8,19 +8,14 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   // Obtenemos el error y el loading directamente del contexto de autenticación
   const { login, error: authError, loading } = useAuth();
-  const navigate = useNavigate();
+  
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // Llamamos a la función login y guardamos su resultado (true o false)
-    const loginExitoso = await login(email, password);
-
-    // Solo navegamos a la página principal si el login fue exitoso
-    if (loginExitoso) {
-        navigate('/');
-    }
-    // Si no fue exitoso, no hacemos nada, y el error se mostrará en la página.
-};
+    // Simplemente llamamos a la función de login.
+    // App.jsx se encargará de la redirección.
+    await login(email, password);
+  };
 
   return (
     <div className="container mt-5">

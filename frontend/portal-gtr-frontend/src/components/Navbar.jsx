@@ -2,19 +2,25 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+
 function Navbar() {
-    const { user, logout } = useAuth(); // Obtiene el usuario y la función logout del contexto
+    const { user, logout } = useAuth();
     const navigate = useNavigate();
 
     const handleLogout = () => {
         logout();
-        navigate('/login'); // Redirige a la página de login después de cerrar sesión
+        navigate('/login');
     };
+
+    // --- LÓGICA DE ROLES MEJORADA ---
+    const isGtrUser = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+    const isGtrAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+    const isHheeUser = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
 
     return (
         <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
             <div className="container-fluid">
-                <Link className="navbar-brand" to="/">Portal GTR</Link>
+                <Link className="navbar-brand" to="/">Portal Unificado</Link>
                 <button
                     className="navbar-toggler"
                     type="button"
@@ -28,46 +34,44 @@ function Navbar() {
                 </button>
                 <div className="collapse navbar-collapse" id="navbarNav">
                     <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-                        <li className="nav-item">
-                            <Link className="nav-link" to="/">Inicio</Link>
-                        </li>
-                        {user && ( // Mostrar enlaces solo si el usuario está logueado
+                        {user && (
+                            <li className="nav-item">
+                                <Link className="nav-link" to="/dashboard">Dashboard</Link>
+                            </li>
+                        )}
+                        
+                        {/* --- ENLACES SOLO PARA USUARIOS GTR --- */}
+                        {isGtrUser && (
                             <>
-                                {/* NUEVO: Enlace al Dashboard */}
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/dashboard">Dashboard</Link>
-                                </li>
                                 <li className="nav-item">
                                     <Link className="nav-link" to="/avisos">Avisos</Link>
                                 </li>
                                 <li className="nav-item">
                                     <Link className="nav-link" to="/tareas">Tareas</Link>
                                 </li>
-                                {/* Puedes añadir más enlaces aquí según los roles */}
-                                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                                    <li className="nav-item">
-                                        <Link className="nav-link" to="/analistas">Analistas</Link>
-                                    </li>
-                                )}
-                                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE' || user.role === 'ANALISTA') && (
-                                    <li className="nav-item">
-                                        <Link className="nav-link" to="/campanas">Campañas</Link>
-                                    </li>
-                                )}
-                                {/* Enlaces solo para GTR Admins (Supervisor y Responsable) */}
-                                {['SUPERVISOR', 'RESPONSABLE'].includes(user.role) && (
-                                    <li className="nav-item">
-                                        <Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link>
-                                    </li>
-                                )}
-
-                                {/* Enlace al Portal HHEE (GTR Admins + Supervisor de Operaciones) */}
-                                {['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role) && (
-                                    <li className="nav-item">
-                                        <Link className="nav-link" to="/hhee/portal">Portal HHEE</Link>
-                                    </li>
-                                )}
+                                <li className="nav-item">
+                                    <Link className="nav-link" to="/campanas">Campañas</Link>
+                                </li>
                             </>
+                        )}
+
+                        {/* --- ENLACES SOLO PARA ADMINS DE GTR --- */}
+                        {isGtrAdmin && (
+                            <>
+                                <li className="nav-item">
+                                    <Link className="nav-link" to="/analistas">Analistas</Link>
+                                </li>
+                                <li className="nav-item">
+                                    <Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link>
+                                </li>
+                            </>
+                        )}
+
+                        {/* --- ENLACE SOLO PARA USUARIOS DE HHEE --- */}
+                        {isHheeUser && (
+                             <li className="nav-item">
+                                <Link className="nav-link" to="/hhee/portal">Portal HHEE</Link>
+                            </li>
                         )}
                     </ul>
                     <ul className="navbar-nav">

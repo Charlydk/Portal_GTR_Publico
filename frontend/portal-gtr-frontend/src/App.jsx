@@ -1,9 +1,14 @@
-// src/App.jsx
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+// --- INICIO DE LA CORRECCIÓN ---
+// Importamos AuthProvider y useAuth desde sus archivos correctos y separados
 import { AuthProvider } from './context/AuthProvider.jsx';
+import { useAuth } from './hooks/useAuth.js';
+// --- FIN DE LA CORRECCIÓN ---
 import PrivateRoute from './components/PrivateRoute';
 import Navbar from './components/Navbar';
+
+// Importación de todas tus páginas
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
@@ -29,284 +34,67 @@ import DetalleIncidenciaPage from './pages/DetalleIncidenciaPage';
 import TareasDisponiblesPage from './pages/TareasDisponiblesPage';
 import PortalHHEEPage from './pages/hhee/PortalHHEEPage';
 
+// Componente interno que maneja la lógica de la aplicación principal
+const AppContent = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
+  useEffect(() => {
+    if (user && (location.pathname === '/login' || location.pathname === '/register')) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate, location]);
 
+  return (
+    <>
+      <Navbar />
+      <div className="container mt-4 main-content">
+        <Routes>
+          {/* ... (Todas tus rutas se quedan exactamente igual) ... */}
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/dashboard" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><DashboardPage /></PrivateRoute>} />
+          <Route path="/avisos" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><AvisosPage /></PrivateRoute>} />
+          <Route path="/avisos/:avisoId" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleAvisoPage /></PrivateRoute>} />
+          <Route path="/avisos/crear" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioAvisoPage /></PrivateRoute>} />
+          <Route path="/avisos/editar/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioAvisoPage /></PrivateRoute>} />
+          <Route path="/tareas" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><TareasPage /></PrivateRoute>} />
+          <Route path="/tareas/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleTareaPage /></PrivateRoute>} />
+          <Route path="/tareas/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioTareaPage /></PrivateRoute>} />
+          <Route path="/tareas/editar/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioTareaPage /></PrivateRoute>} />
+          <Route path="/tareas/disponibles" element={<PrivateRoute allowedRoles={['ANALISTA']}><TareasDisponiblesPage /></PrivateRoute>} />
+          <Route path="/tareas/:tareaId/checklist_items/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioChecklistItemPage /></PrivateRoute>} />
+          <Route path="/tareas/:tareaId/checklist_items/editar/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioChecklistItemPage /></PrivateRoute>} />
+          <Route path="/tareas-generadas/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleTareaGeneradaPage /></PrivateRoute>} />
+          <Route path="/tareas-generadas/editar/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioTareaPage /></PrivateRoute>} />
+          <Route path="/analistas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AnalistasPage /></PrivateRoute>} />
+          <Route path="/analistas/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><DetalleAnalistaPage /></PrivateRoute>} />
+          <Route path="/analistas/crear" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioAnalistaPage /></PrivateRoute>} />
+          <Route path="/analistas/editar/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioAnalistaPage /></PrivateRoute>} />
+          <Route path="/campanas" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><CampanasPage /></PrivateRoute>} />
+          <Route path="/campanas/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleCampanaPage /></PrivateRoute>} />
+          <Route path="/campanas/crear" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioCampanaPage /></PrivateRoute>} />
+          <Route path="/campanas/editar/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioCampanaPage /></PrivateRoute>} />
+          <Route path="/asignar-campanas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AsignacionCampanasPage /></PrivateRoute>} />
+          <Route path="/incidencias" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><ListaIncidenciasPage /></PrivateRoute>} />
+          <Route path="/incidencias/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioIncidenciaPage /></PrivateRoute>} />
+          <Route path="/incidencias/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleIncidenciaPage /></PrivateRoute>} />
+          <Route path="/hhee/portal" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><PortalHHEEPage /></PrivateRoute>} />
+          <Route path="*" element={<div>404 - Página no encontrada</div>} />
+        </Routes>
+      </div>
+    </>
+  );
+};
+
+// El componente App ahora es más simple y solo envuelve la lógica principal
 function App() {
   return (
     <Router>
-      <AuthProvider> {/* Envuelve toda la aplicación para que el contexto de autenticación esté disponible */}
-        <Navbar /> {/* Tu barra de navegación */}
-        <div className="container mt-4 main-content">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} /> {/* Ruta para el registro */}
-
-            {/* Rutas Protegidas */}
-            {/* Dashboard: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/dashboard"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DashboardPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Avisos */}
-            {/* Lista de Avisos: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/avisos"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <AvisosPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Detalle de Aviso: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/avisos/:avisoId"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleAvisoPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Crear Aviso: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/avisos/crear"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioAvisoPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Editar Aviso: Accesible por Supervisores y Responsables. Usa :id para consistencia */}
-            <Route
-              path="/avisos/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioAvisoPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Tareas */}
-            {/* Lista de Tareas: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/tareas"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <TareasPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Detalle de Tarea: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/tareas/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleTareaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Crear Tarea: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/tareas/crear"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioTareaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Editar Tarea: Accesible por Analistas (sus propias), Supervisores y Responsables */}
-            <Route
-              path="/tareas/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioTareaPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Tareas Disponibles para Analistas */}
-            <Route
-              path="/tareas/disponibles"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA']}>
-                  <TareasDisponiblesPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Crear Checklist Item para Tarea: Accesible por Analistas (sus propias tareas), Supervisores y Responsables */}
-            <Route
-              path="/tareas/:tareaId/checklist_items/crear"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioChecklistItemPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Detalle de Tarea Generada por Aviso: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/tareas-generadas/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleTareaGeneradaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Editar Tarea Generada por Aviso: Accesible por Analistas (sus propias), Supervisores y Responsables */}
-            {/* Se asume que FormularioTareaPage puede manejar la edición de tareas generadas o se creará uno específico */}
-            <Route
-              path="/tareas-generadas/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioTareaPage /> {/* Reutilizamos el mismo formulario de tarea */}
-                </PrivateRoute>
-              }
-            />
-
-
-            {/* Editar Checklist Item para Tarea: Accesible por Analistas (sus propias tareas), Supervisores y Responsables */}
-            <Route
-              path="/tareas/:tareaId/checklist_items/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioChecklistItemPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Analistas */}
-            {/* Lista de Analistas: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/analistas"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <AnalistasPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Detalle de Analista: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/analistas/:id"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleAnalistaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Crear Analista: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/analistas/crear"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioAnalistaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Editar Analista: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/analistas/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioAnalistaPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Campañas */}
-            {/* Lista de Campañas: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/campanas"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <CampanasPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Detalle de Campaña: Accesible por Analistas, Supervisores y Responsables */}
-            <Route
-              path="/campanas/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleCampanaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Crear Campaña: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/campanas/crear"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioCampanaPage />
-                </PrivateRoute>
-              }
-            />
-            {/* Editar Campaña: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/campanas/editar/:id"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioCampanaPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Asignación de Campañas: Accesible por Supervisores y Responsables */}
-            <Route
-              path="/asignar-campanas"
-              element={
-                <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}>
-                  <AsignacionCampanasPage />
-                </PrivateRoute>
-              }
-            />
-
-            {/* Rutas de Incidencias (solo la lista, el registro se hace en BitacoraCampana) */}
-            <Route
-              path="/incidencias"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <ListaIncidenciasPage />
-                </PrivateRoute>
-              }
-            />
-
-            <Route
-              path="/incidencias/crear"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <FormularioIncidenciaPage />
-                </PrivateRoute>
-              }
-            />
-            <Route
-              path="/incidencias/:id"
-              element={
-                <PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}>
-                  <DetalleIncidenciaPage />
-                </PrivateRoute>
-              }
-            /> 
-            {/* Rutas del portal de hhee */}
-            <Route
-                path="/hhee/portal"
-                element={
-                  <PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE','SUPERVISOR_OPERACIONES']}>
-                    <PortalHHEEPage />
-                  </PrivateRoute>
-                }
-              />
-
-            {/* Ruta para el caso de página no encontrada */}
-            <Route path="*" element={<div>404 - Página no encontrada</div>} />
-
-          </Routes>
-        </div>
+      <AuthProvider>
+        <AppContent />
       </AuthProvider>
     </Router>
   );
