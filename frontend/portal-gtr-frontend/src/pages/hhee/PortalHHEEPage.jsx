@@ -331,7 +331,7 @@ function PortalHHEEPage() {
                         </Button>
                     </Card.Header>
                     <Card.Body className='pt-0' style={{ maxHeight: '60vh', overflow: 'auto' }}>
-                        <Table striped bordered hover>
+                        <Table bordered hover>
                             <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: 'white' }}>
                                 <tr>
                                     {isPendientesView && <th>Agente</th>}

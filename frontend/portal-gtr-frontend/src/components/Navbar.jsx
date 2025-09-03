@@ -20,7 +20,7 @@ function Navbar() {
     return (
         <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
             <div className="container-fluid">
-                <Link className="navbar-brand" to="/">Portal Unificado</Link>
+                <Link className="navbar-brand" to="/">Portal WorkForce</Link>
                 <button
                     className="navbar-toggler"
                     type="button"
