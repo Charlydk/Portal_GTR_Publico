@@ -1737,16 +1737,7 @@ async def get_campana_bitacora_by_date(
     campana_existente = campana_existente_result.scalars().first()
     if not campana_existente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
-
-    if current_analista.role == UserRole.ANALISTA.value:
-        analista_with_campanas_result = await db.execute(
-            select(models.Analista)
-            .filter(models.Analista.id == current_analista.id)
-            .options(selectinload(models.Analista.campanas_asignadas))
-        )
-        analista_with_campanas = analista_with_campanas_result.scalars().first()
-        if not analista_with_campanas or campana_existente not in analista_with_campanas.campanas_asignadas:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver la bitácora de esta campana.")
+   
 
     result = await db.execute(
         select(models.BitacoraEntry)
@@ -1766,16 +1757,9 @@ async def create_bitacora_entry(
     # Primero, validamos que la campaña a la que se asocia la entrada existe.
     campana_existente_result = await db.execute(select(models.Campana).filter(models.Campana.id == entry.campana_id))
     if not campana_existente_result.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
-
-    # (Opcional pero recomendado) Validar permisos
-    if current_analista.role.value == UserRole.ANALISTA.value:
-        # Verificar si el analista está asignado a la campaña
-        is_assigned_result = await db.execute(
-            select(models.analistas_campanas).filter_by(analista_id=current_analista.id, campana_id=entry.campana_id)
-        )
-        if not is_assigned_result.first():
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para crear entradas de bitácora en esta campaña.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada."
+    )
+    
     
     # Creamos el objeto de la base de datos con todos los datos del schema
     db_entry = models.BitacoraEntry(**entry.model_dump())
@@ -1820,16 +1804,6 @@ async def update_bitacora_entry(
     db_entry = db_entry_result.scalars().first()
     if not db_entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrada de bitácora no encontrada.")
-
-    if current_analista.role == UserRole.ANALISTA.value:
-        analista_with_campanas_result = await db.execute(
-            select(models.Analista)
-            .filter(models.Analista.id == current_analista.id)
-            .options(selectinload(models.Analista.campanas_asignadas))
-        )
-        analista_with_campanas = analista_with_campanas_result.scalars().first()
-        if not analista_with_campanas or db_entry.campana not in analista_with_campanas.campanas_asignadas:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar esta entrada de bitácora.")
 
     update_data = entry_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -1981,9 +1955,11 @@ async def create_incidencia(
 
     # CAMBIO: Si no se provee fecha_apertura, la base de datos usará el default=func.now()
     db_incidencia = models.Incidencia(
-        **incidencia_data.model_dump(),
-        creador_id=current_analista.id
-    )
+    **incidencia_data.model_dump(),
+    creador_id=current_analista.id,
+    asignado_a_id=current_analista.id, # <-- Asigna la incidencia al creador
+    estado=EstadoIncidencia.EN_PROGRESO # <-- Cambia el estado inicial
+)
     db.add(db_incidencia)
     await db.commit()
     await db.refresh(db_incidencia)
@@ -2037,11 +2013,17 @@ async def get_incidencia_by_id(
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
     
-    # Lógica de permisos
+    # Lógica de permisos mejorada
     if current_analista.role == UserRole.ANALISTA.value:
-        assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
-        if incidencia.campana_id not in assigned_campaign_ids:
-            raise HTTPException(status_code=403, detail="No tienes permiso para ver esta incidencia")
+        # Verificamos si el analista está asignado a la campaña
+        is_assigned_to_campaign = any(c.id == incidencia.campana_id for c in current_analista.campanas_asignadas)
+        
+        # Verificamos si el analista es el creador de la incidencia
+        is_creator = incidencia.creador_id == current_analista.id
+
+        # Si no está asignado a la campaña Y TAMPOCO es el creador, denegamos el acceso
+        if not is_assigned_to_campaign and not is_creator:
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver esta incidencia.")
 
     return incidencia
 
@@ -2482,6 +2464,49 @@ async def get_tarea_generada_historial_estados(
     historial = result.scalars().unique().all()
     return historial
 
+# --- NUEVOS ENDPOINTS PARA WIDGETS DEL DASHBOARD ---
+
+@router.get("/incidencias/activas/recientes", response_model=List[IncidenciaSimple], summary="Obtener las 5 incidencias activas más recientes")
+async def get_recientes_incidencias_activas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA, UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Devuelve una lista de las 5 incidencias más recientes que están
+    en estado 'ABIERTA' o 'EN_PROGRESO'.
+    """
+    query = select(models.Incidencia).options(
+        selectinload(models.Incidencia.campana)
+    ).filter(
+        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
+    ).order_by(
+        models.Incidencia.fecha_apertura.desc()
+    ).limit(5)
+    
+    result = await db.execute(query)
+    return result.scalars().unique().all()
+
+
+@router.get("/analistas/me/incidencias_asignadas", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
+async def get_mis_incidencias_asignadas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA]))
+):
+    """
+    Devuelve una lista de incidencias activas asignadas al analista
+    que realiza la petición.
+    """
+    query = select(models.Incidencia).options(
+        selectinload(models.Incidencia.campana)
+    ).filter(
+        models.Incidencia.asignado_a_id == current_analista.id,
+        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
+    ).order_by(
+        models.Incidencia.fecha_apertura.asc()
+    )
+    
+    result = await db.execute(query)
+    return result.scalars().unique().all()
 
 # --- ENDPOINTS PARA DASHBOARD ---
 
