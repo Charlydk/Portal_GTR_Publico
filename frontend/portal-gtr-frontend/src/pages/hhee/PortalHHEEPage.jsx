@@ -372,7 +372,7 @@ function PortalHHEEPage() {
                 <Card.Header>
                         <Row className="align-items-center">
                             <Col md={5}>
-                                <h4>Resultados para: {nombreAgente}</h4>
+                                <h5>{nombreAgente}</h5>
                             </Col>
                             <Col md={5}>
                                 <div className="text-center">
