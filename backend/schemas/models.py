@@ -210,6 +210,7 @@ class BitacoraEntry(BitacoraEntryBase):
     id: int
     fecha_creacion: datetime
     fecha_ultima_actualizacion: datetime
+    autor: AnalistaSimple
     campana: "CampanaSimple"
     class Config:
         from_attributes = True

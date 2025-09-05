@@ -136,6 +136,8 @@ class BitacoraEntry(Base):
     fecha = Column(Date, nullable=False)
     hora = Column(Time, nullable=False)
     comentario = Column(String, nullable=True)
+    autor_id = Column(Integer, ForeignKey('analistas.id'), nullable=False)
+    autor = relationship("Analista")
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     fecha_ultima_actualizacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)

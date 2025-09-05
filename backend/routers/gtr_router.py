@@ -1741,14 +1741,16 @@ async def get_campana_bitacora_by_date(
 
     result = await db.execute(
         select(models.BitacoraEntry)
-        .options(selectinload(models.BitacoraEntry.campana))
+        .options(
+            selectinload(models.BitacoraEntry.campana)),
+            selectinload(models.BitacoraEntry.autor)
         .filter(models.BitacoraEntry.campana_id == campana_id, models.BitacoraEntry.fecha == fecha)
         .order_by(models.BitacoraEntry.hora)
     )
     entries = result.scalars().all()
     return entries
 
-@router.post("/bitacora_entries/", response_model=BitacoraEntry, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Entrada de Bitácora (Protegido)")
+@router.post("/bitacora_entries/", response_model=BitacoraEntry, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Entrada de Bitácora")
 async def create_bitacora_entry(
     entry: BitacoraEntryBase,
     db: AsyncSession = Depends(get_db),
@@ -1761,8 +1763,11 @@ async def create_bitacora_entry(
     )
     
     
-    # Creamos el objeto de la base de datos con todos los datos del schema
-    db_entry = models.BitacoraEntry(**entry.model_dump())
+    # Creamos el objeto y añadimos el autor_id desde el usuario logueado
+    db_entry = models.BitacoraEntry(
+        **entry.model_dump(),
+        autor_id=current_analista.id
+    )
     
     db.add(db_entry)
     
@@ -1868,6 +1873,32 @@ async def delete_bitacora_entry(
             detail=f"Error inesperado al eliminar entrada de bitácora: {e}"
         )
     return
+
+@router.get("/bitacora/hoy/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene las entradas de bitácora del día actual para una campaña")
+async def get_bitacora_hoy_por_campana(
+    campana_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Devuelve las entradas de la bitácora (no incidencias) para la campaña especificada
+    en la fecha actual.
+    """
+    # Usamos la fecha actual del servidor
+    fecha_hoy = date.today()
+    
+    query = select(models.BitacoraEntry).options(
+        selectinload(models.BitacoraEntry.autor),
+        selectinload(models.BitacoraEntry.campana)
+    ).filter(
+        models.BitacoraEntry.campana_id == campana_id,
+        models.BitacoraEntry.fecha == fecha_hoy
+    ).order_by(
+        models.BitacoraEntry.hora.desc() # La más reciente primero
+    )
+    
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 # --- NUEVOS ENDPOINTS PARA COMENTARIOS GENERALES DE BITÁCORA ---
