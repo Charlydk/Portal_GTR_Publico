@@ -8,7 +8,6 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
 
     const esDescanso = (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
 
-    // Función de validación para los inputs de tiempo (sin cambios)
     const handleTimeChange = (e, tipo, maxDecimal) => {
         const nuevoValorHHMM = e.target.value;
         if (!nuevoValorHHMM) {
@@ -21,49 +20,44 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
         }
     };
 
-    // --- NUEVA LÓGICA DE COLORES ---
     const getRowClassName = () => {
-        // Prioridad 1: Fechas futuras en gris
         const hoy = new Date();
-        hoy.setHours(0, 0, 0, 0); // Normalizamos la fecha de hoy
+        hoy.setHours(0, 0, 0, 0);
         const fechaDia = new Date(dia.fecha);
         if (fechaDia > hoy) {
-            return 'table-secondary'; // Gris oscuro
+            return 'table-secondary';
         }
-
-        // Prioridad 2: Días pendientes en amarillo
         if (dia.estado_final === 'Pendiente por Corrección') {
-            return 'table-warning'; // Amarillo
+            return 'table-warning';
         }
-
-        // Prioridad 3: Días con marcas faltantes en rojo
         if (!esDescanso && (!dia.marca_real_inicio || !dia.marca_real_fin)) {
-            return 'table-danger'; // Rojo suave
+            return 'table-danger';
         }
-
-        // Si no cumple ninguna condición, no lleva color
         return '';
     };
 
-    // --- FUNCIÓN DE RENDERIZADO DE INPUTS MEJORADA ---
     const renderInputsHHEE = () => {
-        // Si es descanso y no hay marcas, no mostramos nada
-        if (esDescanso && !dia.marca_real_inicio && !dia.marca_real_fin) {
-            return '---';
-        }
-
         const partes = [];
         
-        // --- LÓGICA CORREGIDA PARA EL BUG ---
-        // 1. Mostramos lo que ya está validado como texto
         if (dia.hhee_aprobadas_inicio > 0) partes.push(<div key="antes-val" className="mb-1 text-success">✅ Antes: {decimalToHHMM(dia.hhee_aprobadas_inicio)}</div>);
         if (dia.hhee_aprobadas_fin > 0) partes.push(<div key="despues-val" className="text-success">✅ Después: {decimalToHHMM(dia.hhee_aprobadas_fin)}</div>);
         if (dia.hhee_aprobadas_descanso > 0) partes.push(<div key="desc-val" className="text-success">✅ Descanso: {decimalToHHMM(dia.hhee_aprobadas_descanso)}</div>);
         
-        // 2. Mostramos los inputs para lo que AÚN NO está validado
         const isDisabledGeneral = validacionDia.pendiente;
         
-        if (dia.hhee_inicio_calculadas > 0 && !dia.hhee_aprobadas_inicio) {
+        // --- INICIO DE LA CORRECCIÓN CLAVE ---
+        // Condición para mostrar el input "Antes":
+        // 1. Hay HHEE calculadas de "Antes".
+        // 2. AÚN NO han sido validadas por el supervisor.
+        // 3. AÚN NO han sido aprobadas por RRHH.
+        const mostrarAntes = dia.hhee_inicio_calculadas > 0 && !dia.hhee_aprobadas_inicio && !dia.hhee_autorizadas_antes_gv;
+        
+        // La misma lógica para el input "Después"
+        const mostrarDespues = dia.hhee_fin_calculadas > 0 && !dia.hhee_aprobadas_fin && !dia.hhee_autorizadas_despues_gv;
+        
+        const mostrarDescanso = esDescanso && dia.cantidad_hhee_calculadas > 0 && !dia.hhee_aprobadas_descanso;
+
+        if (mostrarAntes) {
              partes.push(
                 <div key="antes-in" className="d-flex align-items-center mb-1">
                     <Form.Check type="checkbox" className="me-2" checked={validacionDia.antes.habilitado} disabled={isDisabledGeneral} onChange={e => onValidationChange(dia.fecha, 'antes', 'habilitado', e.target.checked)} />
@@ -73,7 +67,7 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
                 </div>
              );
         }
-        if (dia.hhee_fin_calculadas > 0 && !dia.hhee_aprobadas_fin) {
+        if (mostrarDespues) {
             partes.push(
                 <div key="despues-in" className="d-flex align-items-center">
                     <Form.Check type="checkbox" className="me-2" checked={validacionDia.despues.habilitado} disabled={isDisabledGeneral} onChange={e => onValidationChange(dia.fecha, 'despues', 'habilitado', e.target.checked)} />
@@ -83,7 +77,7 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
                 </div>
             );
         }
-        if (esDescanso && dia.cantidad_hhee_calculadas > 0 && !dia.hhee_aprobadas_descanso) {
+        if (mostrarDescanso) {
              partes.push(
                 <div key="descanso-in" className="d-flex align-items-center">
                     <Form.Check type="checkbox" className="me-2" checked={validacionDia.descanso.habilitado} disabled={isDisabledGeneral} onChange={e => onValidationChange(dia.fecha, 'descanso', 'habilitado', e.target.checked)} />
@@ -93,6 +87,7 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
                 </div>
             );
         }
+        // --- FIN DE LA CORRECCIÓN CLAVE ---
 
         return partes.length > 0 ? partes : '---';
     };
@@ -137,7 +132,6 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
         return '---';
     };
 
-    // --- ICONO DE APROBACIÓN DE RRHH ACTUALIZADO ---
     const renderHHEERRHH = () => {
         if (esDescanso) {
             const totalDescansoRRHH = (dia.hhee_autorizadas_antes_gv || 0) + (dia.hhee_autorizadas_despues_gv || 0);
