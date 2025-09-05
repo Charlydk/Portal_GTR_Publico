@@ -18,6 +18,7 @@ function DetalleIncidenciaPage() {
     const [showCierreModal, setShowCierreModal] = useState(false);
     const [usarAhoraCierre, setUsarAhoraCierre] = useState(true);
     const [fechaCierreManual, setFechaCierreManual] = useState('');
+    const [comentarioCierre, setComentarioCierre] = useState('');
 
     const formatDateTime = (apiDateString) => {
         // Si no hay fecha, devuelve N/A
@@ -25,7 +26,7 @@ function DetalleIncidenciaPage() {
             return 'N/A';
         }
     
-        // --- LA CORRECCIÓN DEFINITIVA ---
+        
         // Le añadimos la 'Z' al final para forzar a que JavaScript
         // interprete el string como una fecha en formato UTC universal.
         const date = new Date(apiDateString + 'Z');
@@ -48,10 +49,20 @@ function DetalleIncidenciaPage() {
         return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
     };
 
-    const getStatusVariant = (estado) => {
-        const map = { 'ABIERTA': 'danger', 'EN_PROGRESO': 'warning', 'CERRADA': 'success' };
-        return map[estado] || 'secondary';
+    const getStatusInfo = (incidencia) => {
+        if (!incidencia) return { text: '', variant: 'secondary' };
+        if (incidencia.estado === 'EN_PROGRESO' && incidencia.asignado_a) {
+            return { text: 'En Seguimiento', variant: 'warning' };
+        }
+        if (incidencia.estado === 'ABIERTA' && !incidencia.asignado_a) {
+            return { text: 'Abierta (Libre)', variant: 'danger' };
+        }
+        if (incidencia.estado === 'CERRADA') {
+            return { text: 'Cerrada', variant: 'success' };
+        }
+        return { text: incidencia.estado, variant: 'secondary' };
     };
+
 
     const fetchIncidencia = useCallback(async () => {
         //setLoading(true);
@@ -122,20 +133,21 @@ function DetalleIncidenciaPage() {
         }
     };
 
-    const handleStatusChange = async (nuevoEstado, fechaCierre = null) => {
+    const handleStatusChange = async (nuevoEstado, fechaCierre = null, comentario = null) => {
         setIsSubmitting(true);
         setError(null);
         
         const payload = {
             estado: nuevoEstado,
         };
-
-        if (nuevoEstado === 'CERRADA' && fechaCierre) {
-            payload.fecha_cierre = fechaCierre;
+    
+        if (nuevoEstado === 'CERRADA') {
+            if (fechaCierre) payload.fecha_cierre = fechaCierre;
+            if (comentario) payload.comentario_cierre = comentario;
         }
-
+    
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/estado`, {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/estado`, { // Corregido para usar GTR_API_URL
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -147,6 +159,7 @@ function DetalleIncidenciaPage() {
                 const errData = await response.json();
                 throw new Error(errData.detail || 'No se pudo cambiar el estado.');
             }
+            setComentarioCierre(''); // Limpiamos el comentario después de enviar
             fetchIncidencia();
         } catch (err) {
             setError(err.message);
@@ -157,18 +170,20 @@ function DetalleIncidenciaPage() {
     };
 
     const handleConfirmarCierre = () => {
-        const fechaParaEnviar = usarAhoraCierre ? null : fechaCierreManual;
+        const fechaParaEnviar = usarAhoraCierre ? null : new Date(fechaCierreManual).toISOString();
         if (!usarAhoraCierre && !fechaCierreManual) {
             alert("Por favor, seleccione una fecha y hora de cierre.");
             return;
         }
-        handleStatusChange('CERRADA', fechaParaEnviar);
+        // Llamamos a la función principal pasándole el comentario
+        handleStatusChange('CERRADA', fechaParaEnviar, comentarioCierre);
     };
 
     if (loading) return <Container className="text-center py-5"><Spinner animation="border" /></Container>;
     if (error) return <Container className="mt-4"><Alert variant="danger">{error}</Alert></Container>;
     if (!incidencia) return <Container className="mt-4"><Alert variant="info">Incidencia no encontrada.</Alert></Container>;
 
+    const status = getStatusInfo(incidencia);
     const canManageStatus = !!user;
     const showAssignButton = user && incidencia.asignado_a?.id !== user.id && incidencia.estado !== 'CERRADA';
 
@@ -178,7 +193,7 @@ function DetalleIncidenciaPage() {
             <Card className="shadow-lg">
                 <Card.Header as="h2" className="d-flex justify-content-between align-items-center bg-light">
                     <span>Incidencia: {incidencia.titulo}</span>
-                    <Badge bg={getStatusVariant(incidencia.estado)}>{incidencia.estado}</Badge>
+                    <Badge bg={status.variant}>{status.text}</Badge>
                 </Card.Header>
                 <Card.Body>
                     <Row>
@@ -261,23 +276,36 @@ function DetalleIncidenciaPage() {
                     <Modal.Title>Confirmar Cierre de Incidencia</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    <Form.Group controlId="fecha_cierre_group">
-                        <Form.Check 
-                            type="checkbox"
-                            id="usarAhoraCierre"
-                            label="Usar fecha y hora actual para el cierre"
-                            checked={usarAhoraCierre}
-                            onChange={(e) => setUsarAhoraCierre(e.target.checked)}
-                        />
-                        {!usarAhoraCierre && (
-                            <Form.Control
-                                type="datetime-local"
-                                value={fechaCierreManual}
-                                onChange={(e) => setFechaCierreManual(e.target.value)}
-                                className="mt-2"
-                            />
-                        )}
-                    </Form.Group>
+            
+            <Form.Group controlId="comentario_cierre_group" className="mb-3">
+                <Form.Label>Comentario de Cierre (Obligatorio)</Form.Label>
+                <Form.Control
+                    as="textarea"
+                    rows={3}
+                    placeholder="Explica la solución o el motivo del cierre..."
+                    value={comentarioCierre}
+                    onChange={(e) => setComentarioCierre(e.target.value)}
+                    required
+                />
+            </Form.Group>
+
+            <Form.Group controlId="fecha_cierre_group">
+                <Form.Check 
+                    type="checkbox"
+                    id="usarAhoraCierre"
+                    label="Usar fecha y hora actual para el cierre"
+                    checked={usarAhoraCierre}
+                    onChange={(e) => setUsarAhoraCierre(e.target.checked)}
+                />
+                {!usarAhoraCierre && (
+                    <Form.Control
+                        type="datetime-local"
+                        value={fechaCierreManual}
+                        onChange={(e) => setFechaCierreManual(e.target.value)}
+                        className="mt-2"
+                    />
+                )}
+            </Form.Group>
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowCierreModal(false)}>

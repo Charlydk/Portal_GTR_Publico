@@ -115,6 +115,7 @@ class IncidenciaCreate(BaseModel):
 class IncidenciaEstadoUpdate(BaseModel):
     estado: EstadoIncidencia
     fecha_cierre: Optional[datetime] = None
+    comentario_cierre: Optional[str] = None
 
 # --- Schemas de Respuesta (para devolver datos desde la API) ---
 
@@ -226,6 +227,7 @@ class IncidenciaSimple(BaseModel):
     estado: EstadoIncidencia
     tipo: TipoIncidencia
     fecha_apertura: datetime
+    asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
     class Config:
         from_attributes = True

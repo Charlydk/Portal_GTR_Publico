@@ -2066,29 +2066,30 @@ async def update_incidencia_estado(
     estado_anterior = db_incidencia.estado.value
     db_incidencia.estado = update_data.estado
 
-    if update_data.estado == EstadoIncidencia.CERRADA:
+    comentario_final = f"El estado de la incidencia cambió de '{estado_anterior}' a '{update_data.estado.value}'."
+    
+    # Si estamos cerrando la incidencia y se proporcionó un comentario, lo añadimos.
+    if update_data.estado == EstadoIncidencia.CERRADA and update_data.comentario_cierre:
         db_incidencia.fecha_cierre = update_data.fecha_cierre or datetime.utcnow()
-        # CAMBIO: Al cerrar, se desasigna
         db_incidencia.asignado_a_id = None
+        # Combinamos el cambio de estado con el comentario del usuario
+        comentario_final += f"\nComentario de cierre: {update_data.comentario_cierre}"
+
     elif update_data.estado == EstadoIncidencia.ABIERTA:
         db_incidencia.fecha_cierre = None
-        # CAMBIO: Al reabrir, se desasigna para que quede libre
         db_incidencia.asignado_a_id = None
     
-    # (El estado EN_PROGRESO ahora se maneja principalmente desde el endpoint de asignar)
-
-    comentario_automatico = f"El estado de la incidencia cambió de '{estado_anterior}' a '{update_data.estado.value}'."
+    # Creamos la actualización con el comentario final (combinado o no)
     nueva_actualizacion = models.ActualizacionIncidencia(
-        comentario=comentario_automatico,
+        comentario=comentario_final,
         incidencia_id=incidencia_id,
         autor_id=current_analista.id
     )
+   
     db.add(nueva_actualizacion)
-
     await db.commit()
     
     return await get_incidencia_by_id(incidencia_id, db, current_analista)
-
 @router.put("/incidencias/{incidencia_id}/asignar", response_model=Incidencia, summary="Asignar una incidencia al usuario actual")
 async def asignar_incidencia_a_usuario_actual(
     incidencia_id: int,
@@ -2476,7 +2477,8 @@ async def get_recientes_incidencias_activas(
     en estado 'ABIERTA' o 'EN_PROGRESO'.
     """
     query = select(models.Incidencia).options(
-        selectinload(models.Incidencia.campana)
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.asignado_a)
     ).filter(
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
     ).order_by(
