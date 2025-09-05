@@ -97,8 +97,11 @@ def aplicar_logica_de_negocio(datos_procesados):
     if not inicio_real_str or not fin_real_str:
         return { "tipo_hhee": "Sin Marcas", "hhee_inicio_calculadas": 0, "hhee_fin_calculadas": 0, "cantidad_hhee_calculadas": 0}
 
-    inicio_real = datetime.strptime(inicio_real_str, '%H:%M')
-    fin_real = datetime.strptime(fin_real_str, '%H:%M')
+    # Asignamos una fecha base para poder comparar momentos en el tiempo
+    fecha_base = datetime.strptime(datos_procesados.get("fecha"), '%Y-%m-%d')
+    inicio_real = fecha_base.replace(hour=int(inicio_real_str[:2]), minute=int(inicio_real_str[3:]))
+    fin_real = fecha_base.replace(hour=int(fin_real_str[:2]), minute=int(fin_real_str[3:]))
+    
     hhee_inicio, hhee_fin = 0, 0
     tipo_hhee = ""
 
@@ -106,13 +109,12 @@ def aplicar_logica_de_negocio(datos_procesados):
 
     if es_descanso:
         tipo_hhee = "Día de Descanso"
-        # Si las marcas cruzan la medianoche, ajustamos
         if fin_real < inicio_real:
             fin_real += timedelta(days=1)
         hhee_inicio = (fin_real - inicio_real).total_seconds() / 3600
     else:
-        inicio_teorico = datetime.strptime(inicio_teorico_str, '%H:%M')
-        fin_teorico = datetime.strptime(fin_teorico_str, '%H:%M')
+        inicio_teorico = fecha_base.replace(hour=int(inicio_teorico_str[:2]), minute=int(inicio_teorico_str[3:]))
+        fin_teorico = fecha_base.replace(hour=int(fin_teorico_str[:2]), minute=int(fin_teorico_str[3:]))
 
         if fin_teorico < inicio_teorico: # Turno nocturno
             fin_teorico += timedelta(days=1)
@@ -120,13 +122,16 @@ def aplicar_logica_de_negocio(datos_procesados):
         if fin_real < inicio_real: # Marcas nocturnas
             fin_real += timedelta(days=1)
 
-        if inicio_real.time() < inicio_teorico.time():
+        # --- INICIO DE LA CORRECCIÓN CLAVE ---
+        # Comparamos los objetos datetime completos, no solo la hora con .time()
+        if inicio_real < inicio_teorico:
             tipo_hhee += "Antes de Turno "
             hhee_inicio = (inicio_teorico - inicio_real).total_seconds() / 3600
 
-        if fin_real.time() > fin_teorico.time():
+        if fin_real > fin_teorico:
             tipo_hhee += "Después de Turno"
             hhee_fin = (fin_real - fin_teorico).total_seconds() / 3600
+        # --- FIN DE LA CORRECCIÓN CLAVE ---
 
     hhee_calculadas_total = max(0, hhee_inicio) + max(0, hhee_fin)
 
