@@ -5,7 +5,7 @@ import { API_BASE_URL, GTR_API_URL } from '../api';
 import { Link } from 'react-router-dom';
 
 // Importamos todos nuestros widgets
-import BitacoraDiariaWidget from '../components/dashboard/BitacoraDiariaWidget';
+import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import IncidenciasActivasWidget from '../components/dashboard/IncidenciasActivasWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget'; // <-- NUEVO
@@ -104,7 +104,7 @@ function DashboardPage() {
             
             <Row className="g-4">
                 <Col lg={5}>
-                    <BitacoraDiariaWidget onUpdate={fetchDashboardData} />
+                    <PanelRegistroWidget onUpdate={fetchDashboardData} />
                 </Col>
 
                 <Col lg={7}>
