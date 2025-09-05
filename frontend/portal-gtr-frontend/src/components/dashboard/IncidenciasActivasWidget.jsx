@@ -3,7 +3,7 @@ import { Card, ListGroup, Badge, Spinner } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 
 function IncidenciasActivasWidget({ incidencias, loading }) {
-    // --- NUEVA LÓGICA DE ESTADOS Y COLORES ---
+    // La lógica de estados y colores no cambia
     const getStatusInfo = (incidencia) => {
         if (incidencia.estado === 'EN_PROGRESO' && incidencia.asignado_a) {
             return { text: 'En Seguimiento', variant: 'warning' };
@@ -11,7 +11,6 @@ function IncidenciasActivasWidget({ incidencias, loading }) {
         if (incidencia.estado === 'ABIERTA' && !incidencia.asignado_a) {
             return { text: 'Abierta (Libre)', variant: 'danger' };
         }
-        // Caso por defecto por si hay datos inconsistentes
         return { text: incidencia.estado, variant: 'secondary' };
     };
 
@@ -29,13 +28,18 @@ function IncidenciasActivasWidget({ incidencias, loading }) {
                                 <div>
                                     <strong>{inc.titulo}</strong>
                                     <br />
-                                    {/* AÑADIMOS EL NOMBRE DEL ANALISTA ASIGNADO */}
+                                    
                                     <small className="text-muted">
-                                        {status.text === 'En Seguimiento' 
-                                            ? `Asignado a: ${inc.asignado_a.nombre} ${inc.asignado_a.apellido}`
-                                            : `Campaña: ${inc.campana.nombre}`
-                                        }
+                                        Campaña: {inc.campana.nombre}
+                                        {/* Si está en seguimiento, añadimos el nombre del analista */}
+                                        {status.text === 'En Seguimiento' && (
+                                            <>
+                                                <span className="mx-2">|</span>
+                                                Asignado a: {inc.asignado_a.nombre} {inc.asignado_a.apellido}
+                                            </>
+                                        )}
                                     </small>
+                                    
                                 </div>
                                 <Badge bg={status.variant}>{status.text}</Badge>
                             </ListGroup.Item>
