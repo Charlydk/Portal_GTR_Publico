@@ -314,7 +314,6 @@ async def consultar_pendientes(
 async def exportar_hhee_a_excel(
     request: ExportRequest,
     db: AsyncSession = Depends(get_db),
-    # Ahora todos los roles con acceso a HHEE pueden llegar aquí
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     try:
@@ -331,12 +330,7 @@ async def exportar_hhee_a_excel(
 
         # --- LÓGICA CONDICIONAL PARA CADA FORMATO ---
         if request.formato == ExportFormat.RRHH:
-            # Mapeo de permisos para el formato de RRHH
-            permiso_map = {
-                "Antes de Turno": 10,
-                "Después de Turno": 5,
-                "Día de Descanso": 10
-            }
+            permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
             datos_para_excel = [{
                 "Cod Funcionario": v.rut,
                 "Nombre": v.nombre_apellido,
@@ -347,20 +341,54 @@ async def exportar_hhee_a_excel(
             } for v in validaciones]
         
         elif request.formato == ExportFormat.OPERACIONES:
-            datos_para_excel = [{
-                "ID": v.id,
-                "RUT": v.rut,
-                "Nombre Completo": v.nombre_apellido,
-                "Campaña": v.campaña,
-                "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'),
-                "Tipo HHEE": v.tipo_hhee,
-                "Horas Aprobadas": v.cantidad_hhee_aprobadas,
-                "Estado": v.estado,
-                "Validado Por": v.supervisor_carga,
-                "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M')
-            } for v in validaciones]
+            # --- INICIO DE LA NUEVA LÓGICA PARA ENRIQUECER LOS DATOS ---
+            
+            # 1. Obtenemos los RUTs únicos para consultar a GeoVictoria
+            ruts_unicos = list({v.rut.replace('.', '').replace('-', '') for v in validaciones})
+            
+            # 2. Consultamos a GeoVictoria por los datos de RRHH
+            token_gv = await geovictoria_service.obtener_token_geovictoria()
+            if not token_gv:
+                raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria para obtener datos de RRHH.")
 
-        # --- El resto es igual para ambos formatos ---
+            fecha_inicio_dt = datetime.combine(request.fecha_inicio, datetime.min.time())
+            fecha_fin_dt = datetime.combine(request.fecha_fin, datetime.max.time())
+            
+            datos_gv = await geovictoria_service.obtener_datos_completos_periodo(
+                token_gv, ruts_unicos, fecha_inicio_dt, fecha_fin_dt
+            )
+            
+            # 3. Creamos un diccionario para buscar fácilmente los datos de RRHH
+            rrhh_lookup = {}
+            for dia in datos_gv:
+                key = (dia['rut_limpio'], dia['fecha'])
+                total_rrhh = (dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (dia.get('hhee_autorizadas_despues_gv', 0) or 0)
+                rrhh_lookup[key] = total_rrhh
+            
+            # 4. Construimos la lista para el Excel, añadiendo la nueva columna
+            datos_para_excel = []
+            for v in validaciones:
+                rut_limpio_actual = v.rut.replace('.', '').replace('-', '')
+                fecha_actual_str = v.fecha_hhee.strftime('%Y-%m-%d')
+                
+                # Buscamos las horas de RRHH en nuestro diccionario
+                horas_rrhh = rrhh_lookup.get((rut_limpio_actual, fecha_actual_str), 0)
+                
+                datos_para_excel.append({
+                    "ID": v.id,
+                    "RUT": v.rut,
+                    "Nombre Completo": v.nombre_apellido,
+                    "Campaña": v.campaña,
+                    "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'),
+                    "Tipo HHEE": v.tipo_hhee,
+                    "Horas Aprobadas (Operaciones)": v.cantidad_hhee_aprobadas,
+                    "Horas Aprobadas (RRHH)": horas_rrhh,  # <-- ¡NUEVA COLUMNA!
+                    "Estado": v.estado,
+                    "Validado Por": v.supervisor_carga,
+                    "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M') if v.fecha_carga else None
+                })
+            # --- FIN DE LA NUEVA LÓGICA ---
+
         df = pd.DataFrame(datos_para_excel)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -374,4 +402,3 @@ async def exportar_hhee_a_excel(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")
-    
