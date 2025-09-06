@@ -33,6 +33,7 @@ import FormularioIncidenciaPage from './pages/FormularioIncidenciaPage';
 import DetalleIncidenciaPage from './pages/DetalleIncidenciaPage';
 import TareasDisponiblesPage from './pages/TareasDisponiblesPage';
 import PortalHHEEPage from './pages/hhee/PortalHHEEPage';
+import ReportesHHEEPage from './pages/hhee/ReportesHHEEPage';
 
 // Componente interno que maneja la lógica de la aplicación principal
 const AppContent = () => {
@@ -82,6 +83,9 @@ const AppContent = () => {
           <Route path="/incidencias/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioIncidenciaPage /></PrivateRoute>} />
           <Route path="/incidencias/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleIncidenciaPage /></PrivateRoute>} />
           <Route path="/hhee/portal" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><PortalHHEEPage /></PrivateRoute>} />
+          <Route path="/hhee/reportes" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><ReportesHHEEPage /></PrivateRoute>
+        } 
+      />
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>
       </div>

@@ -1,6 +1,7 @@
 # /backend/routers/hhee_router.py
 
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from services import geovictoria_service
@@ -14,8 +15,22 @@ from pydantic import BaseModel
 
 from dependencies import require_role
 from enums import UserRole
+from enum import Enum
 
 import bleach
+import pandas as pd
+import io
+
+
+# --- MODELOS PARA LA EXPORTACIÓN ---
+class ExportFormat(str, Enum):
+    RRHH = "RRHH"
+    OPERACIONES = "OPERACIONES"
+
+class ExportRequest(BaseModel):
+    fecha_inicio: date
+    fecha_fin: date
+    formato: ExportFormat
 
 # --- FUNCIONES DE UTILIDAD ---
 def formatear_rut(rut: str) -> str:
@@ -31,6 +46,13 @@ def formatear_rut(rut: str) -> str:
     dv = rut_limpio[-1]
     # 4. Devolver en el formato estándar
     return f"{cuerpo}-{dv}"
+
+def decimal_to_hhmm(decimal_hours):
+    if decimal_hours is None or not isinstance(decimal_hours, (int, float)):
+        return "00:00"
+    hours = int(decimal_hours)
+    minutes = int(round((decimal_hours - hours) * 60))
+    return f"{hours:02d}:{minutes:02d}"
 
 # --- FIN: FUNCIONES DE UTILIDAD ---
 
@@ -286,5 +308,70 @@ async def consultar_pendientes(
         "datos_periodo": resultados_enriquecidos,
         "nombre_agente": "Múltiples Agentes con Pendientes"
     }
-    
+
+
+@router.post("/exportar", summary="Exporta validaciones de HHEE a un archivo Excel")
+async def exportar_hhee_a_excel(
+    request: ExportRequest,
+    db: AsyncSession = Depends(get_db),
+    # Ahora todos los roles con acceso a HHEE pueden llegar aquí
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    try:
+        query = select(models.ValidacionHHEE).filter(
+            models.ValidacionHHEE.estado == 'Validado',
+            models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin)
+        ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
+        
+        result = await db.execute(query)
+        validaciones = result.scalars().all()
+
+        if not validaciones:
+            raise HTTPException(status_code=404, detail="No se encontraron HHEE validadas en el rango de fechas seleccionado.")
+
+        # --- LÓGICA CONDICIONAL PARA CADA FORMATO ---
+        if request.formato == ExportFormat.RRHH:
+            # Mapeo de permisos para el formato de RRHH
+            permiso_map = {
+                "Antes de Turno": 10,
+                "Después de Turno": 5,
+                "Día de Descanso": 10
+            }
+            datos_para_excel = [{
+                "Cod Funcionario": v.rut,
+                "Nombre": v.nombre_apellido,
+                "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
+                "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
+                "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
+                "Cant Horas": decimal_to_hhmm(v.cantidad_hhee_aprobadas)
+            } for v in validaciones]
+        
+        elif request.formato == ExportFormat.OPERACIONES:
+            datos_para_excel = [{
+                "ID": v.id,
+                "RUT": v.rut,
+                "Nombre Completo": v.nombre_apellido,
+                "Campaña": v.campaña,
+                "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'),
+                "Tipo HHEE": v.tipo_hhee,
+                "Horas Aprobadas": v.cantidad_hhee_aprobadas,
+                "Estado": v.estado,
+                "Validado Por": v.supervisor_carga,
+                "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M')
+            } for v in validaciones]
+
+        # --- El resto es igual para ambos formatos ---
+        df = pd.DataFrame(datos_para_excel)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name=f'Reporte {request.formato.value}')
+        output.seek(0)
+
+        headers = {'Content-Disposition': f'attachment; filename="reporte_hhee_{request.formato.value}_{request.fecha_inicio}_a_{request.fecha_fin}.xlsx"'}
+        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")
     

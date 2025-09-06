@@ -16,84 +16,53 @@ function Navbar() {
     const isGtrUser = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
     const isGtrAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
     const isHheeUser = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
+    // VVV NUEVA CONSTANTE PARA LOS REPORTES VVV
+    const canExportHhee = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
 
     return (
         <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
             <div className="container-fluid">
-                <Link className="navbar-brand" to="/">Portal WorkForce</Link>
-                <button
-                    className="navbar-toggler"
-                    type="button"
-                    data-bs-toggle="collapse"
-                    data-bs-target="#navbarNav"
-                    aria-controls="navbarNav"
-                    aria-expanded="false"
-                    aria-label="Toggle navigation"
-                >
+                <Link className="navbar-brand" to="/">Portal Unificado</Link>
+                <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                     <span className="navbar-toggler-icon"></span>
                 </button>
                 <div className="collapse navbar-collapse" id="navbarNav">
                     <ul className="navbar-nav me-auto mb-2 mb-lg-0">
                         {user && (
-                            <li className="nav-item">
-                                <Link className="nav-link" to="/dashboard">Dashboard</Link>
-                            </li>
+                            <li className="nav-item"><Link className="nav-link" to="/dashboard">Dashboard</Link></li>
                         )}
                         
-                        {/* --- ENLACES SOLO PARA USUARIOS GTR --- */}
                         {isGtrUser && (
                             <>
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/avisos">Avisos</Link>
-                                </li>
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/tareas">Tareas</Link>
-                                </li>
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/campanas">Campañas</Link>
-                                </li>
+                                <li className="nav-item"><Link className="nav-link" to="/avisos">Avisos</Link></li>
+                                <li className="nav-item"><Link className="nav-link" to="/tareas">Tareas</Link></li>
+                                <li className="nav-item"><Link className="nav-link" to="/campanas">Campañas</Link></li>
                             </>
                         )}
 
-                        {/* --- ENLACES SOLO PARA ADMINS DE GTR --- */}
                         {isGtrAdmin && (
                             <>
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/analistas">Analistas</Link>
-                                </li>
-                                <li className="nav-item">
-                                    <Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link>
-                                </li>
+                                <li className="nav-item"><Link className="nav-link" to="/analistas">Analistas</Link></li>
+                                <li className="nav-item"><Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link></li>
                             </>
                         )}
 
-                        {/* --- ENLACE SOLO PARA USUARIOS DE HHEE --- */}
                         {isHheeUser && (
-                             <li className="nav-item">
-                                <Link className="nav-link" to="/hhee/portal">Portal HHEE</Link>
-                            </li>
+                             <li className="nav-item"><Link className="nav-link" to="/hhee/portal">Portal HHEE</Link></li>
+                        )}
+
+                        {canExportHhee && (
+                            <li className="nav-item"><Link className="nav-link" to="/hhee/reportes">Reportes HHEE</Link></li>
                         )}
                     </ul>
                     <ul className="navbar-nav">
                         {user ? (
                             <>
-                                <li className="nav-item">
-                                    <span className="nav-link text-white">
-                                        Hola, {user.nombre} ({user.role})
-                                    </span>
-                                </li>
-                                <li className="nav-item">
-                                    <button onClick={handleLogout} className="btn btn-outline-light ms-2">
-                                        Cerrar Sesión
-                                    </button>
-                                </li>
+                                <li className="nav-item"><span className="nav-link text-white">Hola, {user.nombre} ({user.role})</span></li>
+                                <li className="nav-item"><button onClick={handleLogout} className="btn btn-outline-light ms-2">Cerrar Sesión</button></li>
                             </>
                         ) : (
-                            <li className="nav-item">
-                                <Link className="btn btn-outline-light" to="/login">
-                                    Iniciar Sesión
-                                </Link>
-                            </li>
+                            <li className="nav-item"><Link className="btn btn-outline-light" to="/login">Iniciar Sesión</Link></li>
                         )}
                     </ul>
                 </div>
