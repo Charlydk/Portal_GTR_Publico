@@ -2,7 +2,7 @@ import os
 import redis.asyncio as redis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +28,7 @@ from dependencies import get_current_analista, require_role
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Código que se ejecuta ANTES de que la aplicación inicie
+    # --- Código que se ejecuta ANTES de que la aplicación inicie ---
     print("--- Iniciando aplicación y conectando a Redis... ---")
     redis_url = os.getenv("REDIS_URL", "redis://localhost")
     try:
@@ -38,9 +38,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"No se pudo conectar a Redis: {e}")
     
+    # --- INICIO DEL CÓDIGO DE DEPURACIÓN DE RUTAS ---
+    print("\n--- RUTAS REGISTRADAS EN LA API ---")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            # Para APIRouter, necesitamos acceder a sus rutas internas
+            if isinstance(route, APIRouter):
+                for sub_route in route.routes:
+                    if hasattr(sub_route, "methods"):
+                        print(f"Path: {route.prefix}{sub_route.path}, Methods: {sub_route.methods}, Name: {sub_route.name}")
+            else:
+                 print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
+    print("----------------------------------\n")
+    # --- FIN DEL CÓDIGO DE DEPURACIÓN ---
+
     yield  # La aplicación se ejecuta aquí
     
-    # Código que se ejecuta DESPUÉS de que la aplicación termine
+    # --- Código que se ejecuta DESPUÉS de que la aplicación termine ---
     print("--- Aplicación finalizada. ---")
 
 # --- 2. CREACIÓN Y CONFIGURACIÓN DE LA APP (USANDO LA FUNCIÓN YA DEFINIDA) ---
@@ -64,7 +78,7 @@ app.add_middleware(
 )
 
 app.include_router(gtr_router.router, prefix="/gtr")
-app.include_router(hhee_router.router)
+app.include_router(hhee_router.router, prefix="/hhee")
 
 @app.post("/register/", response_model=Analista, status_code=status.HTTP_201_CREATED, summary="Registrar un nuevo Analista")
 async def register_analista(analista: AnalistaCreate, db: AsyncSession = Depends(get_db)):
@@ -171,6 +185,12 @@ async def read_users_me(current_analista: models.Analista = Depends(get_current_
         incidencias_creadas=[],
         incidencias_asignadas=[]
     )
-    
+        
     return analista_response
 
+# Este código imprimirá todas las rutas de tu API en la terminal al iniciar.
+    print("\n--- RUTAS REGISTRADAS EN LA API ---")
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
+    print("----------------------------------\n")

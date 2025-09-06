@@ -88,7 +88,6 @@ class CargarHHEERequest(BaseModel):
     validaciones: List[ValidacionDia]
 
 router = APIRouter(
-    prefix="/hhee",
     tags=["Portal HHEE"]
 )
 
@@ -317,23 +316,29 @@ async def exportar_hhee_a_excel(
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     try:
-        query = select(models.ValidacionHHEE).filter(
+        base_query = select(models.ValidacionHHEE).filter(
             models.ValidacionHHEE.estado == 'Validado',
             models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin)
-        ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
+        )
+
+        if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+            query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
+        else:
+            query = base_query
+
+        query = query.order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
         
         result = await db.execute(query)
         validaciones = result.scalars().all()
 
         if not validaciones:
-            raise HTTPException(status_code=404, detail="No se encontraron HHEE validadas en el rango de fechas seleccionado.")
+            raise HTTPException(status_code=404, detail="No se encontraron HHEE validadas para los filtros seleccionados.")
 
-        # --- LÓGICA CONDICIONAL PARA CADA FORMATO ---
         if request.formato == ExportFormat.RRHH:
+            # ... (Esta parte no cambia)
             permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
             datos_para_excel = [{
-                "Cod Funcionario": v.rut,
-                "Nombre": v.nombre_apellido,
+                "Cod Funcionario": v.rut, "Nombre": v.nombre_apellido,
                 "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
                 "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
                 "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
@@ -341,39 +346,41 @@ async def exportar_hhee_a_excel(
             } for v in validaciones]
         
         elif request.formato == ExportFormat.OPERACIONES:
-            # --- INICIO DE LA NUEVA LÓGICA PARA ENRIQUECER LOS DATOS ---
-            
-            # 1. Obtenemos los RUTs únicos para consultar a GeoVictoria
             ruts_unicos = list({v.rut.replace('.', '').replace('-', '') for v in validaciones})
-            
-            # 2. Consultamos a GeoVictoria por los datos de RRHH
             token_gv = await geovictoria_service.obtener_token_geovictoria()
-            if not token_gv:
-                raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria para obtener datos de RRHH.")
+            if not token_gv: raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria.")
 
             fecha_inicio_dt = datetime.combine(request.fecha_inicio, datetime.min.time())
             fecha_fin_dt = datetime.combine(request.fecha_fin, datetime.max.time())
+            datos_gv = await geovictoria_service.obtener_datos_completos_periodo(token_gv, ruts_unicos, fecha_inicio_dt, fecha_fin_dt)
             
-            datos_gv = await geovictoria_service.obtener_datos_completos_periodo(
-                token_gv, ruts_unicos, fecha_inicio_dt, fecha_fin_dt
-            )
-            
-            # 3. Creamos un diccionario para buscar fácilmente los datos de RRHH
+            # --- INICIO DE LA CORRECCIÓN CLAVE ---
+            # 1. El diccionario ahora guarda las horas de 'antes' y 'después' por separado
             rrhh_lookup = {}
             for dia in datos_gv:
                 key = (dia['rut_limpio'], dia['fecha'])
-                total_rrhh = (dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (dia.get('hhee_autorizadas_despues_gv', 0) or 0)
-                rrhh_lookup[key] = total_rrhh
+                rrhh_lookup[key] = {
+                    "antes": dia.get('hhee_autorizadas_antes_gv', 0) or 0,
+                    "despues": dia.get('hhee_autorizadas_despues_gv', 0) or 0
+                }
             
-            # 4. Construimos la lista para el Excel, añadiendo la nueva columna
             datos_para_excel = []
             for v in validaciones:
                 rut_limpio_actual = v.rut.replace('.', '').replace('-', '')
                 fecha_actual_str = v.fecha_hhee.strftime('%Y-%m-%d')
                 
-                # Buscamos las horas de RRHH en nuestro diccionario
-                horas_rrhh = rrhh_lookup.get((rut_limpio_actual, fecha_actual_str), 0)
+                horas_rrhh_dict = rrhh_lookup.get((rut_limpio_actual, fecha_actual_str), {"antes": 0, "despues": 0})
                 
+                # 2. Asignamos la hora correcta según el tipo de HHEE de la fila
+                horas_rrhh_especificas = 0
+                if v.tipo_hhee == "Antes de Turno":
+                    horas_rrhh_especificas = horas_rrhh_dict.get("antes", 0)
+                elif v.tipo_hhee == "Después de Turno":
+                    horas_rrhh_especificas = horas_rrhh_dict.get("despues", 0)
+                elif v.tipo_hhee == "Día de Descanso":
+                    # Para descanso, sí sumamos ambas
+                    horas_rrhh_especificas = horas_rrhh_dict.get("antes", 0) + horas_rrhh_dict.get("despues", 0)
+
                 datos_para_excel.append({
                     "ID": v.id,
                     "RUT": v.rut,
@@ -381,13 +388,13 @@ async def exportar_hhee_a_excel(
                     "Campaña": v.campaña,
                     "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'),
                     "Tipo HHEE": v.tipo_hhee,
-                    "Horas Aprobadas (Operaciones)": v.cantidad_hhee_aprobadas,
-                    "Horas Aprobadas (RRHH)": horas_rrhh,  # <-- ¡NUEVA COLUMNA!
+                    "Horas Aprobadas (Operaciones)": decimal_to_hhmm(v.cantidad_hhee_aprobadas),
+                    "Horas Aprobadas (RRHH)": decimal_to_hhmm(horas_rrhh_especificas), # Usamos el valor específico
                     "Estado": v.estado,
                     "Validado Por": v.supervisor_carga,
                     "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M') if v.fecha_carga else None
                 })
-            # --- FIN DE LA NUEVA LÓGICA ---
+            # --- FIN DE LA CORRECCIÓN CLAVE ---
 
         df = pd.DataFrame(datos_para_excel)
         output = io.BytesIO()
