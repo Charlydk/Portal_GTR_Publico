@@ -18,7 +18,7 @@ from dependencies import require_role
 from enums import UserRole
 from enum import Enum
 
-from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana
+from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE
 
 from utils import decimal_to_hhmm, formatear_rut
 
@@ -481,4 +481,44 @@ async def get_hhee_metricas(
         empleado_top=empleado_top,
         desglose_por_empleado=lista_empleados,
         desglose_por_campana=lista_campanas
+    )
+    
+@router.get("/metricas-pendientes", response_model=MetricasPendientesHHEE, summary="Obtener métricas de HHEE pendientes de validación")
+async def get_hhee_metricas_pendientes(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    """
+    Calcula y devuelve un resumen de HHEE en estado 'Pendiente por Corrección',
+    desglosado por el motivo de la nota.
+    """
+    base_query = select(models.ValidacionHHEE).filter(
+        models.ValidacionHHEE.estado == 'Pendiente por Corrección'
+    )
+
+    # Si el usuario es Supervisor de Operaciones, filtramos solo los pendientes que él mismo marcó.
+    if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+        query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
+    else:
+        # Supervisor y Responsable ven todos los pendientes.
+        query = base_query
+    
+    result = await db.execute(query)
+    pendientes = result.scalars().all()
+
+    # Hacemos el conteo en Python
+    total_pendientes = len(pendientes)
+    cambio_turno_count = 0
+    correccion_marcas_count = 0
+
+    for p in pendientes:
+        if p.notas == "Pendiente de cambio de turno":
+            cambio_turno_count += 1
+        elif p.notas == "Pendiente de corrección de marcas":
+            correccion_marcas_count += 1
+            
+    return MetricasPendientesHHEE(
+        total_pendientes=total_pendientes,
+        por_cambio_turno=cambio_turno_count,
+        por_correccion_marcas=correccion_marcas_count
     )

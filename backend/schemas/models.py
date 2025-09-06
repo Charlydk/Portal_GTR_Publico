@@ -352,20 +352,25 @@ class AvisoListOutput(BaseModel):
 class MetricasPorEmpleado(BaseModel):
     nombre_empleado: str
     rut: str
-    total_horas_declaradas: float # Renombrado de total_horas
-    total_horas_rrhh: float       # NUEVO
+    total_horas_declaradas: float 
+    total_horas_rrhh: float      
 
 class MetricasPorCampana(BaseModel):
     nombre_campana: str
-    total_horas_declaradas: float # Renombrado de total_horas
-    total_horas_rrhh: float       # NUEVO
+    total_horas_declaradas: float
+    total_horas_rrhh: float     
 
 class DashboardHHEEMetricas(BaseModel):
-    total_hhee_declaradas: float      # Renombrado de total_hhee_aprobadas
-    total_hhee_aprobadas_rrhh: float  # NUEVO
+    total_hhee_declaradas: float     
+    total_hhee_aprobadas_rrhh: float  
     empleado_top: Optional[MetricasPorEmpleado] = None
     desglose_por_empleado: List[MetricasPorEmpleado]
     desglose_por_campana: List[MetricasPorCampana]
+    
+class MetricasPendientesHHEE(BaseModel):
+    total_pendientes: int
+    por_cambio_turno: int
+    por_correccion_marcas: int
 
 # --- Forward References Update ---
 Campana.model_rebuild()
