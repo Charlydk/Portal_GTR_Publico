@@ -338,10 +338,6 @@ class Analista(AnalistaBase):
     class Config:
         from_attributes = True
 
-
-
-
-
 class AvisoListOutput(BaseModel):
     id: int
     titulo: str
@@ -349,7 +345,27 @@ class AvisoListOutput(BaseModel):
     creador: AnalistaSimple
     campana: Optional[CampanaSimple] = None
     class Config:
-        from_attributes = True
+        from_attributes = True   
+        
+# --- SCHEMAS PARA EL DASHBOARD DE MÉTRICAS HHEE ---
+
+class MetricasPorEmpleado(BaseModel):
+    nombre_empleado: str
+    rut: str
+    total_horas_declaradas: float # Renombrado de total_horas
+    total_horas_rrhh: float       # NUEVO
+
+class MetricasPorCampana(BaseModel):
+    nombre_campana: str
+    total_horas_declaradas: float # Renombrado de total_horas
+    total_horas_rrhh: float       # NUEVO
+
+class DashboardHHEEMetricas(BaseModel):
+    total_hhee_declaradas: float      # Renombrado de total_hhee_aprobadas
+    total_hhee_aprobadas_rrhh: float  # NUEVO
+    empleado_top: Optional[MetricasPorEmpleado] = None
+    desglose_por_empleado: List[MetricasPorEmpleado]
+    desglose_por_campana: List[MetricasPorCampana]
 
 # --- Forward References Update ---
 Campana.model_rebuild()

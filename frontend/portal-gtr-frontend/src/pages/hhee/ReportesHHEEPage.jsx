@@ -8,9 +8,37 @@ function ReportesHHEEPage() {
     const [fechaFin, setFechaFin] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const { authToken, user } = useAuth(); // <-- Obtenemos el usuario para saber su rol
+    const { authToken, user } = useAuth();
 
-    const handleExportar = async (formato) => { // <-- Ahora recibe el formato como parámetro
+    // --- INICIO DE LA NUEVA LÓGICA ---
+    const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    const handlePeriodoChange = (seleccion) => {
+        let fechaInicio, fechaFin;
+        const hoy = new Date();
+        switch (seleccion) {
+            case 'actual':
+                fechaFin = new Date(hoy.getFullYear(), hoy.getMonth(), 25);
+                fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 26);
+                break;
+            case 'anterior':
+                fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 25);
+                fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth() - 2, 26);
+                break;
+            default:
+                setFechaInicio(''); setFechaFin(''); return;
+        }
+        setFechaInicio(formatDate(fechaInicio));
+        setFechaFin(formatDate(fechaFin));
+    };
+    // --- FIN DE LA NUEVA LÓGICA ---
+
+    const handleExportar = async (formato) => {
         if (!fechaInicio || !fechaFin) {
             setError("Por favor, seleccione una fecha de inicio y de fin.");
             return;
@@ -25,7 +53,6 @@ function ReportesHHEEPage() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${authToken}`
                 },
-                // Enviamos el formato junto con las fechas
                 body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin, formato: formato }),
             });
 
@@ -68,22 +95,31 @@ function ReportesHHEEPage() {
                             {error && <Alert variant="danger">{error}</Alert>}
 
                             <Form>
-                                <Row>
-                                    <Col md={6}><Form.Group controlId="fecha-inicio" className="mb-3"><Form.Label>Fecha de Inicio</Form.Label><Form.Control type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} required /></Form.Group></Col>
-                                    <Col md={6}><Form.Group controlId="fecha-fin" className="mb-3"><Form.Label>Fecha de Fin</Form.Label><Form.Control type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} required /></Form.Group></Col>
+                                <Row className="align-items-end">
+                                    {/* --- NUEVO SELECTOR DE PERÍODO --- */}
+                                    <Col md={4}>
+                                        <Form.Group controlId="select-periodo" className="mb-3">
+                                            <Form.Label>Período Rápido</Form.Label>
+                                            <Form.Select onChange={(e) => handlePeriodoChange(e.target.value)}>
+                                                <option value="">Seleccionar...</option>
+                                                <option value="actual">Período actual</option>
+                                                <option value="anterior">Período anterior (-1)</option>
+                                            </Form.Select>
+                                        </Form.Group>
+                                    </Col>
+                                    {/* --- FIN DEL NUEVO SELECTOR --- */}
+                                    <Col md={4}><Form.Group controlId="fecha-inicio" className="mb-3"><Form.Label>Fecha de Inicio</Form.Label><Form.Control type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} required /></Form.Group></Col>
+                                    <Col md={4}><Form.Group controlId="fecha-fin" className="mb-3"><Form.Label>Fecha de Fin</Form.Label><Form.Control type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} required /></Form.Group></Col>
                                 </Row>
                                 <div className="d-grid gap-2 mt-3">
-                                    {/* --- BOTONES CONDICIONALES POR ROL --- */}
                                     {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
                                         <Button variant="success" onClick={() => handleExportar('RRHH')} disabled={loading}>
                                             {loading ? <Spinner size="sm" /> : 'Exportar para RRHH (Formato ADP)'}
                                         </Button>
                                     )}
-                                    
                                     <Button variant="info" onClick={() => handleExportar('OPERACIONES')} disabled={loading}>
                                         {loading ? <Spinner size="sm" /> : 'Exportar para Control de Operaciones'}
                                     </Button>
-                                    {/* --- FIN DE BOTONES CONDICIONALES --- */}
                                 </div>
                             </Form>
                         </Card.Body>

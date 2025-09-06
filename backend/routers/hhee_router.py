@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 from services import geovictoria_service
 from datetime import datetime, date
 from typing import List, Optional
@@ -16,6 +17,10 @@ from pydantic import BaseModel
 from dependencies import require_role
 from enums import UserRole
 from enum import Enum
+
+from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana
+
+from utils import decimal_to_hhmm, formatear_rut
 
 import bleach
 import pandas as pd
@@ -32,29 +37,6 @@ class ExportRequest(BaseModel):
     fecha_fin: date
     formato: ExportFormat
 
-# --- FUNCIONES DE UTILIDAD ---
-def formatear_rut(rut: str) -> str:
-    """Limpia y formatea un RUT al formato XXXXXXXX-K."""
-    if not isinstance(rut, str):
-        return ""
-    # 1. Quitar puntos y guiones
-    rut_limpio = rut.replace('.', '').replace('-', '')
-    # 2. Convertir a mayúsculas por si la 'k' está en minúscula
-    rut_limpio = rut_limpio.upper()
-    # 3. Separar el cuerpo del dígito verificador
-    cuerpo = rut_limpio[:-1]
-    dv = rut_limpio[-1]
-    # 4. Devolver en el formato estándar
-    return f"{cuerpo}-{dv}"
-
-def decimal_to_hhmm(decimal_hours):
-    if decimal_hours is None or not isinstance(decimal_hours, (int, float)):
-        return "00:00"
-    hours = int(decimal_hours)
-    minutes = int(round((decimal_hours - hours) * 60))
-    return f"{hours:02d}:{minutes:02d}"
-
-# --- FIN: FUNCIONES DE UTILIDAD ---
 
 class ConsultaHHEE(BaseModel):
     rut: str
@@ -409,3 +391,94 @@ async def exportar_hhee_a_excel(
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")
+    
+
+@router.post("/metricas", response_model=DashboardHHEEMetricas, summary="Obtener métricas para el dashboard de HHEE")
+async def get_hhee_metricas(
+    request: ExportRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    base_query = select(models.ValidacionHHEE).filter(
+        models.ValidacionHHEE.estado == 'Validado',
+        models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin)
+    )
+    if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+        query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
+    else:
+        query = base_query
+    
+    result = await db.execute(query)
+    validaciones = result.scalars().all()
+
+    # --- INICIO DE LA LÓGICA MEJORADA ---
+    # Si no hay datos, devolvemos un objeto vacío
+    if not validaciones:
+        return DashboardHHEEMetricas(total_hhee_declaradas=0.0, total_hhee_aprobadas_rrhh=0.0, empleado_top=None, desglose_por_empleado=[], desglose_por_campana=[])
+
+    # Consultamos a GeoVictoria para obtener los datos de RRHH
+    ruts_unicos = list({v.rut.replace('.', '').replace('-', '') for v in validaciones})
+    token_gv = await geovictoria_service.obtener_token_geovictoria()
+    if not token_gv: raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria.")
+    
+    fecha_inicio_dt = datetime.combine(request.fecha_inicio, datetime.min.time())
+    fecha_fin_dt = datetime.combine(request.fecha_fin, datetime.max.time())
+    datos_gv = await geovictoria_service.obtener_datos_completos_periodo(token_gv, ruts_unicos, fecha_inicio_dt, fecha_fin_dt)
+    
+    rrhh_lookup = {}
+    for dia in datos_gv:
+        key = (dia['rut_limpio'], dia['fecha'])
+        rrhh_lookup[key] = (dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (dia.get('hhee_autorizadas_despues_gv', 0) or 0)
+    
+    # 1. Calcular totales
+    total_declaradas = sum(v.cantidad_hhee_aprobadas for v in validaciones)
+    total_rrhh = sum(rrhh_lookup.values())
+
+    # 2. Desglose por empleado
+    desglose_empleado = {}
+    for v in validaciones:
+        rut_limpio = v.rut.replace('.', '').replace('-', '')
+        fecha_str = v.fecha_hhee.strftime('%Y-%m-%d')
+        horas_rrhh_dia = rrhh_lookup.get((rut_limpio, fecha_str), 0)
+
+        if v.rut not in desglose_empleado:
+            desglose_empleado[v.rut] = {"nombre": v.nombre_apellido, "declaradas": 0.0, "rrhh": 0.0}
+        
+        desglose_empleado[v.rut]["declaradas"] += v.cantidad_hhee_aprobadas
+        desglose_empleado[v.rut]["rrhh"] += horas_rrhh_dia
+    
+    lista_empleados = [
+        MetricasPorEmpleado(rut=rut, nombre_empleado=data["nombre"], total_horas_declaradas=data["declaradas"], total_horas_rrhh=data["rrhh"])
+        for rut, data in desglose_empleado.items()
+    ]
+    lista_empleados.sort(key=lambda x: x.total_horas_declaradas, reverse=True)
+
+    # 3. Desglose por campaña
+    desglose_campana = {}
+    for v in validaciones:
+        rut_limpio = v.rut.replace('.', '').replace('-', '')
+        fecha_str = v.fecha_hhee.strftime('%Y-%m-%d')
+        horas_rrhh_dia = rrhh_lookup.get((rut_limpio, fecha_str), 0)
+        campana = v.campaña or "Sin Campaña"
+
+        if campana not in desglose_campana:
+            desglose_campana[campana] = {"declaradas": 0.0, "rrhh": 0.0}
+        
+        desglose_campana[campana]["declaradas"] += v.cantidad_hhee_aprobadas
+        desglose_campana[campana]["rrhh"] += horas_rrhh_dia
+
+    lista_campanas = [
+        MetricasPorCampana(nombre_campana=nombre, total_horas_declaradas=data["declaradas"], total_horas_rrhh=data["rrhh"])
+        for nombre, data in desglose_campana.items()
+    ]
+    lista_campanas.sort(key=lambda x: x.total_horas_declaradas, reverse=True)
+
+    empleado_top = lista_empleados[0] if lista_empleados else None
+
+    return DashboardHHEEMetricas(
+        total_hhee_declaradas=total_declaradas,
+        total_hhee_aprobadas_rrhh=total_rrhh,
+        empleado_top=empleado_top,
+        desglose_por_empleado=lista_empleados,
+        desglose_por_campana=lista_campanas
+    )

@@ -52,8 +52,11 @@ function Navbar() {
                         )}
 
                         {canExportHhee && (
+                        <>
                             <li className="nav-item"><Link className="nav-link" to="/hhee/reportes">Reportes HHEE</Link></li>
-                        )}
+                            <li className="nav-item"><Link className="nav-link" to="/hhee/metricas">Métricas HHEE</Link></li>
+                        </>
+                    )}
                     </ul>
                     <ul className="navbar-nav">
                         {user ? (

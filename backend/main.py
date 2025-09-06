@@ -38,20 +38,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"No se pudo conectar a Redis: {e}")
     
-    # --- INICIO DEL CÓDIGO DE DEPURACIÓN DE RUTAS ---
-    print("\n--- RUTAS REGISTRADAS EN LA API ---")
-    for route in app.routes:
-        if hasattr(route, "methods"):
-            # Para APIRouter, necesitamos acceder a sus rutas internas
-            if isinstance(route, APIRouter):
-                for sub_route in route.routes:
-                    if hasattr(sub_route, "methods"):
-                        print(f"Path: {route.prefix}{sub_route.path}, Methods: {sub_route.methods}, Name: {sub_route.name}")
-            else:
-                 print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
-    print("----------------------------------\n")
-    # --- FIN DEL CÓDIGO DE DEPURACIÓN ---
-
     yield  # La aplicación se ejecuta aquí
     
     # --- Código que se ejecuta DESPUÉS de que la aplicación termine ---
@@ -187,10 +173,3 @@ async def read_users_me(current_analista: models.Analista = Depends(get_current_
     )
         
     return analista_response
-
-# Este código imprimirá todas las rutas de tu API en la terminal al iniciar.
-    print("\n--- RUTAS REGISTRADAS EN LA API ---")
-    for route in app.routes:
-        if hasattr(route, "methods"):
-            print(f"Path: {route.path}, Methods: {route.methods}, Name: {route.name}")
-    print("----------------------------------\n")
