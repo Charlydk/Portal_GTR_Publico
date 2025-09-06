@@ -60,9 +60,6 @@ function LoginPage() {
                 </button>
               </div>
             </form>
-            <p className="text-center mt-3">
-              ¿No tienes cuenta? <Link to="/register">Regístrate aquí</Link>
-            </p>
           </div>
         </div>
       </div>

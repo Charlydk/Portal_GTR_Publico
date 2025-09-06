@@ -56,7 +56,6 @@ const AppContent = () => {
           {/* ... (Todas tus rutas se quedan exactamente igual) ... */}
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><DashboardPage /></PrivateRoute>} />
           <Route path="/avisos" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><AvisosPage /></PrivateRoute>} />
           <Route path="/avisos/:avisoId" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleAvisoPage /></PrivateRoute>} />

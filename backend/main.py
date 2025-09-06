@@ -66,26 +66,6 @@ app.add_middleware(
 app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router, prefix="/hhee")
 
-@app.post("/register/", response_model=Analista, status_code=status.HTTP_201_CREATED, summary="Registrar un nuevo Analista")
-async def register_analista(analista: AnalistaCreate, db: AsyncSession = Depends(get_db)):
-    # (Tu endpoint de registro completo va aquí)
-    # (El código que ya tenías para esta función es correcto)
-    existing_analista_by_email = await get_analista_by_email(analista.email, db)
-    if existing_analista_by_email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El email ya está registrado.")
-    result_bms = await db.execute(select(models.Analista).filter(models.Analista.bms_id == analista.bms_id))
-    if result_bms.scalars().first():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El BMS ID ya existe.")
-    hashed_password = get_password_hash(analista.password)
-    db_analista = models.Analista(
-        nombre=analista.nombre, apellido=analista.apellido, email=analista.email,
-        bms_id=analista.bms_id, role=analista.role.value, hashed_password=hashed_password
-    )
-    db.add(db_analista)
-    await db.commit()
-    await db.refresh(db_analista)
-    return db_analista
-
 @app.post(
     "/token",
     response_model=Token,
