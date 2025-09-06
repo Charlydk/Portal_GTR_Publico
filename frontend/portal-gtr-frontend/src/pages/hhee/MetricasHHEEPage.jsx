@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-// VVV 1. CORRECCIÓN: Añadimos Badge a la importación VVV
 import { Container, Form, Button, Card, Spinner, Alert, Row, Col, Table, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
@@ -26,9 +25,13 @@ function MetricasHHEEPage() {
     const [fechaInicio, setFechaInicio] = useState('');
     const [fechaFin, setFechaFin] = useState('');
     const [metricas, setMetricas] = useState(null);
-    const [metricasPendientes, setMetricasPendientes] = useState(null); // Estado para pendientes
+    const [metricasPendientes, setMetricasPendientes] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    // Quitamos el useEffect que cargaba los pendientes al inicio
+    // const [loadingPendientes, setLoadingPendientes] = useState(true);
+    // useEffect(() => { ... }, [authToken]);
 
     const formatDate = (date) => date.toISOString().split('T')[0];
 
@@ -51,7 +54,6 @@ function MetricasHHEEPage() {
         setFechaFin(formatDate(fechaFin));
     };
     
-    // VVV 2. CORRECCIÓN: Unificamos la carga de datos VVV
     const fetchMetricas = async (e) => {
         if (e) e.preventDefault();
         if (!fechaInicio || !fechaFin) {
@@ -59,9 +61,7 @@ function MetricasHHEEPage() {
             return;
         }
         setLoading(true); setError(null); setMetricas(null); setMetricasPendientes(null);
-
         try {
-            // Hacemos las dos peticiones en paralelo
             const [metricasRes, pendientesRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/hhee/metricas`, {
                     method: 'POST',
@@ -72,22 +72,19 @@ function MetricasHHEEPage() {
                     headers: { 'Authorization': `Bearer ${authToken}` },
                 })
             ]);
-
             if (!metricasRes.ok) { const errorData = await metricasRes.json(); throw new Error(errorData.detail); }
             if (!pendientesRes.ok) { const errorData = await pendientesRes.json(); throw new Error(errorData.detail); }
-            
             const metricasData = await metricasRes.json();
             const pendientesData = await pendientesRes.json();
-
             setMetricas(metricasData);
             setMetricasPendientes(pendientesData);
-
         } catch (err) { setError(err.message); } finally { setLoading(false); }
     };
 
     return (
         <Container className="py-4">
             <h1 className="mb-4">Dashboard de Métricas HHEE</h1>
+            
             <Card className="shadow-sm mb-4">
                 <Card.Body>
                     <Card.Title>Consultar Métricas por Período</Card.Title>
@@ -105,16 +102,23 @@ function MetricasHHEEPage() {
             {loading && <div className='text-center mb-4'><Spinner animation="border" /></div>}
             {error && <Alert variant="danger">{error}</Alert>}
 
-            {/* VVV 3. CORRECCIÓN: Los widgets ahora dependen de 'metricas' para mostrarse VVV */}
+            {/* --- INICIO DE LA MODIFICACIÓN --- */}
+            {/* Ahora toda la sección de resultados (incluyendo pendientes) solo se muestra si hay métricas */}
             {metricas && metricasPendientes && (
                 <>
                     <Card className="shadow-sm mb-4">
                          <Card.Header as="h5" className="bg-light">Resumen de Pendientes de Validación</Card.Header>
-                         <Card.Body><Row className="g-4"><Col><KpiCard title="Pendientes por Cambio de Turno" value={metricasPendientes.por_cambio_turno} variant="warning" linkTo="/hhee/portal?vista=pendientes" /></Col><Col><KpiCard title="Pendientes por Corrección de Marcas" value={metricasPendientes.por_correccion_marcas} variant="danger" linkTo="/hhee/portal?vista=pendientes" /></Col></Row></Card.Body>
+                         <Card.Body>
+                            <Row className="g-4">
+                                <Col md={4}><KpiCard title="Total Pendientes" value={metricasPendientes.total_pendientes} variant={metricasPendientes.total_pendientes > 0 ? 'danger' : 'success'}  /></Col>
+                                <Col md={4}><KpiCard title="Por Cambio de Turno" value={metricasPendientes.por_cambio_turno} variant={metricasPendientes.por_cambio_turno > 0 ? 'danger' : 'success'}  /></Col>
+                                <Col md={4}><KpiCard title="Por Corrección de Marcas" value={metricasPendientes.por_correccion_marcas} variant={metricasPendientes.por_correccion_marcas > 0 ? 'danger' : 'success'}  /></Col>
+                            </Row>
+                         </Card.Body>
                     </Card>
 
                     <Row className="g-4 mb-4">
-                        <Col md={3}><KpiCard title="Total HHEE Declaradas (OP)" value={decimalToHHMM(metricas.total_hhee_declaradas)} variant="success" /></Col>
+                        <Col md={3}><KpiCard title="Total HHEE Declaradas (OP)" value={decimalToHHMM(metricas.total_hhee_declaradas)} variant="dark" /></Col>
                         <Col md={3}><KpiCard title="Total HHEE Aprobadas (RRHH)" value={decimalToHHMM(metricas.total_hhee_aprobadas_rrhh)} variant="primary" /></Col>
                         <Col md={6}><KpiCard title="Empleado con más HHEE Declaradas" value={metricas.empleado_top ? `${metricas.empleado_top.nombre_empleado} (${decimalToHHMM(metricas.empleado_top.total_horas_declaradas)})` : 'N/A'} variant="info" /></Col>
                     </Row>
@@ -140,6 +144,7 @@ function MetricasHHEEPage() {
                     </Row>
                 </>
             )}
+            {/* --- FIN DE LA MODIFICACIÓN --- */}
         </Container>
     );
 }
