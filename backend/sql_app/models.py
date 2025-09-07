@@ -6,8 +6,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
+from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE
 
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia
+import sqlalchemy as sa
 
 Base = declarative_base()
 
@@ -44,6 +45,9 @@ class Analista(Base):
     actualizaciones_incidencia_hechas = relationship("ActualizacionIncidencia", back_populates="autor")
     incidencias_asignadas = relationship("Incidencia", back_populates="asignado_a", foreign_keys='Incidencia.asignado_a_id')
     comentarios_tarea = relationship("ComentarioTarea", back_populates="autor")
+    solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
+    solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
+
 
 
 
@@ -237,3 +241,28 @@ class ValidacionHHEE(Base):
     turno_teorico_fin = Column(String, nullable=True)
     marca_real_inicio = Column(String, nullable=True)
     marca_real_fin = Column(String, nullable=True)
+    
+class SolicitudHHEE(Base):
+    __tablename__ = 'solicitudes_hhee'
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Datos de la solicitud
+    fecha_hhee = Column(Date, nullable=False)
+    tipo = Column(sa.Enum(TipoSolicitudHHEE), nullable=False)
+    horas_solicitadas = Column(Float, nullable=False)
+    justificacion = Column(Text, nullable=False)
+    estado = Column(sa.Enum(EstadoSolicitudHHEE), nullable=False, default=EstadoSolicitudHHEE.PENDIENTE)
+    fecha_solicitud = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Datos de la decisión del supervisor
+    horas_aprobadas = Column(Float, nullable=True)
+    comentario_supervisor = Column(Text, nullable=True)
+    fecha_decision = Column(DateTime(timezone=True), nullable=True)
+
+    # Relaciones con la tabla Analista
+    analista_id = Column(Integer, ForeignKey('analistas.id'), nullable=False)
+    supervisor_id = Column(Integer, ForeignKey('analistas.id'), nullable=True)
+
+    solicitante = relationship("Analista", back_populates="solicitudes_realizadas", foreign_keys=[analista_id])
+    supervisor = relationship("Analista", back_populates="solicitudes_gestionadas", foreign_keys=[supervisor_id])

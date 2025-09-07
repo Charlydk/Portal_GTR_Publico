@@ -28,13 +28,19 @@ function Navbar() {
                         {user && (
                             <li className="nav-item"><Link className="nav-link" to="/dashboard">Dashboard</Link></li>
                         )}
-                        
+
+                                                
                         {isGtrUser && (
                             <>
                                 <li className="nav-item"><Link className="nav-link" to="/avisos">Avisos</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/tareas">Tareas</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/campanas">Campañas</Link></li>
-                            </>
+                                
+                                
+                                {user.role === 'ANALISTA' && (
+                                    <li className="nav-item"><Link className="nav-link" to="/mis-solicitudes-hhee">Mis Solicitudes HHEE</Link></li>
+                                )}
+                            </> 
                         )}
 
                         {isGtrAdmin && (

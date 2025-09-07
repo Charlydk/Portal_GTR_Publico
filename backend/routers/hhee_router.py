@@ -1,10 +1,11 @@
 # /backend/routers/hhee_router.py
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 from services import geovictoria_service
 from datetime import datetime, date
 from typing import List, Optional
@@ -15,10 +16,10 @@ from sql_app import models
 from pydantic import BaseModel
 
 from dependencies import require_role
-from enums import UserRole
+from enums import UserRole, TipoSolicitudHHEE, EstadoSolicitudHHEE
 from enum import Enum
 
-from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE
+from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision
 
 from utils import decimal_to_hhmm, formatear_rut
 
@@ -522,3 +523,132 @@ async def get_hhee_metricas_pendientes(
         por_cambio_turno=cambio_turno_count,
         por_correccion_marcas=correccion_marcas_count
     )
+
+# ===================================================================
+# === NENDPOINTS PARA EL FLUJO DE SOLICITUD DE HHEE ===
+# ===================================================================
+
+@router.post("/solicitudes/", response_model=SolicitudHHEE, status_code=status.HTTP_201_CREATED, summary="[Analista] Crear una nueva solicitud de HHEE")
+async def crear_solicitud_hhee(
+    solicitud_data: SolicitudHHEECreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA]))
+):
+    """
+    Permite a un analista crear una nueva solicitud de horas extras.
+    """
+    nueva_solicitud = models.SolicitudHHEE(
+        **solicitud_data.model_dump(),
+        analista_id=current_user.id,
+        estado=EstadoSolicitudHHEE.PENDIENTE
+    )
+    db.add(nueva_solicitud)
+    await db.commit()
+    await db.refresh(nueva_solicitud)
+    
+    # Recargamos con las relaciones para una respuesta completa
+    result = await db.execute(
+        select(models.SolicitudHHEE)
+        .options(selectinload(models.SolicitudHHEE.solicitante))
+        .filter(models.SolicitudHHEE.id == nueva_solicitud.id)
+    )
+    return result.scalars().first()
+
+
+@router.get("/solicitudes/mis-solicitudes/", response_model=List[SolicitudHHEE], summary="[Analista] Ver mi historial de solicitudes de HHEE")
+async def obtener_mis_solicitudes(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA]))
+):
+    """
+    Devuelve el historial de todas las solicitudes de HHEE para el analista actual.
+    """
+    query = select(models.SolicitudHHEE).options(
+        selectinload(models.SolicitudHHEE.solicitante),
+        selectinload(models.SolicitudHHEE.supervisor)
+    ).filter(models.SolicitudHHEE.analista_id == current_user.id).order_by(models.SolicitudHHEE.fecha_solicitud.desc())
+    
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/solicitudes/pendientes/", response_model=List[SolicitudHHEE], summary="[Supervisor] Ver todas las solicitudes pendientes")
+async def obtener_solicitudes_pendientes(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    """
+    Devuelve una lista de todas las solicitudes de HHEE que están en estado PENDIENTE.
+    """
+    query = select(models.SolicitudHHEE).options(
+        selectinload(models.SolicitudHHEE.solicitante)
+    ).filter(models.SolicitudHHEE.estado == EstadoSolicitudHHEE.PENDIENTE).order_by(models.SolicitudHHEE.fecha_solicitud.asc())
+
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.post("/solicitudes/{solicitud_id}/procesar/", response_model=SolicitudHHEE, summary="[Supervisor] Aprobar o Rechazar una solicitud")
+async def procesar_solicitud(
+    solicitud_id: int,
+    decision: SolicitudHHEEDecision,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    """
+    Permite a un supervisor aprobar (y ajustar) o rechazar una solicitud.
+    Si se aprueba, crea una entrada en la tabla `ValidacionHHEE` para que fluya a los reportes.
+    """
+    result = await db.execute(
+        select(models.SolicitudHHEE)
+        .options(selectinload(models.SolicitudHHEE.solicitante))
+        .filter(models.SolicitudHHEE.id == solicitud_id)
+    )
+    solicitud = result.scalars().first()
+
+    if not solicitud:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada.")
+    if solicitud.estado != EstadoSolicitudHHEE.PENDIENTE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Esta solicitud ya ha sido procesada.")
+
+    # Actualizamos la solicitud con la decisión
+    solicitud.estado = decision.estado
+    solicitud.supervisor_id = current_user.id
+    solicitud.fecha_decision = datetime.utcnow()
+    solicitud.comentario_supervisor = decision.comentario_supervisor
+    solicitud.horas_aprobadas = decision.horas_aprobadas
+
+    # --- LÓGICA CLAVE DE INTEGRACIÓN ---
+    # Si la solicitud es APROBADA y tiene horas, la insertamos en la tabla de validaciones
+    # para que sea considerada en los reportes de RRHH y Operaciones.
+    if solicitud.estado == EstadoSolicitudHHEE.APROBADA and solicitud.horas_aprobadas > 0:
+        
+        # Mapeamos el tipo de solicitud al tipo de validación existente
+        tipo_validacion_map = {
+            TipoSolicitudHHEE.ANTES_TURNO: "Antes de Turno",
+            TipoSolicitudHHEE.DESPUES_TURNO: "Después de Turno",
+            TipoSolicitudHHEE.DIA_DESCANSO: "Día de Descanso",
+        }
+        tipo_hhee_validacion = tipo_validacion_map.get(solicitud.tipo)
+
+        if tipo_hhee_validacion:
+            # Necesitamos el RUT y nombre del solicitante
+            rut_formateado = formatear_rut(solicitud.solicitante.rut) if hasattr(solicitud.solicitante, 'rut') else ""
+            nombre_completo = f"{solicitud.solicitante.nombre} {solicitud.solicitante.apellido}"
+
+            nueva_validacion = models.ValidacionHHEE(
+                rut=rut_formateado,
+                nombre_apellido=nombre_completo,
+                campaña=solicitud.solicitante.campanas_asignadas[0].nombre if solicitud.solicitante.campanas_asignadas else "General",
+                fecha_hhee=solicitud.fecha_hhee,
+                tipo_hhee=tipo_hhee_validacion,
+                cantidad_hhee_aprobadas=solicitud.horas_aprobadas,
+                estado="Validado",
+                supervisor_carga=current_user.email,
+                notas=f"Aprobado desde solicitud #{solicitud.id}"
+            )
+            db.add(nueva_validacion)
+
+    await db.commit()
+    await db.refresh(solicitud)
+    return solicitud

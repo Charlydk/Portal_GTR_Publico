@@ -2,7 +2,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date, time
 from typing import List, Optional
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia
+from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE
 
 # --- Schemas Base (para creación y actualización) ---
 
@@ -335,6 +335,8 @@ class Analista(AnalistaBase):
     tareas_generadas_por_avisos: List[TareaGeneradaPorAvisoSimple] = []
     incidencias_creadas: List[IncidenciaSimple] = []
     incidencias_asignadas: List[IncidenciaSimple] = []
+    solicitudes_realizadas: List["SolicitudHHEE"] = []
+    solicitudes_gestionadas: List["SolicitudHHEE"] = []
     class Config:
         from_attributes = True
 
@@ -371,6 +373,37 @@ class MetricasPendientesHHEE(BaseModel):
     total_pendientes: int
     por_cambio_turno: int
     por_correccion_marcas: int
+    
+# --- SCHEMAS PARA SOLICITUDES DE HHEE  ---
+
+class SolicitudHHEEBase(BaseModel):
+    fecha_hhee: date
+    tipo: TipoSolicitudHHEE
+    horas_solicitadas: float = Field(..., gt=0, description="Las horas deben ser mayores a 0")
+    justificacion: str
+
+class SolicitudHHEECreate(SolicitudHHEEBase):
+    pass
+
+class SolicitudHHEEDecision(BaseModel):
+    horas_aprobadas: float = Field(..., ge=0)
+    comentario_supervisor: Optional[str] = None
+
+class SolicitudHHEE(SolicitudHHEEBase):
+    id: int
+    estado: EstadoSolicitudHHEE
+    fecha_solicitud: datetime
+    solicitante: AnalistaSimple # Muestra info básica del solicitante
+
+    # Campos de la decisión (pueden ser nulos)
+    horas_aprobadas: Optional[float] = None
+    comentario_supervisor: Optional[str] = None
+    fecha_decision: Optional[datetime] = None
+    supervisor: Optional[AnalistaSimple] = None # Muestra info de quién decidió
+
+    class Config:
+        from_attributes = True
+
 
 # --- Forward References Update ---
 Campana.model_rebuild()

@@ -22,3 +22,13 @@ class EstadoIncidencia(str, Enum):
     ABIERTA = "ABIERTA"
     EN_PROGRESO = "EN_PROGRESO"
     CERRADA = "CERRADA"
+    
+class TipoSolicitudHHEE(str, Enum):
+    ANTES_TURNO = "ANTES_TURNO"
+    DESPUES_TURNO = "DESPUES_TURNO"
+    DIA_DESCANSO = "DIA_DESCANSO"
+
+class EstadoSolicitudHHEE(str, Enum):
+    PENDIENTE = "PENDIENTE"
+    APROBADA = "APROBADA"
+    RECHAZADA = "RECHAZADA"
