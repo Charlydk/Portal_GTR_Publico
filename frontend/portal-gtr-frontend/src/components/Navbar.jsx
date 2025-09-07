@@ -58,6 +58,8 @@ function Navbar() {
                             <>
                                 <li className="nav-item"><Link className="nav-link" to="/hhee/reportes">Reportes HHEE</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/hhee/metricas">Métricas HHEE</Link></li>
+                                <li className="nav-item"><Link className="nav-link" to="/aprobar-hhee">Aprobar HHEE</Link></li>
+
                             </>
                         )}
                     </ul>

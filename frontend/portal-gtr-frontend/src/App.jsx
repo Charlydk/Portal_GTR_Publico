@@ -35,7 +35,8 @@ import TareasDisponiblesPage from './pages/TareasDisponiblesPage';
 import PortalHHEEPage from './pages/hhee/PortalHHEEPage';
 import ReportesHHEEPage from './pages/hhee/ReportesHHEEPage';
 import MetricasHHEEPage from './pages/hhee/MetricasHHEEPage';
-import MisSolicitudesHHEEPage from './pages/hhee/MisSolicitudesHHEEPage'; 
+import MisSolicitudesHHEEPage from './pages/hhee/MisSolicitudesHHEEPage';
+import AprobacionHHEEPage from './pages/hhee/AprobacionHHEEPage';
 
 // Componente interno que maneja la lógica de la aplicación principal
 const AppContent = () => {
@@ -87,6 +88,12 @@ const AppContent = () => {
           <Route path="/hhee/reportes" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><ReportesHHEEPage /></PrivateRoute>} />
           <Route path="/hhee/metricas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><MetricasHHEEPage /></PrivateRoute>} />
           <Route path="/mis-solicitudes-hhee" element={<PrivateRoute allowedRoles={['ANALISTA']}><MisSolicitudesHHEEPage /></PrivateRoute>} />
+          <Route path="/aprobar-hhee" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><AprobacionHHEEPage /></PrivateRoute>}/>
+          <Route path="/aprobar-hhee/:solicitudId" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}>
+          
+        </PrivateRoute>
+    } 
+/>
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>
       </div>
