@@ -1,6 +1,6 @@
 # /backend/routers/hhee_router.py
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -19,7 +19,7 @@ from dependencies import require_role
 from enums import UserRole, TipoSolicitudHHEE, EstadoSolicitudHHEE
 from enum import Enum
 
-from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision
+from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision, SolicitudHHEELote
 
 from utils import decimal_to_hhmm, formatear_rut
 
@@ -535,8 +535,30 @@ async def crear_solicitud_hhee(
     current_user: models.Analista = Depends(require_role([UserRole.ANALISTA]))
 ):
     """
-    Permite a un analista crear una nueva solicitud de horas extras.
+    Permite a un analista crear una nueva solicitud de horas extras,
+    validando que no exista una activa para la misma fecha y tipo.
     """
+    
+    # 1. Buscamos si ya existen solicitudes para el mismo analista, fecha y tipo.
+    query_existente = select(models.SolicitudHHEE).filter(
+        models.SolicitudHHEE.analista_id == current_user.id,
+        models.SolicitudHHEE.fecha_hhee == solicitud_data.fecha_hhee,
+        models.SolicitudHHEE.tipo == solicitud_data.tipo
+    )
+    result_existente = await db.execute(query_existente)
+    solicitudes_existentes = result_existente.scalars().all()
+
+    # 2. Revisamos las solicitudes existentes para ver si alguna está activa.
+    if solicitudes_existentes:
+        for sol in solicitudes_existentes:
+            if sol.estado in [EstadoSolicitudHHEE.PENDIENTE, EstadoSolicitudHHEE.APROBADA]:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT, # 409 es el código HTTP para "Conflicto"
+                    detail=f"Ya tienes una solicitud en estado '{sol.estado.value}' para esta fecha y tipo. No puedes crear otra."
+                )
+   
+
+    # Si pasamos la validación, creamos la nueva solicitud (el código que ya teníamos)
     nueva_solicitud = models.SolicitudHHEE(
         **solicitud_data.model_dump(),
         analista_id=current_user.id,
@@ -546,7 +568,6 @@ async def crear_solicitud_hhee(
     await db.commit()
     await db.refresh(nueva_solicitud)
     
-    # Recargamos con las relaciones para una respuesta completa
     result = await db.execute(
         select(models.SolicitudHHEE)
         .options(selectinload(models.SolicitudHHEE.solicitante))
@@ -572,20 +593,68 @@ async def obtener_mis_solicitudes(
     return result.scalars().all()
 
 
-@router.get("/solicitudes/pendientes/", response_model=List[SolicitudHHEE], summary="[Supervisor] Ver todas las solicitudes pendientes")
+@router.get("/solicitudes/pendientes/", summary="[Supervisor] Ver solicitudes pendientes por rango de fecha con datos de GV")
 async def obtener_solicitudes_pendientes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES])),
+    fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
+    fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
     """
-    Devuelve una lista de todas las solicitudes de HHEE que están en estado PENDIENTE.
+    Devuelve una lista de solicitudes PENDIENTES dentro de un rango de fechas,
+    enriquecidas con los datos de marcación de GeoVictoria.
     """
     query = select(models.SolicitudHHEE).options(
         selectinload(models.SolicitudHHEE.solicitante)
-    ).filter(models.SolicitudHHEE.estado == EstadoSolicitudHHEE.PENDIENTE).order_by(models.SolicitudHHEE.fecha_solicitud.asc())
+    ).filter(
+        models.SolicitudHHEE.estado == EstadoSolicitudHHEE.PENDIENTE,
+        models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
+    ).order_by(models.SolicitudHHEE.analista_id, models.SolicitudHHEE.fecha_hhee)
 
     result = await db.execute(query)
-    return result.scalars().all()
+    solicitudes = result.scalars().all()
+
+    if not solicitudes:
+        return []
+
+    ruts_unicos = {sol.solicitante.rut.replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
+    
+    fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+    fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+    
+    datos_gv_lista = []
+    if ruts_unicos:
+        token = await geovictoria_service.obtener_token_geovictoria()
+        if token:
+            datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
+                token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt
+            )
+    
+    # --- INICIO DE LA CORRECCIÓN CLAVE ---
+    # Procesamos los datos de GeoVictoria para añadir nuestro cálculo
+    datos_gv_procesados = []
+    for dia in datos_gv_lista:
+        logica = geovictoria_service.aplicar_logica_de_negocio(dia)
+        datos_gv_procesados.append({**dia, **logica})
+    
+    # Creamos el mapa con los datos ya procesados
+    mapa_datos_gv = {
+        (item['rut_limpio'], item['fecha']): item for item in datos_gv_procesados
+    }
+    # --- FIN DE LA CORRECCIÓN CLAVE ---
+    
+    respuesta_enriquecida = []
+    for sol in solicitudes:
+        rut_limpio_solicitud = sol.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
+        fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
+        
+        datos_gv_del_dia = mapa_datos_gv.get((rut_limpio_solicitud, fecha_str_solicitud), {})
+        
+        solicitud_dict = SolicitudHHEE.model_validate(sol).model_dump()
+        solicitud_dict['datos_geovictoria'] = datos_gv_del_dia
+        respuesta_enriquecida.append(solicitud_dict)
+
+    return respuesta_enriquecida
 
 
 @router.post("/solicitudes/{solicitud_id}/procesar/", response_model=SolicitudHHEE, summary="[Supervisor] Aprobar o Rechazar una solicitud")
@@ -601,7 +670,10 @@ async def procesar_solicitud(
     """
     result = await db.execute(
         select(models.SolicitudHHEE)
-        .options(selectinload(models.SolicitudHHEE.solicitante))
+        .options(
+            selectinload(models.SolicitudHHEE.solicitante)
+            .selectinload(models.Analista.campanas_asignadas) 
+        )
         .filter(models.SolicitudHHEE.id == solicitud_id)
     )
     solicitud = result.scalars().first()
@@ -652,3 +724,122 @@ async def procesar_solicitud(
     await db.commit()
     await db.refresh(solicitud)
     return solicitud
+
+@router.get("/solicitudes/{solicitud_id}/detalle-validacion/", summary="[Supervisor] Obtener detalle de una solicitud + datos de GeoVictoria")
+async def obtener_detalle_solicitud_para_validacion(
+    solicitud_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    """
+    Obtiene los datos de una solicitud específica y los enriquece
+    con la información de marcación de GeoVictoria para ese día y analista.
+    """
+    # 1. Obtenemos la solicitud de nuestra base de datos
+    result = await db.execute(
+        select(models.SolicitudHHEE)
+        .options(selectinload(models.SolicitudHHEE.solicitante))
+        .filter(models.SolicitudHHEE.id == solicitud_id)
+    )
+    solicitud = result.scalars().first()
+    if not solicitud:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada.")
+
+    # 2. Obtenemos el RUT y la fecha para consultar el servicio externo
+    rut_analista = getattr(solicitud.solicitante, 'rut', None)
+    if not rut_analista:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="El analista solicitante no tiene un RUT configurado.")
+    
+    rut_limpio = rut_analista.replace('-', '').replace('.', '').upper()
+    fecha_dt = datetime.combine(solicitud.fecha_hhee, datetime.min.time())
+
+    # 3. Consultamos a GeoVictoria
+    token = await geovictoria_service.obtener_token_geovictoria()
+    if not token:
+        raise HTTPException(status_code=503, detail="No se pudo comunicar con GeoVictoria.")
+    
+    datos_gv = await geovictoria_service.obtener_datos_completos_periodo(token, [rut_limpio], fecha_dt, fecha_dt)
+    
+    # 4. Procesamos los datos y devolvemos todo junto
+    datos_dia_gv = {}
+    if datos_gv:
+        logica_negocio = geovictoria_service.aplicar_logica_de_negocio(datos_gv[0])
+        datos_dia_gv = {**datos_gv[0], **logica_negocio}
+
+    return {
+        "solicitud": SolicitudHHEE.model_validate(solicitud).model_dump(),
+        "datos_geovictoria": datos_dia_gv
+    }
+    
+
+@router.post("/solicitudes/procesar-lote/", status_code=status.HTTP_200_OK, summary="[Supervisor] Procesar un lote de solicitudes de HHEE")
+async def procesar_solicitudes_lote(
+    lote_data: SolicitudHHEELote,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+):
+    """
+    Procesa una lista de decisiones sobre solicitudes de HHEE.
+    Actualiza cada solicitud y crea las validaciones correspondientes si son aprobadas.
+    Toda la operación se realiza en una única transacción.
+    """
+    solicitud_ids = [d.solicitud_id for d in lote_data.decisiones]
+    if not solicitud_ids:
+        return {"detail": "No se proporcionaron decisiones para procesar."}
+
+    try:
+        # Hacemos una única consulta para obtener todas las solicitudes a la vez (más eficiente)
+        query = select(models.SolicitudHHEE).options(
+            selectinload(models.SolicitudHHEE.solicitante)
+            .selectinload(models.Analista.campanas_asignadas)
+        ).filter(models.SolicitudHHEE.id.in_(solicitud_ids))
+        
+        result = await db.execute(query)
+        solicitudes_a_procesar = result.scalars().all()
+        
+        # Creamos un diccionario para acceder fácilmente a cada solicitud por su ID
+        solicitudes_map = {s.id: s for s in solicitudes_a_procesar}
+
+        for decision in lote_data.decisiones:
+            solicitud = solicitudes_map.get(decision.solicitud_id)
+            if not solicitud or solicitud.estado != EstadoSolicitudHHEE.PENDIENTE:
+                # Si la solicitud no se encuentra o ya fue procesada, la ignoramos
+                continue
+
+            # Actualizamos la solicitud con los datos de la decisión
+            solicitud.estado = decision.estado
+            solicitud.horas_aprobadas = decision.horas_aprobadas
+            solicitud.comentario_supervisor = decision.comentario_supervisor
+            solicitud.supervisor_id = current_user.id
+            solicitud.fecha_decision = datetime.utcnow()
+
+            # Si se aprueba, creamos la entrada en la tabla de validaciones
+            if solicitud.estado == EstadoSolicitudHHEE.APROBADA and solicitud.horas_aprobadas > 0:
+                tipo_validacion_map = {
+                    TipoSolicitudHHEE.ANTES_TURNO: "Antes de Turno",
+                    TipoSolicitudHHEE.DESPUES_TURNO: "Después de Turno",
+                    TipoSolicitudHHEE.DIA_DESCANSO: "Día de Descanso",
+                }
+                tipo_hhee_validacion = tipo_validacion_map.get(solicitud.tipo)
+                
+                if tipo_hhee_validacion:
+                    nueva_validacion = models.ValidacionHHEE(
+                        rut=formatear_rut(solicitud.solicitante.rut) if hasattr(solicitud.solicitante, 'rut') else "",
+                        nombre_apellido=f"{solicitud.solicitante.nombre} {solicitud.solicitante.apellido}",
+                        campaña=solicitud.solicitante.campanas_asignadas[0].nombre if solicitud.solicitante.campanas_asignadas else "General",
+                        fecha_hhee=solicitud.fecha_hhee,
+                        tipo_hhee=tipo_hhee_validacion,
+                        cantidad_hhee_aprobadas=solicitud.horas_aprobadas,
+                        estado="Validado",
+                        supervisor_carga=current_user.email,
+                        notas=f"Aprobado desde solicitud #{solicitud.id}. Comentario: {decision.comentario_supervisor or ''}".strip()
+                    )
+                    db.add(nueva_validacion)
+
+        await db.commit()
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ocurrió un error al procesar el lote: {e}")
+
+    return {"detail": f"{len(lote_data.decisiones)} decisiones procesadas con éxito."}

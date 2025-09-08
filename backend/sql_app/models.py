@@ -30,6 +30,7 @@ class Analista(Base):
     apellido = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     bms_id = Column(Integer, unique=True, nullable=False)
+    rut = Column(String, unique=True, index=True, nullable=True)
     hashed_password = Column(String, nullable=False)
     role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.ANALISTA)
     esta_activo = Column(Boolean, default=True)

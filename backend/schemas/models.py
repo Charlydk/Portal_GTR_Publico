@@ -11,6 +11,7 @@ class AnalistaBase(BaseModel):
     apellido: str
     email: EmailStr
     bms_id: int
+    rut: Optional[str] = None
     role: UserRole
     esta_activo: Optional[bool] = True
 
@@ -386,6 +387,7 @@ class SolicitudHHEECreate(SolicitudHHEEBase):
     pass
 
 class SolicitudHHEEDecision(BaseModel):
+    estado: EstadoSolicitudHHEE
     horas_aprobadas: float = Field(..., ge=0)
     comentario_supervisor: Optional[str] = None
 
@@ -403,6 +405,17 @@ class SolicitudHHEE(SolicitudHHEEBase):
 
     class Config:
         from_attributes = True
+        
+# Esquema para una única decisión dentro del lote
+class SolicitudHHEEProcesarItem(BaseModel):
+    solicitud_id: int
+    estado: EstadoSolicitudHHEE
+    horas_aprobadas: float = Field(..., ge=0)
+    comentario_supervisor: Optional[str] = None
+
+# Esquema para el lote completo que enviará el frontend
+class SolicitudHHEELote(BaseModel):
+    decisiones: List[SolicitudHHEEProcesarItem]
 
 
 # --- Forward References Update ---

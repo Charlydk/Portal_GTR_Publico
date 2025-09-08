@@ -12,6 +12,7 @@ function FormularioAnalistaPage() {
     apellido: '',
     email: '',
     bms_id: '',
+    rut: '',
     password: '', // Solo para el registro, no para la actualización de datos generales
     role: 'ANALISTA' // Valor por defecto para nuevos registros
   });
@@ -44,6 +45,7 @@ function FormularioAnalistaPage() {
           apellido: data.apellido,
           email: data.email,
           bms_id: data.bms_id,
+          rut: data.rut || '',
           password: '', // No cargamos la contraseña por seguridad
           role: data.role
         });
@@ -89,6 +91,7 @@ function FormularioAnalistaPage() {
           apellido: formData.apellido,
           email: formData.email,
           bms_id: parseInt(formData.bms_id),
+          rut: formData.rut,
           role: formData.role // Permitimos actualizar el rol en edición
         };
       } else { // Modo creación (registro)
@@ -99,6 +102,7 @@ function FormularioAnalistaPage() {
           apellido: formData.apellido,
           email: formData.email,
           bms_id: parseInt(formData.bms_id),
+          rut: formData.rut,
           password: formData.password,
           role: formData.role
         };
@@ -226,6 +230,19 @@ function FormularioAnalistaPage() {
             disabled={isSubmitting}
           />
         </div>
+        <div className="mb-3">
+              <label htmlFor="rutInput" className="form-label">RUT:</label>
+              <input
+                type="text"
+                className="form-control rounded-md"
+                id="rutInput"
+                name="rut"
+                value={formData.rut}
+                onChange={handleChange}
+                placeholder="Ej: 12345678-9"
+                disabled={isSubmitting}
+              />
+          </div>
         {showPasswordField && (
           <div className="mb-3">
             <label htmlFor="passwordInput" className="form-label">Contraseña:</label>

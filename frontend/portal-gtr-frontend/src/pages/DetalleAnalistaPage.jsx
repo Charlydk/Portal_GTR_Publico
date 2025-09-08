@@ -231,6 +231,7 @@ function DetalleAnalistaPage() {
       <p><strong>Apellido:</strong> {analista.apellido}</p>
       <p><strong>Email:</strong> {analista.email}</p>
       <p><strong>BMS ID:</strong> {analista.bms_id}</p>
+      <p><strong>RUT:</strong> {analista.rut || 'N/A'}</p>
       <p><strong>Rol:</strong> {analista.role}</p>
       <p><strong>Activo:</strong> {analista.esta_activo ? 'Sí' : 'No'}</p>
       <p><strong>Fecha de Creación:</strong> {formatDateTime(analista.fecha_creacion)}</p>

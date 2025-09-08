@@ -126,6 +126,7 @@ function AnalistasPage() {
               <th>Apellido</th>
               <th>Email</th>
               <th>BMS ID</th>
+              <th>RUT</th>
               <th>Rol</th>
               <th>Activo</th>
               <th>Acciones</th>
@@ -139,6 +140,7 @@ function AnalistasPage() {
                 <td>{analista.apellido}</td>
                 <td>{analista.email}</td>
                 <td>{analista.bms_id}</td>
+                <td>{analista.rut || 'N/A'}</td>
                 <td>{analista.role}</td>
                 <td>{analista.esta_activo ? 'Sí' : 'No'}</td>
                 <td>

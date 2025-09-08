@@ -143,8 +143,10 @@ async def obtener_analistas(
         selectinload(models.Analista.avisos_creados),
         selectinload(models.Analista.acuses_recibo_avisos),
         selectinload(models.Analista.tareas_generadas_por_avisos),
-        selectinload(models.Analista.incidencias_creadas),
+        selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
         selectinload(models.Analista.incidencias_asignadas),
+        selectinload(models.Analista.solicitudes_realizadas),
+        selectinload(models.Analista.solicitudes_gestionadas)
         
 
     )
@@ -170,7 +172,9 @@ async def obtener_analista_por_id(
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
             selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
             selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-            selectinload(models.Analista.incidencias_asignadas)
+            selectinload(models.Analista.incidencias_asignadas),
+            selectinload(models.Analista.solicitudes_realizadas),
+            selectinload(models.Analista.solicitudes_gestionadas)
         )
     )
     analista = result.scalars().first()
@@ -253,9 +257,11 @@ async def actualizar_analista(
                 selectinload(models.Analista.tareas),
                 selectinload(models.Analista.avisos_creados),
                 selectinload(models.Analista.acuses_recibo_avisos),
-                selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas),
-                selectinload(models.Analista.incidencias_asignadas)
+                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),selectinload(models.Analista.tareas_generadas_por_avisos),
+                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
+                selectinload(models.Analista.incidencias_asignadas),
+                selectinload(models.Analista.solicitudes_realizadas),
+                selectinload(models.Analista.solicitudes_gestionadas)
             )
         )
         analista_to_return = result.scalars().first()
