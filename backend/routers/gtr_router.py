@@ -1868,17 +1868,7 @@ async def delete_bitacora_entry(
     db_entry = db_entry_result.scalars().first()
     if not db_entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Entrada de bitácora no encontrada.")
-
-    if current_analista.role == UserRole.ANALISTA.value:
-        analista_with_campanas_result = await db.execute(
-            select(models.Analista)
-            .filter(models.Analista.id == current_analista.id)
-            .options(selectinload(models.Analista.campanas_asignadas))
-        )
-        analista_with_campanas = analista_with_campanas_result.scalars().first()
-        if not analista_with_campanas or db_entry.campana not in analista_with_campanas.campanas_asignadas:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para eliminar esta entrada de bitácora.")
-
+    
     await db.delete(db_entry)
     try:
         await db.commit()
@@ -2032,11 +2022,7 @@ async def get_incidencias(
         selectinload(models.Incidencia.campana)
     ).order_by(models.Incidencia.fecha_apertura.desc())
 
-    # Un analista solo ve las de sus campañas, los demás ven todo
-    if current_analista.role == UserRole.ANALISTA.value:
-        assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
-        query = query.filter(models.Incidencia.campana_id.in_(assigned_campaign_ids))
-
+    
     result = await db.execute(query)
     return result.scalars().unique().all()
 
@@ -2060,18 +2046,6 @@ async def get_incidencia_by_id(
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
     
-    # Lógica de permisos mejorada
-    if current_analista.role == UserRole.ANALISTA.value:
-        # Verificamos si el analista está asignado a la campaña
-        is_assigned_to_campaign = any(c.id == incidencia.campana_id for c in current_analista.campanas_asignadas)
-        
-        # Verificamos si el analista es el creador de la incidencia
-        is_creator = incidencia.creador_id == current_analista.id
-
-        # Si no está asignado a la campaña Y TAMPOCO es el creador, denegamos el acceso
-        if not is_assigned_to_campaign and not is_creator:
-            raise HTTPException(status_code=403, detail="No tienes permiso para ver esta incidencia.")
-
     return incidencia
 
 @router.post("/incidencias/{incidencia_id}/actualizaciones", response_model=ActualizacionIncidencia, summary="Añadir una actualización a una Incidencia")
