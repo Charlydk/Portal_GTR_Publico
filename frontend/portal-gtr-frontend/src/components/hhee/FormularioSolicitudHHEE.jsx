@@ -70,7 +70,7 @@ function FormularioSolicitudHHEE({ onSubmit, loading, error, success }) {
                 <Col md={2}>
                     <Form.Group controlId="horas_solicitadas">
                         {/* <-- CAMBIO: El input ahora es de tipo 'time' */}
-                        <Form.Label>Horas (HH:MM)</Form.Label>
+                        <Form.Label>Cant. Horas</Form.Label>
                         <Form.Control type="time" name="horas_solicitadas" value={formData.horas_solicitadas} onChange={handleChange} required />
                     </Form.Group>
                 </Col>

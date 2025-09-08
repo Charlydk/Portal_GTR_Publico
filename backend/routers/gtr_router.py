@@ -79,10 +79,7 @@ async def crear_analista(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    """
-    Crea un nuevo analista en el sistema y lo guarda en la base de datos.
-    Requiere autenticación y rol de SUPERVISOR o RESPONSABLE.
-    """
+    # ... (la validación de email y bms_id no cambia) ...
     existing_analista_by_email = await get_analista_by_email(analista.email, db)
     if existing_analista_by_email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El email ya está registrado.")
@@ -92,20 +89,26 @@ async def crear_analista(
     if existing_analista_by_bms:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El BMS ID ya existe.")
 
-    hashed_password = get_password_hash(analista.password)
-    db_analista = models.Analista(
-        nombre=analista.nombre,
-        apellido=analista.apellido,
-        email=analista.email,
-        bms_id=analista.bms_id,
-        hashed_password=hashed_password,
-        role=analista.role.value
-    )
+    # --- INICIO DE LA CORRECCIÓN ---
+    # 1. Convertimos el objeto Pydantic a un diccionario
+    analista_data = analista.model_dump()
+    
+    # 2. Si el RUT es una cadena vacía, lo convertimos a None para que la BD lo guarde como NULL
+    if "rut" in analista_data and not analista_data["rut"]:
+        analista_data["rut"] = None
+        
+    hashed_password = get_password_hash(analista_data.pop("password"))
+    
+    db_analista = models.Analista(**analista_data, hashed_password=hashed_password)
+    # --- FIN DE LA CORRECCIÓN ---
+    
     db.add(db_analista)
     try:
         await db.commit()
         await db.refresh(db_analista)
-        # Recargar el analista con todas las relaciones para la respuesta
+        
+        # --- CORRECCIÓN PARA EL ERROR MissingGreenlet ---
+        # Recargamos el analista con TODAS las relaciones necesarias
         result = await db.execute(
             select(models.Analista)
             .filter(models.Analista.id == db_analista.id)
@@ -115,8 +118,10 @@ async def crear_analista(
                 selectinload(models.Analista.avisos_creados),
                 selectinload(models.Analista.acuses_recibo_avisos),
                 selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas),
-                selectinload(models.Analista.incidencias_asignadas)
+                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
+                selectinload(models.Analista.incidencias_asignadas),
+                selectinload(models.Analista.solicitudes_realizadas),
+                selectinload(models.Analista.solicitudes_gestionadas)
             )
         )
         analista_to_return = result.scalars().first()
@@ -126,6 +131,9 @@ async def crear_analista(
         return analista_to_return
     except Exception as e:
         await db.rollback()
+        # Manejo de error de duplicado de RUT
+        if 'UniqueViolationError' in str(e) and 'analistas_rut_key' in str(e):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El RUT ingresado ya existe.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error inesperado al crear analista: {e}"
@@ -237,6 +245,8 @@ async def actualizar_analista(
 
 
     analista_data = analista_update.model_dump(exclude_unset=True)
+    if "rut" in analista_data and not analista_data["rut"]:
+        analista_data["rut"] = None
     for key, value in analista_data.items():
         if key == "hashed_password":
             continue
