@@ -88,7 +88,7 @@ const AppContent = () => {
           <Route path="/hhee/reportes" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><ReportesHHEEPage /></PrivateRoute>} />
           <Route path="/hhee/metricas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><MetricasHHEEPage /></PrivateRoute>} />
           <Route path="/mis-solicitudes-hhee" element={<PrivateRoute allowedRoles={['ANALISTA']}><MisSolicitudesHHEEPage /></PrivateRoute>} />
-          <Route path="/aprobar-hhee" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><AprobacionHHEEPage /></PrivateRoute>}/>
+          <Route path="/aprobar-hhee" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AprobacionHHEEPage /></PrivateRoute>}/>
           
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>

@@ -1,3 +1,5 @@
+// src/components/Navbar.jsx
+
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -28,38 +30,31 @@ function Navbar() {
                         {user && (
                             <li className="nav-item"><Link className="nav-link" to="/dashboard">Dashboard</Link></li>
                         )}
-
-                                                
+                        
                         {isGtrUser && (
                             <>
                                 <li className="nav-item"><Link className="nav-link" to="/avisos">Avisos</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/tareas">Tareas</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/campanas">Campañas</Link></li>
-                                
-                                
                                 {user.role === 'ANALISTA' && (
                                     <li className="nav-item"><Link className="nav-link" to="/mis-solicitudes-hhee">Mis Solicitudes HHEE</Link></li>
                                 )}
-                            </> 
+                            </>
                         )}
 
                         {isGtrAdmin && (
                             <>
                                 <li className="nav-item"><Link className="nav-link" to="/analistas">Analistas</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link></li>
+                                <li className="nav-item"><Link className="nav-link" to="/aprobar-hhee">Aprobar HHEE</Link></li>
                             </>
                         )}
 
-                        {/* --- ENLACES DEL MÓDULO HHEE CORREGIDOS --- */}
                         {isHheeUser && (
-                            <li className="nav-item"><Link className="nav-link" to="/hhee/portal">Portal HHEE</Link></li>
-                        )}
-                        {isHheeUser && ( // Todos los roles de HHEE pueden ver reportes y métricas
                             <>
+                                <li className="nav-item"><Link className="nav-link" to="/hhee/portal">Portal HHEE</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/hhee/reportes">Reportes HHEE</Link></li>
                                 <li className="nav-item"><Link className="nav-link" to="/hhee/metricas">Métricas HHEE</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/aprobar-hhee">Aprobar HHEE</Link></li>
-
                             </>
                         )}
                     </ul>
