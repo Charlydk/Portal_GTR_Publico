@@ -153,14 +153,26 @@ function AprobacionHHEEPage() {
                                             }
                                             // -------------------------------------------------------------
 
+                                            // --- FUNCIÓN DE FORMATEO LOCAL ---
+                                            const formatDateOnly = (dateString) => {
+                                                if (!dateString) return 'N/A';
+                                                const [year, month, day] = dateString.split('-');
+                                                return `${day}/${month}/${year}`;
+                                            };
+                                            // ---------------------------------
+
                                             return (
                                                 <tr key={sol.id}>
                                                     <td>
-                                                        {new Date(sol.fecha_hhee + 'T00:00:00-03:00').toLocaleDateString('es-AR')}
+                                                        {formatDateOnly(sol.fecha_hhee)}
                                                         <div className="text-muted small">{sol.justificacion}</div>
                                                     </td>
-                                                    <td>
-                                                        <div><Badge bg="secondary">Turno</Badge> {gv.inicio_turno_teorico || 'N/A'} - {gv.fin_turno_teorico || 'N/A'}</div>
+                                                    <td style={{ minWidth: '180px' }}>
+                                                        {gv.inicio_turno_teorico === '00:00' && gv.fin_turno_teorico === '00:00' ? (
+                                                            <div><Badge bg="secondary">Turno</Badge> <span className="fw-bold dark">Descanso</span></div>
+                                                        ) : (
+                                                            <div><Badge bg="secondary">Turno</Badge> {gv.inicio_turno_teorico || 'N/A'} - {gv.fin_turno_teorico || 'N/A'}</div>
+                                                        )}
                                                         <div><Badge>Marcas</Badge> {gv.marca_real_inicio || 'N/A'} - {gv.marca_real_fin || 'N/A'}</div>
                                                     </td>
                                                     <td>

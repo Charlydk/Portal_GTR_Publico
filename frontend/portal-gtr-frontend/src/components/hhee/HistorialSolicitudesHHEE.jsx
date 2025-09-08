@@ -18,6 +18,14 @@ function HistorialSolicitudesHHEE({ solicitudes }) {
         return tipo.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase());
     };
 
+    // --- FUNCIÓN DE FORMATEO PARA ZONAS HORARIAS ---
+    const formatDateOnly = (dateString) => {
+        if (!dateString) return 'N/A';
+        const [year, month, day] = dateString.split('-');
+        return `${day}/${month}/${year}`;
+    };
+    // --------------------------------------------------------
+
     return (
         <Table striped bordered hover responsive>
             <thead>
@@ -35,7 +43,7 @@ function HistorialSolicitudesHHEE({ solicitudes }) {
                 {solicitudes.length > 0 ? (
                     solicitudes.map(solicitud => (
                         <tr key={solicitud.id}>
-                            <td>{new Date(solicitud.fecha_hhee + 'T00:00:00-03:00').toLocaleDateString('es-AR')}</td>
+                            <td>{formatDateOnly(solicitud.fecha_hhee)}</td>
                             <td>{formatTipo(solicitud.tipo)}</td>
                             <td>{solicitud.horas_solicitadas.toFixed(2)}</td>
                             <td>{getStatusBadge(solicitud.estado)}</td>
