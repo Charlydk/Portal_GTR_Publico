@@ -778,17 +778,12 @@ async def procesar_solicitudes_lote(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
-    """
-    Procesa una lista de decisiones sobre solicitudes de HHEE.
-    Actualiza cada solicitud y crea las validaciones correspondientes si son aprobadas.
-    Toda la operación se realiza en una única transacción.
-    """
     solicitud_ids = [d.solicitud_id for d in lote_data.decisiones]
     if not solicitud_ids:
         return {"detail": "No se proporcionaron decisiones para procesar."}
 
     try:
-        # Hacemos una única consulta para obtener todas las solicitudes a la vez (más eficiente)
+        # 1. Obtenemos todas las solicitudes para tener los datos originales
         query = select(models.SolicitudHHEE).options(
             selectinload(models.SolicitudHHEE.solicitante)
             .selectinload(models.Analista.campanas_asignadas)
@@ -796,15 +791,48 @@ async def procesar_solicitudes_lote(
         
         result = await db.execute(query)
         solicitudes_a_procesar = result.scalars().all()
-        
-        # Creamos un diccionario para acceder fácilmente a cada solicitud por su ID
         solicitudes_map = {s.id: s for s in solicitudes_a_procesar}
 
+        # 2. Obtenemos los datos de GeoVictoria para estas solicitudes para verificar los máximos
+        ruts_unicos = {s.solicitante.rut.replace('-', '').replace('.', '').upper() for s in solicitudes_a_procesar if hasattr(s.solicitante, 'rut') and s.solicitante.rut}
+        if ruts_unicos:
+            fecha_min = min(s.fecha_hhee for s in solicitudes_a_procesar)
+            fecha_max = max(s.fecha_hhee for s in solicitudes_a_procesar)
+            fecha_inicio_dt = datetime.combine(fecha_min, datetime.min.time())
+            fecha_fin_dt = datetime.combine(fecha_max, datetime.max.time())
+            token = await geovictoria_service.obtener_token_geovictoria()
+            datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt) if token else []
+            
+            datos_gv_procesados = [{**dia, **geovictoria_service.aplicar_logica_de_negocio(dia)} for dia in datos_gv_lista]
+            mapa_datos_gv = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_procesados}
+        else:
+            mapa_datos_gv = {}
+
+        # 3. Iteramos sobre las decisiones y VALIDAMOS antes de guardar
         for decision in lote_data.decisiones:
             solicitud = solicitudes_map.get(decision.solicitud_id)
             if not solicitud or solicitud.estado != EstadoSolicitudHHEE.PENDIENTE:
-                # Si la solicitud no se encuentra o ya fue procesada, la ignoramos
                 continue
+
+            # Validamos que las horas aprobadas no excedan el máximo calculado desde GeoVictoria
+            rut_limpio = solicitud.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(solicitud.solicitante, 'rut') and solicitud.solicitante.rut else None
+            fecha_str = solicitud.fecha_hhee.strftime('%Y-%m-%d')
+            gv_data = mapa_datos_gv.get((rut_limpio, fecha_str), {})
+            
+            max_calculado = 0
+            if solicitud.tipo == TipoSolicitudHHEE.ANTES_TURNO:
+                max_calculado = gv_data.get('hhee_inicio_calculadas', 0)
+            elif solicitud.tipo == TipoSolicitudHHEE.DESPUES_TURNO:
+                max_calculado = gv_data.get('hhee_fin_calculadas', 0)
+            else: # DIA_DESCANSO
+                max_calculado = gv_data.get('cantidad_hhee_calculadas', 0)
+
+            if decision.horas_aprobadas > max_calculado:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Para la solicitud #{solicitud.id}, no se pueden aprobar {decision.horas_aprobadas} horas. El máximo calculado es {max_calculado:.2f}."
+                )
+           
 
             # Actualizamos la solicitud con los datos de la decisión
             solicitud.estado = decision.estado
@@ -840,6 +868,9 @@ async def procesar_solicitudes_lote(
 
     except Exception as e:
         await db.rollback()
+        # Si el error ya es una HTTPException, lo relanzamos. Si no, lo envolvemos.
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ocurrió un error al procesar el lote: {e}")
 
     return {"detail": f"{len(lote_data.decisiones)} decisiones procesadas con éxito."}

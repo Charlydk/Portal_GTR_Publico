@@ -175,15 +175,20 @@ function AprobacionHHEEPage() {
                                                 // Para día de descanso, sí usamos el total
                                                 calculoSugerido = gv.cantidad_hhee_calculadas || 0;
                                             }
-                                            // -------------------------------------------------------------
+                                            
 
-                                            // --- FUNCIÓN DE FORMATEO LOCAL ---
+                                            // --- FUNCIÓN DE FORMATEO HORA LOCAL ---
                                             const formatDateOnly = (dateString) => {
                                                 if (!dateString) return 'N/A';
                                                 const [year, month, day] = dateString.split('-');
                                                 return `${day}/${month}/${year}`;
                                             };
                                             // ---------------------------------
+
+                                            // Obtenemos el valor actual del input, ya sea el editado o el por defecto.
+                                            const valorActualHHMM = cambioActual.horas_aprobadas ?? decimalToHHMM(calculoSugerido);
+                                            // Comparamos el valor actual (convertido a decimal) con el máximo permitido.
+                                            const isInvalid = hhmmToDecimal(valorActualHHMM) > calculoSugerido;
 
                                             return (
                                                 <tr key={sol.id}>
@@ -203,16 +208,16 @@ function AprobacionHHEEPage() {
                                                     <div className="d-flex align-items-center mb-1">
                                                         <Form.Label className="me-2 mb-0 fw-bold" style={{whiteSpace: 'nowrap'}}>
                                                             {sol.tipo === 'DIA_DESCANSO' ? 'DESCANSO' : sol.tipo.split('_')[0]}:
-                                                            
-
                                                         </Form.Label>
                                                             <Form.Control 
                                                                 type="time"
                                                                 size="sm"
                                                                 style={{ width: '120px' }}
-                                                                // --- CAMBIO: Usamos la nueva variable calculoSugerido ---
-                                                                value={cambioActual.horas_aprobadas ?? decimalToHHMM(calculoSugerido)}
+                                                                max={decimalToHHMM(calculoSugerido)}
+                                                                value={valorActualHHMM}
                                                                 onChange={e => handleChanges(sol.id, 'horas_aprobadas', e.target.value)}
+                                                                // --- PROPIEDAD AÑADIDA PARA EL ESTILO ROJO ---
+                                                                isInvalid={isInvalid}
                                                             />
                                                             <Badge bg="success" className="ms-2">Solic: {decimalToHHMM(sol.horas_solicitadas)}</Badge>
                                                         </div>
