@@ -66,6 +66,11 @@ app.add_middleware(
 app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router, prefix="/hhee")
 
+
+@app.get("/health", status_code=status.HTTP_200_OK)
+async def health_check():
+    return {"status": "ok"}
+
 @app.post(
     "/token",
     response_model=Token,
