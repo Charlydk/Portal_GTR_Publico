@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.orm import selectinload
 from services import geovictoria_service
 from datetime import datetime, date
@@ -968,3 +968,68 @@ async def obtener_historial_solicitudes(
         respuesta_enriquecida.append(solicitud_dict)
 
     return respuesta_enriquecida
+
+
+@router.post("/exportar-y-marcar-rrhh", summary="[GTR] Exporta para RRHH y marca registros como enviados")
+async def exportar_y_marcar_rrhh(
+    request: ExportRequest, # Reutilizamos el mismo modelo de solicitud
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Genera el reporte para RRHH (formato ADP), marca los registros
+    como 'reportado_a_rrhh = true' y guarda quién y cuándo lo hizo.
+    Esta es una acción final y solo para roles GTR.
+    """
+    try:
+        # 1. Buscamos los registros que cumplen las condiciones (igual que antes)
+        query = select(models.ValidacionHHEE).filter(
+            models.ValidacionHHEE.estado == 'Validado',
+            models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin),
+            models.ValidacionHHEE.reportado_a_rrhh == False
+        ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
+        
+        result = await db.execute(query)
+        validaciones = result.scalars().all()
+
+        if not validaciones:
+            raise HTTPException(status_code=404, detail="No se encontraron HHEE nuevas para reportar a RRHH en el período seleccionado.")
+
+        # 2. Generamos los datos para el Excel (lógica sin cambios)
+        permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
+        datos_para_excel = [{
+            "Cod Funcionario": v.rut, "Nombre": v.nombre_apellido,
+            "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
+            "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
+            "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
+            "Cant Horas": decimal_to_hhmm(v.cantidad_hhee_aprobadas)
+        } for v in validaciones]
+
+        df = pd.DataFrame(datos_para_excel)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Reporte RRHH')
+        output.seek(0)
+        
+        # 3. Actualizamos la bandera y los nuevos campos en la base de datos
+        ids_a_actualizar = [v.id for v in validaciones]
+        if ids_a_actualizar:
+            update_stmt = update(models.ValidacionHHEE).where(
+                models.ValidacionHHEE.id.in_(ids_a_actualizar)
+            ).values(
+                reportado_a_rrhh=True,
+                reportado_por_id=current_user.id,
+                fecha_reportado=func.now() # La base de datos pone la hora actual
+            )
+            await db.execute(update_stmt)
+            await db.commit()
+
+        # 4. Devolvemos el archivo Excel al usuario
+        headers = {'Content-Disposition': f'attachment; filename="REPORTE_FINAL_RRHH_{request.fecha_inicio}_a_{request.fecha_fin}.xlsx"'}
+        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")

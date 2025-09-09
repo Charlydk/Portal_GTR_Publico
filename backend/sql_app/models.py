@@ -242,7 +242,11 @@ class ValidacionHHEE(Base):
     turno_teorico_fin = Column(String, nullable=True)
     marca_real_inicio = Column(String, nullable=True)
     marca_real_fin = Column(String, nullable=True)
-    
+    # campos para bandera de hhee enviadas a ADP
+    reportado_a_rrhh = Column(Boolean, default=False, nullable=False, index=True)
+    reportado_por_id = Column(Integer, ForeignKey('analistas.id'), nullable=True)
+    fecha_reportado = Column(DateTime(timezone=True), nullable=True)
+    reportado_por = relationship("Analista")
 class SolicitudHHEE(Base):
     __tablename__ = 'solicitudes_hhee'
 

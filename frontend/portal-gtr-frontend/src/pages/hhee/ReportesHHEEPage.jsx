@@ -1,7 +1,9 @@
+// src/pages/hhee/ReportesHHEEPage.jsx
 import React, { useState } from 'react';
-import { Container, Form, Button, Card, Spinner, Alert, Row, Col } from 'react-bootstrap';
+import { Container, Form, Button, Card, Spinner, Alert, Row, Col, Modal } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { API_BASE_URL } from '../../api';
+
 
 function ReportesHHEEPage() {
     const [fechaInicio, setFechaInicio] = useState('');
@@ -9,14 +11,11 @@ function ReportesHHEEPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const { authToken, user } = useAuth();
+    
+    // --- NUEVO: Estado para el modal de confirmación ---
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-    // --- INICIO DE LA NUEVA LÓGICA ---
-    const formatDate = (date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
+    const formatDate = (date) => date.toISOString().split('T')[0];
     
     const handlePeriodoChange = (seleccion) => {
         let fechaInicio, fechaFin;
@@ -36,23 +35,23 @@ function ReportesHHEEPage() {
         setFechaInicio(formatDate(fechaInicio));
         setFechaFin(formatDate(fechaFin));
     };
-    // --- FIN DE LA NUEVA LÓGICA ---
 
-    const handleExportar = async (formato) => {
+    const handleExportar = async (formato, marcarComoReportado = false) => {
         if (!fechaInicio || !fechaFin) {
             setError("Por favor, seleccione una fecha de inicio y de fin.");
             return;
         }
         setLoading(true);
         setError(null);
+        setShowConfirmModal(false); // Cerramos el modal
+
+        // --- CAMBIO: Decidimos a qué endpoint llamar ---
+        const endpoint = marcarComoReportado ? '/hhee/exportar-y-marcar-rrhh' : '/hhee/exportar';
 
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/exportar`, {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
-                },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin, formato: formato }),
             });
 
@@ -77,6 +76,10 @@ function ReportesHHEEPage() {
             setLoading(false);
         }
     };
+
+    // --- LÓGICA DE ROLES PARA LOS BOTONES ---
+    const isGtrAdmin = user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE');
+    const isOpsSupervisor = user && user.role === 'SUPERVISOR_OPERACIONES';
 
     return (
         <Container className="py-5">
@@ -111,21 +114,47 @@ function ReportesHHEEPage() {
                                     <Col md={4}><Form.Group controlId="fecha-inicio" className="mb-3"><Form.Label>Fecha de Inicio</Form.Label><Form.Control type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} required /></Form.Group></Col>
                                     <Col md={4}><Form.Group controlId="fecha-fin" className="mb-3"><Form.Label>Fecha de Fin</Form.Label><Form.Control type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} required /></Form.Group></Col>
                                 </Row>
-                                <div className="d-grid gap-2 mt-3">
-                                    {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                                        <Button variant="success" onClick={() => handleExportar('RRHH')} disabled={loading}>
-                                            {loading ? <Spinner size="sm" /> : 'Exportar para RRHH (Formato ADP)'}
+                                <div className="d-grid gap-2 mt-4">
+                                    {/* Botón de Operaciones: visible para todos los roles con acceso */}
+                                    {(isGtrAdmin || isOpsSupervisor) && (
+                                        <Button variant="info" onClick={() => handleExportar('OPERACIONES')} disabled={loading}>
+                                            {loading ? <Spinner size="sm" /> : 'Exportar para Control (Operaciones)'}
                                         </Button>
                                     )}
-                                    <Button variant="info" onClick={() => handleExportar('OPERACIONES')} disabled={loading}>
-                                        {loading ? <Spinner size="sm" /> : 'Exportar para Control de Operaciones'}
-                                    </Button>
+                                    {/* Botones de RRHH: solo para GTR */}
+                                    {isGtrAdmin && (
+                                        <>
+                                            <Button variant="success" onClick={() => handleExportar('RRHH')} disabled={loading}>
+                                                {loading ? <Spinner size="sm" /> : 'Descargar Reporte RRHH (Vista Previa)'}
+                                            </Button>
+                                            <Button variant="danger" onClick={() => setShowConfirmModal(true)} disabled={loading}>
+                                                {loading ? <Spinner size="sm" /> : 'Marcar como Enviado y Descargar para RRHH'}
+                                            </Button>
+                                        </>
+                                    )}
                                 </div>
                             </Form>
                         </Card.Body>
                     </Card>
                 </Col>
             </Row>
+                                    <Modal show={showConfirmModal} onHide={() => setShowConfirmModal(false)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title>⚠️ Confirmación Final</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p>Estás a punto de generar el reporte final para RRHH.</p>
+                    <p>Esta acción marcará todos los registros de HHEE incluidos en este reporte como **"Enviados"** y no volverán a aparecer en futuras exportaciones para RRHH.</p>
+                    <p className="fw-bold">¿Estás seguro de que deseas continuar?</p>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>Cancelar</Button>
+                    <Button variant="danger" onClick={() => handleExportar('RRHH', true)}>
+                        Sí, Marcar y Descargar
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
         </Container>
     );
 }
