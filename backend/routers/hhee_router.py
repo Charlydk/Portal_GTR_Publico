@@ -911,3 +911,60 @@ async def procesar_solicitudes_lote(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ocurrió un error al procesar el lote: {e}")
 
     return {"detail": f"{len(lote_data.decisiones)} decisiones procesadas con éxito."}
+
+
+@router.get("/solicitudes/historial/", summary="[Supervisor] Ver historial de solicitudes procesadas")
+async def obtener_historial_solicitudes(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES])),
+    fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
+    fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
+):
+    """
+    Devuelve un historial de solicitudes de HHEE que ya han sido APROBADAS o RECHAZADAS
+    dentro de un rango de fechas, enriquecido con datos de GeoVictoria.
+    """
+    # 1. Buscamos solicitudes que NO estén pendientes en el rango de fechas
+    query = select(models.SolicitudHHEE).options(
+        selectinload(models.SolicitudHHEE.solicitante),
+        selectinload(models.SolicitudHHEE.supervisor) # Incluimos quién tomó la decisión
+    ).filter(
+        models.SolicitudHHEE.estado.in_([EstadoSolicitudHHEE.APROBADA, EstadoSolicitudHHEE.RECHAZADA]),
+        models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
+    ).order_by(models.SolicitudHHEE.fecha_decision.desc())
+
+    result = await db.execute(query)
+    solicitudes = result.scalars().all()
+
+    if not solicitudes:
+        return []
+
+    # 2. La lógica para enriquecer con datos de GeoVictoria es la misma que ya usamos
+    ruts_unicos = {sol.solicitante.rut.replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
+    
+    fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+    fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+    
+    datos_gv_lista = []
+    if ruts_unicos:
+        token = await geovictoria_service.obtener_token_geovictoria()
+        if token:
+            datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
+                token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt
+            )
+
+    datos_gv_procesados = [{**dia, **geovictoria_service.aplicar_logica_de_negocio(dia)} for dia in datos_gv_lista]
+    mapa_datos_gv = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_procesados}
+    
+    # 3. Unimos los datos para la respuesta
+    respuesta_enriquecida = []
+    for sol in solicitudes:
+        rut_limpio_solicitud = sol.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
+        fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
+        datos_gv_del_dia = mapa_datos_gv.get((rut_limpio_solicitud, fecha_str_solicitud), {})
+        
+        solicitud_dict = SolicitudHHEE.model_validate(sol).model_dump()
+        solicitud_dict['datos_geovictoria'] = datos_gv_del_dia
+        respuesta_enriquecida.append(solicitud_dict)
+
+    return respuesta_enriquecida

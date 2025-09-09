@@ -37,6 +37,8 @@ import ReportesHHEEPage from './pages/hhee/ReportesHHEEPage';
 import MetricasHHEEPage from './pages/hhee/MetricasHHEEPage';
 import MisSolicitudesHHEEPage from './pages/hhee/MisSolicitudesHHEEPage';
 import AprobacionHHEEPage from './pages/hhee/AprobacionHHEEPage';
+import HistorialAprobacionesPage from './pages/hhee/HistorialAprobacionesPage';
+
 
 // Componente interno que maneja la lógica de la aplicación principal
 const AppContent = () => {
@@ -89,6 +91,7 @@ const AppContent = () => {
           <Route path="/hhee/metricas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><MetricasHHEEPage /></PrivateRoute>} />
           <Route path="/mis-solicitudes-hhee" element={<PrivateRoute allowedRoles={['ANALISTA']}><MisSolicitudesHHEEPage /></PrivateRoute>} />
           <Route path="/aprobar-hhee" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AprobacionHHEEPage /></PrivateRoute>}/>
+          <Route path="/historial-aprobaciones" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><HistorialAprobacionesPage /></PrivateRoute>} />
           
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>

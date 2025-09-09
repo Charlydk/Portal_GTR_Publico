@@ -4,6 +4,8 @@ import { Container, Card, Spinner, Alert, Table, Button, Form, Badge } from 'rea
 import { useAuth } from '../../hooks/useAuth';
 import { API_BASE_URL } from '../../api';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
+import { Link } from 'react-router-dom';
+
 
 const getPeriodoActual = () => {
     const hoy = new Date();
@@ -133,7 +135,12 @@ function AprobacionHHEEPage() {
     return (
         <Container fluid className="py-4 px-xl-5">
             <Card className="shadow-lg">
-                <Card.Header as="h2" className="text-center bg-warning">Panel de Aprobación de HHEE (Período Actual)</Card.Header>
+                <Card.Header as="h2" className="d-flex justify-content-between align-items-center bg-warning">
+                    <span>Panel de Aprobación Masiva de HHEE</span>
+                    <Link to="/historial-aprobaciones" className="btn btn-dark btn-sm">
+                        Ver Historial de Gestiones
+                    </Link>
+                </Card.Header>
                 <Card.Body>
                     {error && <Alert variant="danger">{error}</Alert>}
                     {success && <Alert variant="success">{success}</Alert>}
