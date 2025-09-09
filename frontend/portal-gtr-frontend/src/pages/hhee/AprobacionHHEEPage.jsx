@@ -68,22 +68,47 @@ function AprobacionHHEEPage() {
         setSubmitting(true);
         setError(null);
         setSuccess(null);
-        const decisiones = Object.entries(cambios).map(([solicitudId, cambio]) => {
-            const horasDecimales = cambio.horas_aprobadas ? hhmmToDecimal(cambio.horas_aprobadas) : 0;
+    
+        const decisiones = Object.entries(cambios).map(([solicitudIdStr, cambio]) => {
+            const solicitudId = parseInt(solicitudIdStr);
+                  
+            // 1. Buscamos la solicitud original para obtener sus datos por defecto.
+            const solicitudOriginal = solicitudes.find(s => s.id === solicitudId);
+            if (!solicitudOriginal) return null;
+    
+            // 2. Replicamos la lógica para saber cuál era el cálculo sugerido por el sistema.
+            const gv = solicitudOriginal.datos_geovictoria || {};
+            let calculoSugerido = 0;
+            if (solicitudOriginal.tipo === 'ANTES_TURNO') {
+                calculoSugerido = gv.hhee_inicio_calculadas || 0;
+            } else if (solicitudOriginal.tipo === 'DESPUES_TURNO') {
+                calculoSugerido = gv.hhee_fin_calculadas || 0;
+            } else if (solicitudOriginal.tipo === 'DIA_DESCANSO') {
+                calculoSugerido = gv.cantidad_hhee_calculadas || 0;
+            }
+            
+            // 3. Determinamos el valor final en formato HH:MM.
+            // Será el valor que el supervisor editó, o si no lo tocó, el cálculo del sistema.
+            const valorFinalHHMM = cambio.horas_aprobadas ?? decimalToHHMM(calculoSugerido);
+            
+            // 4. Convertimos ese valor final a decimal para enviarlo a la API.
+            const horasDecimales = hhmmToDecimal(valorFinalHHMM);
+    
             return {
-                solicitud_id: parseInt(solicitudId),
+                solicitud_id: solicitudId,
                 estado: cambio.estado || 'PENDIENTE',
                 horas_aprobadas: horasDecimales,
-                comentario_supervisor: cambio.comentario_supervisor || null
+                comentario_supervisor: cambio.comentario_supervisor ?? '' // Usamos el comentario editado o uno vacío
             };
-        }).filter(d => d.estado !== 'PENDIENTE');
-
+           
+        }).filter(d => d && d.estado !== 'PENDIENTE'); // Filtramos nulos y los que no se tocaron
+    
         if (decisiones.length === 0) {
             setError("No se ha realizado ninguna aprobación o rechazo.");
             setSubmitting(false);
             return;
         }
-
+    
         try {
             const response = await fetch(`${API_BASE_URL}/hhee/solicitudes/procesar-lote/`, {
                 method: 'POST',
@@ -103,7 +128,6 @@ function AprobacionHHEEPage() {
             setSubmitting(false);
         }
     };
-
     if (loading) return <Container className="text-center py-5"><Spinner /></Container>;
 
     return (
