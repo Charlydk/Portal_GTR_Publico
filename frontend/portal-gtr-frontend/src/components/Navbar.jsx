@@ -59,11 +59,22 @@ function Navbar() {
                         )}
                     </ul>
                     <ul className="navbar-nav">
-                        {user ? (
-                            <>
-                                <li className="nav-item"><span className="nav-link text-white">Hola, {user.nombre} ({user.role})</span></li>
-                                <li className="nav-item"><button onClick={handleLogout} className="btn btn-outline-light ms-2">Cerrar Sesión</button></li>
-                            </>
+                            {user ? (
+                                // --- CÓDIGO MODIFICADO CON MENÚ DESPLEGABLE ---
+                                <li className="nav-item dropdown">
+                                    <a className="nav-link dropdown-toggle text-white" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        Hola, {user.nombre} ({user.role})
+                                    </a>
+                                    <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
+                                        <li><Link className="dropdown-item" to="/cambiar-password">Cambiar Contraseña</Link></li>
+                                        <li><hr className="dropdown-divider" /></li>
+                                        <li>
+                                            <button onClick={handleLogout} className="dropdown-item">
+                                                Cerrar Sesión
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </li>
                         ) : (
                             <li className="nav-item"><Link className="btn btn-outline-light" to="/login">Iniciar Sesión</Link></li>
                         )}

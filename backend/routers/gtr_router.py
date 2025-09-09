@@ -305,6 +305,7 @@ async def update_analista_password(
     if analista_a_actualizar is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado.")
 
+    # Lógica de permisos
     if current_analista.role == UserRole.ANALISTA.value and current_analista.id != analista_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar esta contraseña.")
     
@@ -317,7 +318,8 @@ async def update_analista_password(
     try:
         await db.commit()
         await db.refresh(analista_a_actualizar)
-        # Recargar el analista con todas las relaciones para la respuesta
+        
+        # --- CORRECCIÓN AQUÍ: Consulta de recarga completa ---
         result = await db.execute(
             select(models.Analista)
             .filter(models.Analista.id == analista_a_actualizar.id)
@@ -327,8 +329,10 @@ async def update_analista_password(
                 selectinload(models.Analista.avisos_creados),
                 selectinload(models.Analista.acuses_recibo_avisos),
                 selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas),
-                selectinload(models.Analista.incidencias_asignadas)
+                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
+                selectinload(models.Analista.incidencias_asignadas),
+                selectinload(models.Analista.solicitudes_realizadas),
+                selectinload(models.Analista.solicitudes_gestionadas)
             )
         )
         analista_to_return = result.scalars().first()

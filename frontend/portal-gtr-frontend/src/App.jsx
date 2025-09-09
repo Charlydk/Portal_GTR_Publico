@@ -38,6 +38,7 @@ import MetricasHHEEPage from './pages/hhee/MetricasHHEEPage';
 import MisSolicitudesHHEEPage from './pages/hhee/MisSolicitudesHHEEPage';
 import AprobacionHHEEPage from './pages/hhee/AprobacionHHEEPage';
 import HistorialAprobacionesPage from './pages/hhee/HistorialAprobacionesPage';
+import CambiarPasswordPage from './pages/CambiarPasswordPage';
 
 
 // Componente interno que maneja la lógica de la aplicación principal
@@ -61,6 +62,7 @@ const AppContent = () => {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/dashboard" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><DashboardPage /></PrivateRoute>} />
+          <Route path="/cambiar-password" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><CambiarPasswordPage /></PrivateRoute>} />
           <Route path="/avisos" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><AvisosPage /></PrivateRoute>} />
           <Route path="/avisos/:avisoId" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleAvisoPage /></PrivateRoute>} />
           <Route path="/avisos/crear" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioAvisoPage /></PrivateRoute>} />
@@ -92,6 +94,7 @@ const AppContent = () => {
           <Route path="/mis-solicitudes-hhee" element={<PrivateRoute allowedRoles={['ANALISTA']}><MisSolicitudesHHEEPage /></PrivateRoute>} />
           <Route path="/aprobar-hhee" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AprobacionHHEEPage /></PrivateRoute>}/>
           <Route path="/historial-aprobaciones" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><HistorialAprobacionesPage /></PrivateRoute>} />
+          
           
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>
