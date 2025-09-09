@@ -576,21 +576,58 @@ async def crear_solicitud_hhee(
     return result.scalars().first()
 
 
-@router.get("/solicitudes/mis-solicitudes/", response_model=List[SolicitudHHEE], summary="[Analista] Ver mi historial de solicitudes de HHEE")
+@router.get("/solicitudes/mis-solicitudes/", summary="[Analista] Ver mi historial de solicitudes de HHEE")
 async def obtener_mis_solicitudes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA]))
+    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA])),
+    fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
+    fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
     """
-    Devuelve el historial de todas las solicitudes de HHEE para el analista actual.
+    Devuelve el historial de solicitudes de HHEE para el analista actual
+    dentro de un rango de fechas, enriquecido con datos de GeoVictoria.
     """
+    # 1. Filtramos las solicitudes por analista y por rango de fecha
     query = select(models.SolicitudHHEE).options(
         selectinload(models.SolicitudHHEE.solicitante),
         selectinload(models.SolicitudHHEE.supervisor)
-    ).filter(models.SolicitudHHEE.analista_id == current_user.id).order_by(models.SolicitudHHEE.fecha_solicitud.desc())
+    ).filter(
+        models.SolicitudHHEE.analista_id == current_user.id,
+        models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
+    ).order_by(models.SolicitudHHEE.fecha_solicitud.desc())
     
     result = await db.execute(query)
-    return result.scalars().all()
+    solicitudes = result.scalars().all()
+
+    if not solicitudes:
+        return []
+
+    # 2. Hacemos una única llamada a GeoVictoria para el rango de fechas solicitado
+    rut_analista = getattr(current_user, 'rut', None)
+    datos_gv_lista = []
+    if rut_analista:
+        rut_limpio = rut_analista.replace('-', '').replace('.', '').upper()
+        fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+        fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+        token = await geovictoria_service.obtener_token_geovictoria()
+        if token:
+            datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
+                token, [rut_limpio], fecha_inicio_dt, fecha_fin_dt
+            )
+
+    mapa_datos_gv = {item['fecha']: item for item in datos_gv_lista}
+
+    # 3. Unimos los datos
+    respuesta_enriquecida = []
+    for sol in solicitudes:
+        fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
+        datos_gv_del_dia = mapa_datos_gv.get(fecha_str_solicitud, {})
+        
+        solicitud_dict = SolicitudHHEE.model_validate(sol).model_dump()
+        solicitud_dict['datos_geovictoria'] = datos_gv_del_dia
+        respuesta_enriquecida.append(solicitud_dict)
+
+    return respuesta_enriquecida
 
 
 @router.get("/solicitudes/pendientes/", summary="[Supervisor] Ver solicitudes pendientes por rango de fecha con datos de GV")
