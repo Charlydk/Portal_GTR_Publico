@@ -1,10 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
-// --- INICIO DE LA CORRECCIÓN ---
-// Importamos AuthProvider y useAuth desde sus archivos correctos y separados
+import { Container, Alert } from 'react-bootstrap'; 
 import { AuthProvider } from './context/AuthProvider.jsx';
 import { useAuth } from './hooks/useAuth.js';
-// --- FIN DE LA CORRECCIÓN ---
 import PrivateRoute from './components/PrivateRoute';
 import Navbar from './components/Navbar';
 
@@ -46,6 +44,7 @@ const AppContent = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [showBetaNotice, setShowBetaNotice] = useState(true);
 
   useEffect(() => {
     if (user && (location.pathname === '/login' || location.pathname === '/register')) {
@@ -56,6 +55,18 @@ const AppContent = () => {
   return (
     <>
       <Navbar />
+
+      {/* --- NUEVO COMPONENTE DE ALERTA --- */}
+      {showBetaNotice && (
+        <Container className="mt-3">
+            <Alert variant="info" onClose={() => setShowBetaNotice(false)} dismissible>
+                <Alert.Heading as="h6">¡Aplicación en Versión Beta!</Alert.Heading>
+                <p className="mb-0 small">
+                    Estás usando una versión de prueba. Si la aplicación ha estado inactiva por más de 15 minutos, la primera carga puede demorar hasta un minuto mientras el servidor se reactiva.
+                </p>
+            </Alert>
+        </Container>
+      )}
       <div className="container mt-4 main-content">
         <Routes>
           {/* ... (Todas tus rutas se quedan exactamente igual) ... */}
