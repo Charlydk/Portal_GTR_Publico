@@ -582,7 +582,7 @@ async def obtener_mis_solicitudes(
     Devuelve el historial de solicitudes de HHEE para el analista actual
     dentro de un rango de fechas, enriquecido con datos de GeoVictoria.
     """
-    # 1. Filtramos las solicitudes por analista y por rango de fecha
+    # 1. Filtramos las solicitudes por analista y por rango de fecha (esto estaba bien)
     query = select(models.SolicitudHHEE).options(
         selectinload(models.SolicitudHHEE.solicitante),
         selectinload(models.SolicitudHHEE.supervisor)
@@ -597,6 +597,7 @@ async def obtener_mis_solicitudes(
     if not solicitudes:
         return []
 
+    # --- INICIO DE LA LÓGICA CORREGIDA (añadida) ---
     # 2. Hacemos una única llamada a GeoVictoria para el rango de fechas solicitado
     rut_analista = getattr(current_user, 'rut', None)
     datos_gv_lista = []
@@ -604,15 +605,17 @@ async def obtener_mis_solicitudes(
         rut_limpio = rut_analista.replace('-', '').replace('.', '').upper()
         fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
         fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+        
         token = await geovictoria_service.obtener_token_geovictoria()
         if token:
             datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
                 token, [rut_limpio], fecha_inicio_dt, fecha_fin_dt
             )
 
+    # Creamos un mapa para buscar los datos de GV fácilmente
     mapa_datos_gv = {item['fecha']: item for item in datos_gv_lista}
 
-    # 3. Unimos los datos
+    # 3. Unimos los datos de las solicitudes con los de GeoVictoria
     respuesta_enriquecida = []
     for sol in solicitudes:
         fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
@@ -623,6 +626,7 @@ async def obtener_mis_solicitudes(
         respuesta_enriquecida.append(solicitud_dict)
 
     return respuesta_enriquecida
+    # --- FIN DE LA LÓGICA CORREGIDA ---
 
 
 @router.get("/solicitudes/pendientes/", summary="[Supervisor] Ver solicitudes pendientes por rango de fecha con datos de GV")
