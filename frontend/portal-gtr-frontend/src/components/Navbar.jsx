@@ -1,88 +1,94 @@
 // src/components/Navbar.jsx
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+// --- CAMBIO: Importamos los componentes específicos de React-Bootstrap ---
+import { Navbar, Nav, NavDropdown, Container } from 'react-bootstrap';
 
-function Navbar() {
+function NavbarComponent() { // Renombrado temporalmente para evitar conflicto de nombres
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    
+    // Estado para controlar si el menú hamburguesa está expandido o no
+    const [expanded, setExpanded] = useState(false);
 
     const handleLogout = () => {
         logout();
+        setExpanded(false); // Cierra el menú al hacer logout
         navigate('/login');
     };
 
-    // Lógica de roles para mostrar/ocultar enlaces
+    // La lógica de roles no cambia
     const isGtrUser = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
     const isGtrAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
     const isHheeUser = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
 
     return (
-        <nav className="navbar navbar-expand-lg navbar-dark bg-primary">
-            <div className="container-fluid">
-                <Link className="navbar-brand" to="/">Portal WORKFORCE</Link>
-                <button className="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                    <span className="navbar-toggler-icon"></span>
-                </button>
-                <div className="collapse navbar-collapse" id="navbarNav">
-                    <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-                        {user && (
-                            <li className="nav-item"><Link className="nav-link" to="/dashboard">Dashboard</Link></li>
-                        )}
+        // Usamos el componente <Navbar> de React-Bootstrap
+        <Navbar expand="lg" bg="primary" variant="dark" expanded={expanded} onToggle={() => setExpanded(prev => !prev)} collapseOnSelect>
+            <Container fluid>
+                <Navbar.Brand as={Link} to="/" onClick={() => setExpanded(false)}>Portal WORKFORCE</Navbar.Brand>
+                <Navbar.Toggle aria-controls="responsive-navbar-nav" />
+                <Navbar.Collapse id="responsive-navbar-nav">
+                    {/* Menú Principal (izquierda) */}
+                    <Nav className="me-auto">
+                        {user && <Nav.Link as={Link} to="/dashboard" onClick={() => setExpanded(false)}>Dashboard</Nav.Link>}
                         
                         {isGtrUser && (
                             <>
-                                <li className="nav-item"><Link className="nav-link" to="/avisos">Avisos</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/tareas">Tareas</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/campanas">Campañas</Link></li>
-                                {user.role === 'ANALISTA' && (
-                                    <li className="nav-item"><Link className="nav-link" to="/mis-solicitudes-hhee">Mis Solicitudes HHEE</Link></li>
-                                )}
+                                <Nav.Link as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</Nav.Link>
+                                <Nav.Link as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</Nav.Link>
+                                <Nav.Link as={Link} to="/campanas" onClick={() => setExpanded(false)}>Campañas</Nav.Link>
+                                {user.role === 'ANALISTA' && <Nav.Link as={Link} to="/mis-solicitudes-hhee" onClick={() => setExpanded(false)}>Mis Solicitudes HHEE</Nav.Link>}
                             </>
                         )}
 
                         {isGtrAdmin && (
                             <>
-                                <li className="nav-item"><Link className="nav-link" to="/analistas">Analistas</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/asignar-campanas">Asignar Campañas</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/aprobar-hhee">Aprobar HHEE</Link></li>
+                                <Nav.Link as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</Nav.Link>
+                                <Nav.Link as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</Nav.Link>
                             </>
                         )}
 
+                        {/* --- MEJORA: Menú desplegable para HHEE --- */}
                         {isHheeUser && (
-                            <>
-                                <li className="nav-item"><Link className="nav-link" to="/hhee/portal">Portal HHEE</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/hhee/reportes">Reportes HHEE</Link></li>
-                                <li className="nav-item"><Link className="nav-link" to="/hhee/metricas">Métricas HHEE</Link></li>
-                            </>
+                            <NavDropdown title="Gestión HHEE" id="hhee-nav-dropdown">
+                                {isGtrAdmin && (
+                                    <NavDropdown.Item as={Link} to="/aprobar-hhee" onClick={() => setExpanded(false)}>
+                                        Aprobar HHEE (GTR)
+                                    </NavDropdown.Item>
+                                )}
+                                <NavDropdown.Item as={Link} to="/hhee/portal" onClick={() => setExpanded(false)}>
+                                    Portal de Carga (OP)
+                                </NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/hhee/reportes" onClick={() => setExpanded(false)}>
+                                    Exportar Reportes
+                                </NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/hhee/metricas" onClick={() => setExpanded(false)}>
+                                    Métricas
+                                </NavDropdown.Item>
+                            </NavDropdown>
                         )}
-                    </ul>
-                    <ul className="navbar-nav">
-                            {user ? (
-                                // --- CÓDIGO MODIFICADO CON MENÚ DESPLEGABLE ---
-                                <li className="nav-item dropdown">
-                                    <a className="nav-link dropdown-toggle text-white" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                        Hola, {user.nombre} ({user.role})
-                                    </a>
-                                    <ul className="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
-                                        <li><Link className="dropdown-item" to="/cambiar-password">Cambiar Contraseña</Link></li>
-                                        <li><hr className="dropdown-divider" /></li>
-                                        <li>
-                                            <button onClick={handleLogout} className="dropdown-item">
-                                                Cerrar Sesión
-                                            </button>
-                                        </li>
-                                    </ul>
-                                </li>
+                    </Nav>
+
+                    {/* Menú de Usuario (derecha) */}
+                    <Nav>
+                        {user ? (
+                            <NavDropdown title={`Hola, ${user.nombre} (${user.role})`} id="user-nav-dropdown" align="end">
+                                <NavDropdown.Item as={Link} to="/cambiar-password" onClick={() => setExpanded(false)}>Cambiar Contraseña</NavDropdown.Item>
+                                <NavDropdown.Divider />
+                                <NavDropdown.Item onClick={handleLogout}>Cerrar Sesión</NavDropdown.Item>
+                            </NavDropdown>
                         ) : (
-                            <li className="nav-item"><Link className="btn btn-outline-light" to="/login">Iniciar Sesión</Link></li>
+                            <Nav.Link as={Link} to="/login" onClick={() => setExpanded(false)}>Iniciar Sesión</Nav.Link>
                         )}
-                    </ul>
-                </div>
-            </div>
-        </nav>
+                    </Nav>
+                </Navbar.Collapse>
+            </Container>
+        </Navbar>
     );
 }
 
-export default Navbar;
+// Renombra la exportación para que coincida con el nombre de archivo
+export default NavbarComponent;
