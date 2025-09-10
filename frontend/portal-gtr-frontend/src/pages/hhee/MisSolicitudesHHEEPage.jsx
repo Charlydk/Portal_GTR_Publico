@@ -25,29 +25,22 @@ function MisSolicitudesHHEEPage() {
     const [fechas, setFechas] = useState(getPeriodoActual());
     const [error, setError] = useState(null);
 
-    // --- NUEVA FUNCIÓN PARA MANEJAR EL SELECTOR DE PERÍODO ---
     const handlePeriodoChange = (seleccion) => {
         const hoy = new Date();
         const aISO = (fecha) => fecha.toISOString().split('T')[0];
         let nuevasFechas = {};
-
         if (seleccion === 'actual') {
             nuevasFechas = getPeriodoActual();
         } else if (seleccion === 'anterior') {
             const fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 25);
             const fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth() - 2, 26);
             nuevasFechas = { inicio: aISO(fechaInicio), fin: aISO(fechaFin) };
-        } else {
-            // Si selecciona "Personalizado" o algo más, no hacemos nada
-            return;
-        }
+        } else { return; }
         setFechas(nuevasFechas);
     };
-    // -------------------------------------------------------------
 
     const fetchMisSolicitudes = useCallback(async () => {
         if (!authToken || !fechas.inicio || !fechas.fin) return;
-        
         const url = `${API_BASE_URL}/hhee/solicitudes/mis-solicitudes/?fecha_inicio=${fechas.inicio}&fecha_fin=${fechas.fin}`;
         setLoading(true);
         setError(null);
@@ -70,17 +63,33 @@ function MisSolicitudesHHEEPage() {
         fetchMisSolicitudes();
     }, [fetchMisSolicitudes]);
 
+    // --- LÓGICA DE TOTALES CORREGIDA ---
     const totales = useMemo(() => {
         return solicitudes.reduce((acc, sol) => {
             const gv = sol.datos_geovictoria || {};
-            const horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
-            acc.solicitadas += sol.horas_solicitadas;
+            
+            // CORRECCIÓN: Sumamos solo la parte de RRHH que corresponde a cada tipo de solicitud
+            let horasRRHH = 0;
+            if (sol.tipo === 'ANTES_TURNO') {
+                horasRRHH = gv.hhee_autorizadas_antes_gv || 0;
+            } else if (sol.tipo === 'DESPUES_TURNO') {
+                horasRRHH = gv.hhee_autorizadas_despues_gv || 0;
+            } else if (sol.tipo === 'DIA_DESCANSO') {
+                // Para día de descanso, sí sumamos ambas
+                horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
+            }
+            
+            if (sol.estado === 'PENDIENTE' || sol.estado === 'APROBADA') {
+                acc.solicitadas += sol.horas_solicitadas;
+            }
             if (sol.estado === 'APROBADA') {
                 acc.aprobadas += sol.horas_aprobadas;
+            } else if (sol.estado === 'RECHAZADA') {
+                acc.rechazadas += sol.horas_solicitadas;
             }
             acc.rrhh += horasRRHH;
             return acc;
-        }, { solicitadas: 0, aprobadas: 0, rrhh: 0 });
+        }, { solicitadas: 0, aprobadas: 0, rrhh: 0, rechazadas: 0 });
     }, [solicitudes]);
 
     const handleCreateSolicitud = async (formData) => {
@@ -119,26 +128,16 @@ function MisSolicitudesHHEEPage() {
                     <Card.Title>Mi Historial</Card.Title>
                     {error && <Alert variant="danger">{error}</Alert>}
                     <Form>
-                        {/* --- SECCIÓN DE FILTROS MODIFICADA --- */}
                         <Row className="align-items-end g-3 mb-3">
-                            <Col md={3}>
-                                <Form.Group>
-                                    <Form.Label>Período Rápido</Form.Label>
-                                    <Form.Select defaultValue="actual" onChange={(e) => handlePeriodoChange(e.target.value)}>
-                                        <option value="actual">Periodo Actual</option>
-                                        <option value="anterior">Periodo Anterior</option>
-                                        <option value="">Personalizado</option>
-                                    </Form.Select>
-                                </Form.Group>
-                            </Col>
+                            <Col md={3}><Form.Group><Form.Label>Período Rápido</Form.Label><Form.Select defaultValue="actual" onChange={(e) => handlePeriodoChange(e.target.value)}><option value="actual">Periodo Actual</option><option value="anterior">Periodo Anterior</option><option value="">Personalizado</option></Form.Select></Form.Group></Col>
                             <Col md={3}><Form.Group><Form.Label>Fecha Inicio</Form.Label><Form.Control type="date" value={fechas.inicio} onChange={e => setFechas(f => ({...f, inicio: e.target.value}))} /></Form.Group></Col>
                             <Col md={3}><Form.Group><Form.Label>Fecha Fin</Form.Label><Form.Control type="date" value={fechas.fin} onChange={e => setFechas(f => ({...f, fin: e.target.value}))} /></Form.Group></Col>
                             <Col md={3}><Button className="w-100" onClick={fetchMisSolicitudes}>Consultar</Button></Col>
                         </Row>
-                        {/* ------------------------------------ */}
                     </Form>
                     <div className="mb-3 text-center">
                         <span className="me-3">Solicitadas: <Badge bg="primary">{decimalToHHMM(totales.solicitadas)}</Badge></span>
+                        <span className="me-3">Rechazadas: <Badge bg="danger">{decimalToHHMM(totales.rechazadas)}</Badge></span>
                         <span className="me-3">Aprobadas: <Badge bg="success">{decimalToHHMM(totales.aprobadas)}</Badge></span>
                         <span>Cargadas RRHH: <Badge bg="dark">{decimalToHHMM(totales.rrhh)}</Badge></span>
                     </div>

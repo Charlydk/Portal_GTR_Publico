@@ -1,13 +1,20 @@
 // src/components/hhee/HistorialSolicitudesHHEE.jsx
 import React from 'react';
 import { Table, Badge } from 'react-bootstrap';
-import { decimalToHHMM } from '../../utils/timeUtils'; // Importamos la utilidad
+import { decimalToHHMM } from '../../utils/timeUtils';
 
 function HistorialSolicitudesHHEE({ solicitudes }) {
     
-    const getStatusBadge = (estado) => {
+    // --- LÓGICA DE ESTADO MEJORADA (ahora recibe la solicitud completa) ---
+    const getStatusBadge = (solicitud) => {
+        const gv = solicitud.datos_geovictoria || {};
+        const horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
+
+        if (solicitud.estado === 'APROBADA' && horasRRHH > 0) {
+            return <Badge bg="info">CARGADO</Badge>;
+        }
         const variants = { PENDIENTE: 'warning', APROBADA: 'success', RECHAZADA: 'danger' };
-        return <Badge bg={variants[estado] || 'secondary'}>{estado}</Badge>;
+        return <Badge bg={variants[solicitud.estado] || 'secondary'}>{solicitud.estado}</Badge>;
     };
 
     const formatTipo = (tipo) => {
@@ -28,7 +35,7 @@ function HistorialSolicitudesHHEE({ solicitudes }) {
                     <th>Tipo</th>
                     <th>H. Solicitadas</th>
                     <th>H. Aprobadas (Sup.)</th>
-                    <th>H. Cargadas (RRHH)</th> {/* <-- NUEVA COLUMNA */}
+                    <th>H. Cargadas (RRHH)</th>
                     <th>Estado</th>
                     <th>Comentario del Supervisor</th>
                 </tr>
@@ -37,18 +44,24 @@ function HistorialSolicitudesHHEE({ solicitudes }) {
                 {solicitudes.length > 0 ? (
                     solicitudes.map(solicitud => {
                         const gv = solicitud.datos_geovictoria || {};
-                        const horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
+                        // --- LÓGICA MEJORADA para horas de RRHH ---
+                        let horasRRHH = 0;
+                        if (solicitud.tipo === 'ANTES_TURNO') {
+                            horasRRHH = gv.hhee_autorizadas_antes_gv || 0;
+                        } else if (solicitud.tipo === 'DESPUES_TURNO') {
+                            horasRRHH = gv.hhee_autorizadas_despues_gv || 0;
+                        } else if (solicitud.tipo === 'DIA_DESCANSO') {
+                            horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
+                        }
 
                         return (
                             <tr key={solicitud.id}>
                                 <td>{formatDateOnly(solicitud.fecha_hhee)}</td>
                                 <td>{formatTipo(solicitud.tipo)}</td>
-                                {/* --- COLUMNAS CON FORMATO HH:MM --- */}
                                 <td>{decimalToHHMM(solicitud.horas_solicitadas)}</td>
                                 <td>{solicitud.horas_aprobadas !== null ? decimalToHHMM(solicitud.horas_aprobadas) : '---'}</td>
                                 <td>{decimalToHHMM(horasRRHH)}</td>
-                                {/* --------------------------------- */}
-                                <td>{getStatusBadge(solicitud.estado)}</td>
+                                <td>{getStatusBadge(solicitud)}</td>
                                 <td>{solicitud.comentario_supervisor || '---'}</td>
                             </tr>
                         );

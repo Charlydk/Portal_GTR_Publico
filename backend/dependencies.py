@@ -16,7 +16,8 @@ from security import decode_access_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> models.Analista:
-    print(f"--- TOKEN RECIBIDO POR EL BACKEND: {token} ---")
+    # Comentamos el print del token para mejorar la seguridad en producción
+    # print(f"--- TOKEN RECIBIDO POR EL BACKEND: {token} ---") 
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales",
@@ -31,10 +32,24 @@ async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSes
     except Exception:
         raise credentials_exception
 
+    # --- Consulta más completa ---
+    # Ahora cargamos todas las relaciones del analista de una sola vez
+    # para evitar errores de carga perezosa (MissingGreenlet) en toda la aplicación.
     result = await db.execute(
         select(models.Analista).filter(models.Analista.email == token_data.email)
-        .options(selectinload(models.Analista.campanas_asignadas))
+        .options(
+            selectinload(models.Analista.campanas_asignadas),
+            selectinload(models.Analista.tareas),
+            selectinload(models.Analista.avisos_creados),
+            selectinload(models.Analista.acuses_recibo_avisos),
+            selectinload(models.Analista.tareas_generadas_por_avisos),
+            selectinload(models.Analista.incidencias_creadas),
+            selectinload(models.Analista.incidencias_asignadas),
+            selectinload(models.Analista.solicitudes_realizadas),
+            selectinload(models.Analista.solicitudes_gestionadas)
+        )
     )
+    
     analista = result.scalars().first()
     if analista is None:
         raise credentials_exception

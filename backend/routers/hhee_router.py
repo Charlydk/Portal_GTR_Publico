@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.orm import selectinload
 from services import geovictoria_service
 from datetime import datetime, date
@@ -291,44 +291,37 @@ async def consultar_pendientes(
         "nombre_agente": "Múltiples Agentes con Pendientes"
     }
 
-
-@router.post("/exportar", summary="Exporta validaciones de HHEE a un archivo Excel")
+@router.post("/exportar", summary="Exporta validaciones de HHEE a un archivo Excel (Solo Lectura)")
 async def exportar_hhee_a_excel(
     request: ExportRequest,
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     try:
+        # Consulta base para obtener registros validados en el rango de fechas
         base_query = select(models.ValidacionHHEE).filter(
             models.ValidacionHHEE.estado == 'Validado',
             models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin)
         )
 
+        # Filtro adicional si el usuario es Supervisor de Operaciones
         if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
             query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
         else:
             query = base_query
 
-        query = query.order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
-        
-        result = await db.execute(query)
+        # Si el formato es para RRHH, solo mostramos los que aún no han sido reportados
+        if request.formato == ExportFormat.RRHH:
+            query = query.filter(models.ValidacionHHEE.reportado_a_rrhh == False)
+
+        result = await db.execute(query.order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee))
         validaciones = result.scalars().all()
 
         if not validaciones:
-            raise HTTPException(status_code=404, detail="No se encontraron HHEE validadas para los filtros seleccionados.")
+            raise HTTPException(status_code=404, detail="No se encontraron HHEE para los filtros seleccionados.")
 
-        if request.formato == ExportFormat.RRHH:
-            # ... (Esta parte no cambia)
-            permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
-            datos_para_excel = [{
-                "Cod Funcionario": v.rut, "Nombre": v.nombre_apellido,
-                "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
-                "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
-                "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
-                "Cant Horas": decimal_to_hhmm(v.cantidad_hhee_aprobadas)
-            } for v in validaciones]
-        
-        elif request.formato == ExportFormat.OPERACIONES:
+        # Lógica para generar el formato de Operaciones
+        if request.formato == ExportFormat.OPERACIONES:
             ruts_unicos = list({v.rut.replace('.', '').replace('-', '') for v in validaciones})
             token_gv = await geovictoria_service.obtener_token_geovictoria()
             if not token_gv: raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria.")
@@ -337,8 +330,6 @@ async def exportar_hhee_a_excel(
             fecha_fin_dt = datetime.combine(request.fecha_fin, datetime.max.time())
             datos_gv = await geovictoria_service.obtener_datos_completos_periodo(token_gv, ruts_unicos, fecha_inicio_dt, fecha_fin_dt)
             
-            # --- INICIO DE LA CORRECCIÓN CLAVE ---
-            # 1. El diccionario ahora guarda las horas de 'antes' y 'después' por separado
             rrhh_lookup = {}
             for dia in datos_gv:
                 key = (dia['rut_limpio'], dia['fecha'])
@@ -351,34 +342,37 @@ async def exportar_hhee_a_excel(
             for v in validaciones:
                 rut_limpio_actual = v.rut.replace('.', '').replace('-', '')
                 fecha_actual_str = v.fecha_hhee.strftime('%Y-%m-%d')
-                
                 horas_rrhh_dict = rrhh_lookup.get((rut_limpio_actual, fecha_actual_str), {"antes": 0, "despues": 0})
                 
-                # 2. Asignamos la hora correcta según el tipo de HHEE de la fila
                 horas_rrhh_especificas = 0
                 if v.tipo_hhee == "Antes de Turno":
                     horas_rrhh_especificas = horas_rrhh_dict.get("antes", 0)
                 elif v.tipo_hhee == "Después de Turno":
                     horas_rrhh_especificas = horas_rrhh_dict.get("despues", 0)
                 elif v.tipo_hhee == "Día de Descanso":
-                    # Para descanso, sí sumamos ambas
                     horas_rrhh_especificas = horas_rrhh_dict.get("antes", 0) + horas_rrhh_dict.get("despues", 0)
 
                 datos_para_excel.append({
-                    "ID": v.id,
-                    "RUT": v.rut,
-                    "Nombre Completo": v.nombre_apellido,
-                    "Campaña": v.campaña,
-                    "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'),
-                    "Tipo HHEE": v.tipo_hhee,
+                    "ID": v.id, "RUT": v.rut, "Nombre Completo": v.nombre_apellido, "Campaña": v.campaña,
+                    "Fecha HHEE": v.fecha_hhee.strftime('%d-%m-%Y'), "Tipo HHEE": v.tipo_hhee,
                     "Horas Aprobadas (Operaciones)": decimal_to_hhmm(v.cantidad_hhee_aprobadas),
-                    "Horas Aprobadas (RRHH)": decimal_to_hhmm(horas_rrhh_especificas), # Usamos el valor específico
-                    "Estado": v.estado,
-                    "Validado Por": v.supervisor_carga,
+                    "Horas Aprobadas (RRHH)": decimal_to_hhmm(horas_rrhh_especificas),
+                    "Estado": v.estado, "Validado Por": v.supervisor_carga,
                     "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M') if v.fecha_carga else None
                 })
-            # --- FIN DE LA CORRECCIÓN CLAVE ---
+        
+        # Lógica para generar el formato de RRHH
+        elif request.formato == ExportFormat.RRHH:
+            permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
+            datos_para_excel = [{
+                "Cod Funcionario": v.rut, "Nombre": v.nombre_apellido,
+                "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
+                "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
+                "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
+                "Cant Horas": decimal_to_hhmm(v.cantidad_hhee_aprobadas)
+            } for v in validaciones]
 
+        # Creación y envío del archivo Excel
         df = pd.DataFrame(datos_para_excel)
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -391,8 +385,9 @@ async def exportar_hhee_a_excel(
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")
-    
+        # Usamos rollback por seguridad, aunque esta función ya no escribe en la BD
+        await db.rollback() 
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado al generar el reporte: {e}")
 
 @router.post("/metricas", response_model=DashboardHHEEMetricas, summary="Obtener métricas para el dashboard de HHEE")
 async def get_hhee_metricas(
@@ -587,7 +582,7 @@ async def obtener_mis_solicitudes(
     Devuelve el historial de solicitudes de HHEE para el analista actual
     dentro de un rango de fechas, enriquecido con datos de GeoVictoria.
     """
-    # 1. Filtramos las solicitudes por analista y por rango de fecha
+    # 1. Filtramos las solicitudes por analista y por rango de fecha (esto estaba bien)
     query = select(models.SolicitudHHEE).options(
         selectinload(models.SolicitudHHEE.solicitante),
         selectinload(models.SolicitudHHEE.supervisor)
@@ -602,6 +597,7 @@ async def obtener_mis_solicitudes(
     if not solicitudes:
         return []
 
+    # --- INICIO DE LA LÓGICA CORREGIDA (añadida) ---
     # 2. Hacemos una única llamada a GeoVictoria para el rango de fechas solicitado
     rut_analista = getattr(current_user, 'rut', None)
     datos_gv_lista = []
@@ -609,15 +605,17 @@ async def obtener_mis_solicitudes(
         rut_limpio = rut_analista.replace('-', '').replace('.', '').upper()
         fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
         fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+        
         token = await geovictoria_service.obtener_token_geovictoria()
         if token:
             datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
                 token, [rut_limpio], fecha_inicio_dt, fecha_fin_dt
             )
 
+    # Creamos un mapa para buscar los datos de GV fácilmente
     mapa_datos_gv = {item['fecha']: item for item in datos_gv_lista}
 
-    # 3. Unimos los datos
+    # 3. Unimos los datos de las solicitudes con los de GeoVictoria
     respuesta_enriquecida = []
     for sol in solicitudes:
         fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
@@ -628,6 +626,7 @@ async def obtener_mis_solicitudes(
         respuesta_enriquecida.append(solicitud_dict)
 
     return respuesta_enriquecida
+    # --- FIN DE LA LÓGICA CORREGIDA ---
 
 
 @router.get("/solicitudes/pendientes/", summary="[Supervisor] Ver solicitudes pendientes por rango de fecha con datos de GV")
@@ -968,3 +967,102 @@ async def obtener_historial_solicitudes(
         respuesta_enriquecida.append(solicitud_dict)
 
     return respuesta_enriquecida
+
+
+@router.post("/exportar-y-marcar-rrhh", summary="[GTR] Exporta para RRHH y marca registros como enviados")
+async def exportar_y_marcar_rrhh(
+    request: ExportRequest, # Reutilizamos el mismo modelo de solicitud
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Genera el reporte para RRHH (formato ADP), marca los registros
+    como 'reportado_a_rrhh = true' y guarda quién y cuándo lo hizo.
+    Esta es una acción final y solo para roles GTR.
+    """
+    try:
+        # 1. Buscamos los registros que cumplen las condiciones (igual que antes)
+        query = select(models.ValidacionHHEE).filter(
+            models.ValidacionHHEE.estado == 'Validado',
+            models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin),
+            models.ValidacionHHEE.reportado_a_rrhh == False
+        ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
+        
+        result = await db.execute(query)
+        validaciones = result.scalars().all()
+
+        if not validaciones:
+            raise HTTPException(status_code=404, detail="No se encontraron HHEE nuevas para reportar a RRHH en el período seleccionado.")
+
+        # 2. Generamos los datos para el Excel (lógica sin cambios)
+        permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
+        datos_para_excel = [{
+            "Cod Funcionario": v.rut, "Nombre": v.nombre_apellido,
+            "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
+            "Fecha Inicio": v.fecha_hhee.strftime('%d/%m/%Y'),
+            "Fecha Fin": v.fecha_hhee.strftime('%d/%m/%Y'),
+            "Cant Horas": decimal_to_hhmm(v.cantidad_hhee_aprobadas)
+        } for v in validaciones]
+
+        df = pd.DataFrame(datos_para_excel)
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Reporte RRHH')
+        output.seek(0)
+        
+        # 3. Actualizamos la bandera y los nuevos campos en la base de datos
+        ids_a_actualizar = [v.id for v in validaciones]
+        if ids_a_actualizar:
+            update_stmt = update(models.ValidacionHHEE).where(
+                models.ValidacionHHEE.id.in_(ids_a_actualizar)
+            ).values(
+                reportado_a_rrhh=True,
+                reportado_por_id=current_user.id,
+                fecha_reportado=func.now() # La base de datos pone la hora actual
+            )
+            await db.execute(update_stmt)
+            await db.commit()
+
+        # 4. Devolvemos el archivo Excel al usuario
+        headers = {'Content-Disposition': f'attachment; filename="REPORTE_FINAL_RRHH_{request.fecha_inicio}_a_{request.fecha_fin}.xlsx"'}
+        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers=headers)
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error inesperado: {e}")
+    
+class ConfirmacionEnvio(BaseModel):
+    fecha_inicio: date
+    fecha_fin: date
+
+@router.post("/marcar-como-reportado", status_code=status.HTTP_200_OK, summary="[GTR] Marca HHEE de un período como reportadas a RRHH")
+async def marcar_rrhh_como_reportado(
+    confirmacion: ConfirmacionEnvio,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Marca todos los registros validados en un período de fechas como 'reportado_a_rrhh = true'.
+    Esta es una acción final e irreversible para un período.
+    """
+    try:
+        update_stmt = update(models.ValidacionHHEE).where(
+            models.ValidacionHHEE.estado == 'Validado',
+            models.ValidacionHHEE.fecha_hhee.between(confirmacion.fecha_inicio, confirmacion.fecha_fin),
+            models.ValidacionHHEE.reportado_a_rrhh == False
+        ).values(
+            reportado_a_rrhh=True,
+            reportado_por_id=current_user.id,
+            fecha_reportado=func.now()
+        )
+        result = await db.execute(update_stmt)
+        await db.commit()
+        
+        # Devolvemos cuántas filas fueron afectadas
+        return {"detail": f"{result.rowcount} registros han sido marcados como enviados a RRHH."}
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ocurrió un error al marcar los registros: {e}")

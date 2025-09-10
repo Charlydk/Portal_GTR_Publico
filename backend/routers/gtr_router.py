@@ -579,9 +579,8 @@ async def obtener_campanas(
             selectinload(models.Campana.tareas),
             selectinload(models.Campana.avisos),
             selectinload(models.Campana.bitacora_entries),
-            # CORRECCIÓN: Usar el nuevo nombre de la relación y cargar el autor del comentario
             selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias)
+            selectinload(models.Campana.incidencias).selectinload(models.Incidencia.asignado_a)
         )
     )
     campanas = result.scalars().all()
