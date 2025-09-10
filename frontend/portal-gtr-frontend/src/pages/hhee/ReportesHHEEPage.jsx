@@ -4,15 +4,14 @@ import { Container, Form, Button, Card, Spinner, Alert, Row, Col, Modal } from '
 import { useAuth } from '../../hooks/useAuth';
 import { API_BASE_URL } from '../../api';
 
-
 function ReportesHHEEPage() {
     const [fechaInicio, setFechaInicio] = useState('');
     const [fechaFin, setFechaFin] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
     const { authToken, user } = useAuth();
     
-    // --- NUEVO: Estado para el modal de confirmación ---
     const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     const formatDate = (date) => date.toISOString().split('T')[0];
@@ -36,20 +35,17 @@ function ReportesHHEEPage() {
         setFechaFin(formatDate(fechaFin));
     };
 
-    const handleExportar = async (formato, marcarComoReportado = false) => {
+    const handleExportar = async (formato) => {
         if (!fechaInicio || !fechaFin) {
             setError("Por favor, seleccione una fecha de inicio y de fin.");
             return;
         }
         setLoading(true);
         setError(null);
-        setShowConfirmModal(false); // Cerramos el modal
-
-        // --- CAMBIO: Decidimos a qué endpoint llamar ---
-        const endpoint = marcarComoReportado ? '/hhee/exportar-y-marcar-rrhh' : '/hhee/exportar';
+        setSuccess(null);
 
         try {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            const response = await fetch(`${API_BASE_URL}/hhee/exportar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin, formato: formato }),
@@ -76,8 +72,32 @@ function ReportesHHEEPage() {
             setLoading(false);
         }
     };
+    
+    const handleConfirmarEnvio = async () => {
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+        setShowConfirmModal(false);
+        
+        try {
+            const response = await fetch(`${API_BASE_URL}/hhee/marcar-como-reportado`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Error al confirmar el envío.');
+            }
+            const result = await response.json();
+            setSuccess(result.detail);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
-    // --- LÓGICA DE ROLES PARA LOS BOTONES ---
     const isGtrAdmin = user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE');
     const isOpsSupervisor = user && user.role === 'SUPERVISOR_OPERACIONES';
 
@@ -86,49 +106,40 @@ function ReportesHHEEPage() {
             <Row className="justify-content-center">
                 <Col md={8}>
                     <Card className="shadow-lg">
-                        <Card.Header as="h2" className="text-center bg-primary text-white">
-                            Panel de Exportación de HHEE
-                        </Card.Header>
+                        <Card.Header as="h2" className="text-center bg-primary text-white">Panel de Exportación de HHEE</Card.Header>
                         <Card.Body className="p-4">
                             <Card.Title>Seleccionar Rango de Fechas</Card.Title>
-                            <Card.Text className="text-muted mb-4">
-                                Seleccioná el período para el cual querés generar el reporte de Horas Extras validadas.
-                            </Card.Text>
+                            {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
+                            {success && <Alert variant="success" className="mt-3">{success}</Alert>}
                             
-                            {error && <Alert variant="danger">{error}</Alert>}
-
                             <Form>
-                                <Row className="align-items-end">
-                                    {/* --- NUEVO SELECTOR DE PERÍODO --- */}
+                                <Row className="align-items-end g-3">
                                     <Col md={4}>
                                         <Form.Group controlId="select-periodo" className="mb-3">
                                             <Form.Label>Período Rápido</Form.Label>
                                             <Form.Select onChange={(e) => handlePeriodoChange(e.target.value)}>
                                                 <option value="">Seleccionar...</option>
-                                                <option value="actual">Período actual</option>
-                                                <option value="anterior">Período anterior (-1)</option>
+                                                <option value="actual">Periodo actual</option>
+                                                <option value="anterior">Periodo anterior (-1)</option>
                                             </Form.Select>
                                         </Form.Group>
                                     </Col>
-                                    {/* --- FIN DEL NUEVO SELECTOR --- */}
                                     <Col md={4}><Form.Group controlId="fecha-inicio" className="mb-3"><Form.Label>Fecha de Inicio</Form.Label><Form.Control type="date" value={fechaInicio} onChange={(e) => setFechaInicio(e.target.value)} required /></Form.Group></Col>
                                     <Col md={4}><Form.Group controlId="fecha-fin" className="mb-3"><Form.Label>Fecha de Fin</Form.Label><Form.Control type="date" value={fechaFin} onChange={(e) => setFechaFin(e.target.value)} required /></Form.Group></Col>
                                 </Row>
                                 <div className="d-grid gap-2 mt-4">
-                                    {/* Botón de Operaciones: visible para todos los roles con acceso */}
                                     {(isGtrAdmin || isOpsSupervisor) && (
                                         <Button variant="info" onClick={() => handleExportar('OPERACIONES')} disabled={loading}>
                                             {loading ? <Spinner size="sm" /> : 'Exportar para Control (Operaciones)'}
                                         </Button>
                                     )}
-                                    {/* Botones de RRHH: solo para GTR */}
                                     {isGtrAdmin && (
                                         <>
                                             <Button variant="success" onClick={() => handleExportar('RRHH')} disabled={loading}>
-                                                {loading ? <Spinner size="sm" /> : 'Descargar Reporte RRHH (Vista Previa)'}
+                                                {loading ? <Spinner size="sm" /> : '1. Descargar Reporte RRHH (Vista Previa)'}
                                             </Button>
                                             <Button variant="danger" onClick={() => setShowConfirmModal(true)} disabled={loading}>
-                                                {loading ? <Spinner size="sm" /> : 'Marcar como Enviado y Descargar para RRHH'}
+                                                {loading ? <Spinner size="sm" /> : '2. Confirmar Envío del Período a RRHH'}
                                             </Button>
                                         </>
                                     )}
@@ -138,23 +149,23 @@ function ReportesHHEEPage() {
                     </Card>
                 </Col>
             </Row>
-                                    <Modal show={showConfirmModal} onHide={() => setShowConfirmModal(false)} centered>
+
+            <Modal show={showConfirmModal} onHide={() => setShowConfirmModal(false)} centered>
                 <Modal.Header closeButton>
-                    <Modal.Title>⚠️ Confirmación Final</Modal.Title>
+                    <Modal.Title>⚠️ Confirmación Final de Envío</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    <p>Estás a punto de generar el reporte final para RRHH.</p>
-                    <p>Esta acción marcará todos los registros de HHEE incluidos en este reporte como **"Enviados"** y no volverán a aparecer en futuras exportaciones para RRHH.</p>
-                    <p className="fw-bold">¿Estás seguro de que deseas continuar?</p>
+                    <p>Estás a punto de **confirmar el envío** del período del <strong>{fechaInicio}</strong> al <strong>{fechaFin}</strong>.</p>
+                    <p>Esta acción marcará todos los registros de HHEE de este período como **"Enviados"** y no se podrán volver a incluir en futuros reportes para RRHH.</p>
+                    <p className="fw-bold">Asegúrate de haber descargado y enviado el archivo a ADP antes de continuar. ¿Estás seguro?</p>
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowConfirmModal(false)}>Cancelar</Button>
-                    <Button variant="danger" onClick={() => handleExportar('RRHH', true)}>
-                        Sí, Marcar y Descargar
+                    <Button variant="danger" onClick={handleConfirmarEnvio} disabled={loading}>
+                        {loading ? <Spinner size="sm" /> : 'Sí, Confirmar Envío'}
                     </Button>
                 </Modal.Footer>
             </Modal>
-
         </Container>
     );
 }
