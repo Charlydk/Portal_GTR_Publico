@@ -66,24 +66,24 @@ function HistorialAprobacionesPage() {
     }, [fetchHistorial]);
 
     const totales = useMemo(() => {
-        return historial.reduce((acc, item) => {
+        const resultado = historial.reduce((acc, item) => {
             const gv = item.datos_geovictoria || {};
             let horasRRHH = 0;
-            if (item.tipo === 'ANTES_TURNO') {
-                horasRRHH = gv.hhee_autorizadas_antes_gv || 0;
-            } else if (item.tipo === 'DESPUES_TURNO') {
-                horasRRHH = gv.hhee_autorizadas_despues_gv || 0;
-            } else if (item.tipo === 'DIA_DESCANSO') {
-                horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
-            }
+            if (item.tipo === 'ANTES_TURNO') horasRRHH = gv.hhee_autorizadas_antes_gv || 0;
+            else if (item.tipo === 'DESPUES_TURNO') horasRRHH = gv.hhee_autorizadas_despues_gv || 0;
+            else if (item.tipo === 'DIA_DESCANSO') horasRRHH = (gv.hhee_autorizadas_antes_gv || 0) + (gv.hhee_autorizadas_despues_gv || 0);
             
-            acc.solicitadas += item.horas_solicitadas;
             if (item.estado === 'APROBADA') {
+                acc.solicitadas_validas += item.horas_solicitadas;
                 acc.aprobadas += item.horas_aprobadas;
+            } else if (item.estado === 'RECHAZADA') {
+                acc.rechazadas += item.horas_solicitadas;
             }
             acc.rrhh += horasRRHH;
             return acc;
-        }, { solicitadas: 0, aprobadas: 0, rrhh: 0 });
+        }, { solicitadas_validas: 0, aprobadas: 0, rrhh: 0, rechazadas: 0 });
+        
+        return resultado;
     }, [historial]);
     
     // --- MEJORA 2: Nuevo estado "CARGADO" ---
@@ -121,9 +121,10 @@ function HistorialAprobacionesPage() {
                     
                     <Card className="mb-4 text-center">
                         <Card.Body className="p-2">
-                            <span className="me-3">Total Solicitadas: <Badge bg="primary">{decimalToHHMM(totales.solicitadas)}</Badge></span>
-                            <span className="me-3">Total Aprobadas: <Badge bg="success">{decimalToHHMM(totales.aprobadas)}</Badge></span>
-                            <span>Total Cargadas RRHH: <Badge bg="dark">{decimalToHHMM(totales.rrhh)}</Badge></span>
+                            <span className="me-3">Solicitadas: <Badge bg="primary">{decimalToHHMM(totales.solicitadas_validas)}</Badge></span>
+                            <span className="me-3">Rechazadas: <Badge bg="danger">{decimalToHHMM(totales.rechazadas)}</Badge></span>
+                            <span className="me-3">Aprobadas: <Badge bg="success">{decimalToHHMM(totales.aprobadas)}</Badge></span>
+                            <span>Cargadas RRHH: <Badge bg="dark">{decimalToHHMM(totales.rrhh)}</Badge></span>
                         </Card.Body>
                     </Card>
 
