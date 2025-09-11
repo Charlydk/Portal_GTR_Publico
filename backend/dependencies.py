@@ -16,8 +16,7 @@ from security import decode_access_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> models.Analista:
-    # Comentamos el print del token para mejorar la seguridad en producción
-    # print(f"--- TOKEN RECIBIDO POR EL BACKEND: {token} ---") 
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales",

@@ -2,6 +2,7 @@ import os
 import redis.asyncio as redis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -50,6 +51,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# En producción (Render), esto redirigirá automáticamente todo el tráfico HTTP a HTTPS.
+if os.getenv("RENDER"): # Solo se activa en el entorno de Render
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+
 origins = [
     "http://localhost", "http://localhost:3000",
     "http://127.0.0.1:5174", "http://localhost:5174",
@@ -82,27 +88,19 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     """
     Permite a un analista iniciar sesión y obtener un token JWT.
     """
-    print("\n--- INTENTO DE LOGIN ---")
-    print(f"Username recibido: {form_data.username}")
-
+ 
     analista = await get_analista_by_email(form_data.username, db)
 
     if not analista:
-        print("❌ ERROR: No se encontró un analista con ese email.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email o contraseña incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    print(f"✅ Analista encontrado: {analista.email}")
-    print(f"Hashed password de la DB: {analista.hashed_password}")
-
     is_password_correct = verify_password(form_data.password, analista.hashed_password)
-    print(f"Resultado de verify_password: {is_password_correct}")
 
     if not is_password_correct:
-        print("❌ ERROR: La contraseña es incorrecta.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email o contraseña incorrectos",
@@ -110,19 +108,16 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
 
     if not analista.esta_activo:
-        print("❌ ERROR: El usuario está inactivo.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuario inactivo. Contacte al administrador."
         )
 
-    print("✅ Contraseña correcta. Creando token...")
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": analista.email, "role": analista.role.value},
         expires_delta=access_token_expires
     )
-    print("--- LOGIN EXITOSO ---\n")
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/users/me/", response_model=Analista, summary="Obtener información del Analista actual")

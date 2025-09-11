@@ -3,44 +3,43 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-// --- CAMBIO: Importamos los componentes específicos de React-Bootstrap ---
 import { Navbar, Nav, NavDropdown, Container } from 'react-bootstrap';
 
-function NavbarComponent() { // Renombrado temporalmente para evitar conflicto de nombres
+function NavbarComponent() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-    
-    // Estado para controlar si el menú hamburguesa está expandido o no
     const [expanded, setExpanded] = useState(false);
 
     const handleLogout = () => {
         logout();
-        setExpanded(false); // Cierra el menú al hacer logout
+        setExpanded(false);
         navigate('/login');
     };
 
-    // La lógica de roles no cambia
-    const isGtrUser = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
-    const isGtrAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+    // --- LÓGICA DE ROLES MODIFICADA ---
+    // Ahora, solo el SUPERVISOR se considera usuario y admin de GTR.
+    const isGtrUser = user && user.role === 'SUPERVISOR';
+    const isGtrAdmin = user && user.role === 'SUPERVISOR';
+    
+    // El resto de los roles no cambia.
     const isHheeUser = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
+    const isAnalyst = user && user.role === 'ANALISTA';
 
     return (
-        // Usamos el componente <Navbar> de React-Bootstrap
         <Navbar expand="lg" bg="primary" variant="dark" expanded={expanded} onToggle={() => setExpanded(prev => !prev)} collapseOnSelect>
             <Container fluid>
                 <Navbar.Brand as={Link} to="/" onClick={() => setExpanded(false)}>Portal WORKFORCE</Navbar.Brand>
                 <Navbar.Toggle aria-controls="responsive-navbar-nav" />
                 <Navbar.Collapse id="responsive-navbar-nav">
-                    {/* Menú Principal (izquierda) */}
                     <Nav className="me-auto">
                         {user && <Nav.Link as={Link} to="/dashboard" onClick={() => setExpanded(false)}>Dashboard</Nav.Link>}
                         
+                        {/* Estos enlaces ahora solo los verá el SUPERVISOR */}
                         {isGtrUser && (
                             <>
                                 <Nav.Link as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</Nav.Link>
                                 <Nav.Link as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</Nav.Link>
                                 <Nav.Link as={Link} to="/campanas" onClick={() => setExpanded(false)}>Campañas</Nav.Link>
-                                {user.role === 'ANALISTA' && <Nav.Link as={Link} to="/mis-solicitudes-hhee" onClick={() => setExpanded(false)}>Mis Solicitudes HHEE</Nav.Link>}
                             </>
                         )}
 
@@ -50,8 +49,12 @@ function NavbarComponent() { // Renombrado temporalmente para evitar conflicto d
                                 <Nav.Link as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</Nav.Link>
                             </>
                         )}
+                        
+                        {/* El analista solo verá su portal de solicitudes HHEE */}
+                        {isAnalyst && (
+                             <Nav.Link as={Link} to="/mis-solicitudes-hhee" onClick={() => setExpanded(false)}>Mis Solicitudes HHEE</Nav.Link>
+                        )}
 
-                        {/* --- MEJORA: Menú desplegable para HHEE --- */}
                         {isHheeUser && (
                             <NavDropdown title="Gestión HHEE" id="hhee-nav-dropdown">
                                 {isGtrAdmin && (
@@ -90,5 +93,4 @@ function NavbarComponent() { // Renombrado temporalmente para evitar conflicto d
     );
 }
 
-// Renombra la exportación para que coincida con el nombre de archivo
 export default NavbarComponent;

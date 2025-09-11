@@ -1,14 +1,15 @@
+// src/pages/DashboardPage.jsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { API_BASE_URL, GTR_API_URL } from '../api';
+import { GTR_API_URL } from '../api';
 import { Link } from 'react-router-dom';
 
 // Importamos todos nuestros widgets
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import IncidenciasActivasWidget from '../components/dashboard/IncidenciasActivasWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
-import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget'; // <-- NUEVO
+import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget';
 
 function DashboardPage() {
     const { user, authToken, loading: authLoading } = useAuth();
@@ -19,8 +20,8 @@ function DashboardPage() {
     // Estados para los datos de los widgets
     const [incidenciasActivas, setIncidenciasActivas] = useState([]);
     const [misIncidencias, setMisIncidencias] = useState([]);
-    const [dashboardStats, setDashboardStats] = useState(null); // <-- NUEVO
-    const [tareasDisponibles, setTareasDisponibles] = useState([]); // <-- NUEVO
+    const [dashboardStats, setDashboardStats] = useState(null);
+    const [tareasDisponibles, setTareasDisponibles] = useState([]);
 
     const fetchDashboardData = useCallback(async () => {
         if (!authToken || !user) return;
@@ -41,7 +42,6 @@ function DashboardPage() {
 
             const responses = await Promise.all(requests);
             
-            // Verificamos que todas las respuestas sean OK
             for (const res of responses) {
                 if (!res.ok) {
                     const errorData = await res.json().catch(() => ({ detail: 'Error en una de las peticiones a la API.' }));
@@ -49,7 +49,6 @@ function DashboardPage() {
                 }
             }
 
-            // Procesamos los datos
             const [activasData, statsData] = await Promise.all(responses.slice(0, 2).map(res => res.json()));
             setIncidenciasActivas(activasData);
             setDashboardStats(statsData);
@@ -69,7 +68,8 @@ function DashboardPage() {
 
     useEffect(() => {
         if (!authLoading && user) {
-            if (user.role !== 'SUPERVISOR_OPERACIONES') {
+            // El dashboard GTR solo se carga para Supervisores y Responsables
+            if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
                 fetchDashboardData();
             } else {
                 setLoading(false);
@@ -77,19 +77,22 @@ function DashboardPage() {
         }
     }, [authLoading, user, fetchDashboardData]);
 
-    if (authLoading) {
+    if (authLoading || loading) {
         return <Container className="text-center py-5"><Spinner /></Container>;
     }
     
     if (!user) return null;
     
+    // --- LÓGICA DE ROLES MODIFICADA ---
+
+    // 1. Vista para Supervisor de Operaciones (sin cambios)
     if (user.role === 'SUPERVISOR_OPERACIONES') {
         return (
             <Container className="py-5 text-center">
                 <Card className="shadow-lg p-4 mx-auto" style={{maxWidth: '600px'}}>
                     <Card.Body>
                         <Card.Title as="h2">¡Bienvenido, {user.nombre}!</Card.Title>
-                        <Card.Text className="my-4">Accedé al portal para la gestión de Horas Extras.</Card.Text>
+                        <Card.Text className="my-4">Accede al portal para la gestión de Horas Extras.</Card.Text>
                         <Link to="/hhee/portal" className="btn btn-primary btn-lg">Ir al Portal de HHEE</Link>
                     </Card.Body>
                 </Card>
@@ -97,6 +100,22 @@ function DashboardPage() {
         );
     }
 
+    // 2. NUEVA VISTA: Panel simple para Analistas
+    if (user.role === 'ANALISTA') {
+        return (
+            <Container className="py-5 text-center">
+                <Card className="shadow-lg p-4 mx-auto" style={{maxWidth: '600px'}}>
+                    <Card.Body>
+                        <Card.Title as="h2">¡Bienvenido, {user.nombre}!</Card.Title>
+                        <Card.Text className="my-4">Accede a tu portal para solicitar y revisar tus Horas Extras.</Card.Text>
+                        <Link to="/mis-solicitudes-hhee" className="btn btn-primary btn-lg">Ir a Mis Solicitudes HHEE</Link>
+                    </Card.Body>
+                </Card>
+            </Container>
+        );
+    }
+
+    // 3. El Dashboard GTR completo ahora solo es visible para SUPERVISOR y RESPONSABLE
     return (
         <Container fluid className="p-4">
             <h1 className="mb-4">Bitácora y Centro de Comando GTR</h1>
@@ -106,24 +125,14 @@ function DashboardPage() {
                 <Col lg={5}>
                     <PanelRegistroWidget onUpdate={fetchDashboardData} />
                 </Col>
-
                 <Col lg={7}>
                     <Row className="g-4">
                         <Col md={12}>
                              <IncidenciasActivasWidget incidencias={incidenciasActivas} loading={loading} />
                         </Col>
                         <Col md={12}>
-                            {/* --- LÓGICA CONDICIONAL MEJORADA --- */}
-                            {user.role === 'ANALISTA' 
-                                ? <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
-                                : <EstadisticasGTRWidget stats={dashboardStats} user={user} />
-                            }
+                            <EstadisticasGTRWidget stats={dashboardStats} user={user} />
                         </Col>
-                         {user.role === 'ANALISTA' && (
-                             <Col md={12}>
-                                <EstadisticasGTRWidget stats={dashboardStats} user={user} tareasDisponibles={tareasDisponibles.length} />
-                             </Col>
-                         )}
                     </Row>
                 </Col>
             </Row>
