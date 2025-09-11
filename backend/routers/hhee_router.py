@@ -69,6 +69,9 @@ class ValidacionDia(BaseModel):
 
 class CargarHHEERequest(BaseModel):
     validaciones: List[ValidacionDia]
+    
+class ConfirmacionPorIDs(BaseModel):
+    ids_a_marcar: List[int]
 
 router = APIRouter(
     tags=["Portal HHEE"]
@@ -1037,21 +1040,21 @@ class ConfirmacionEnvio(BaseModel):
     fecha_inicio: date
     fecha_fin: date
 
-@router.post("/marcar-como-reportado", status_code=status.HTTP_200_OK, summary="[GTR] Marca HHEE de un período como reportadas a RRHH")
+@router.post("/marcar-como-reportado", status_code=status.HTTP_200_OK, summary="[GTR] Marca una lista de HHEE por ID como reportadas a RRHH")
 async def marcar_rrhh_como_reportado(
-    confirmacion: ConfirmacionEnvio,
+    confirmacion: ConfirmacionPorIDs, # <-- Usamos el nuevo modelo
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     """
-    Marca todos los registros validados en un período de fechas como 'reportado_a_rrhh = true'.
-    Esta es una acción final e irreversible para un período.
+    Marca una lista específica de registros (por ID) como 'reportado_a_rrhh = true'.
     """
+    if not confirmacion.ids_a_marcar:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se proporcionaron IDs para marcar.")
+
     try:
         update_stmt = update(models.ValidacionHHEE).where(
-            models.ValidacionHHEE.estado == 'Validado',
-            models.ValidacionHHEE.fecha_hhee.between(confirmacion.fecha_inicio, confirmacion.fecha_fin),
-            models.ValidacionHHEE.reportado_a_rrhh == False
+            models.ValidacionHHEE.id.in_(confirmacion.ids_a_marcar) # <-- Actualizamos por ID
         ).values(
             reportado_a_rrhh=True,
             reportado_por_id=current_user.id,
@@ -1060,9 +1063,27 @@ async def marcar_rrhh_como_reportado(
         result = await db.execute(update_stmt)
         await db.commit()
         
-        # Devolvemos cuántas filas fueron afectadas
         return {"detail": f"{result.rowcount} registros han sido marcados como enviados a RRHH."}
 
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Ocurrió un error al marcar los registros: {e}")
+
+@router.get("/ids-pendientes-rrhh", response_model=List[int], summary="[GTR] Obtiene los IDs de HHEE pendientes para RRHH en un rango")
+async def obtener_ids_pendientes_rrhh(
+    fecha_inicio: date = Query(...),
+    fecha_fin: date = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Devuelve una lista de IDs de validaciones que están pendientes de ser reportadas a RRHH
+    dentro de un rango de fechas específico.
+    """
+    query = select(models.ValidacionHHEE.id).filter(
+        models.ValidacionHHEE.estado == 'Validado',
+        models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
+        models.ValidacionHHEE.reportado_a_rrhh == False
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
