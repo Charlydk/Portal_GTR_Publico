@@ -1,12 +1,15 @@
 import React from 'react';
-import { Form, Button } from 'react-bootstrap';
+import { Form, Button, Badge } from 'react-bootstrap';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
 
 function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange, onRevalidar, isPendientesView }) {
-    console.log("Datos para la fila:", dia);
+    
     if (!validacionDia) return null;
 
-const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLowerCase() === 'descanso' || (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
+    // --- 1. NUEVA LÓGICA: Detectamos si hay una licencia ---
+    const tieneLicencia = dia.permisos && dia.permisos.length > 0;
+
+    const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLowerCase() === 'descanso' || (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
 
     const handleTimeChange = (e, tipo, maxDecimal) => {
         const nuevoValorHHMM = e.target.value;
@@ -20,67 +23,48 @@ const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLower
         }
     };
 
-     const getRowClassName = () => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const fechaDia = new Date(dia.fecha + 'T00:00:00');
+    const getRowClassName = () => {
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        const fechaDia = new Date(dia.fecha + 'T00:00:00');
 
-    // Prioridad 1: Días ya validados correctamente (Verde)
-    if (dia.estado_final === 'Validado') {
-        return 'table-success';
-    }
-    // Prioridad 2: Días marcados como pendientes (Amarillo)
-    if (dia.estado_final === 'Pendiente por Corrección') {
-        return 'table-warning';
-    }
-    // Prioridad 3: Fechas futuras (Gris)
-    if (fechaDia > hoy) {
-        return 'table-secondary';
-    }
-
-    // Prioridad 4: Errores críticos de marcas (Rojo)
-    const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLowerCase() === 'descanso' || (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
-    if (!esDescanso) {
-        // Un día tiene HHEE de inicio si están calculadas O si ya fueron aprobadas previamente.
-        const tieneHHEEInicio = dia.hhee_inicio_calculadas > 0 || dia.hhee_aprobadas_inicio > 0;
-        // Lo mismo para las HHEE de fin.
-        const tieneHHEEFin = dia.hhee_fin_calculadas > 0 || dia.hhee_aprobadas_fin > 0;
-        
-        // El día no tiene HHEE de ningún tipo.
-        const noHayHHEE = !tieneHHEEInicio && !tieneHHEEFin;
-
-        // La falta de marca de inicio es un error si hay HHEE de inicio o si es un día normal sin HHEE.
-        const faltaInicioRequerido = !dia.marca_real_inicio && (tieneHHEEInicio || noHayHHEE);
-        // La falta de marca de fin es un error si hay HHEE de fin o si es un día normal sin HHEE.
-        const faltaFinRequerido = !dia.marca_real_fin && (tieneHHEEFin || noHayHHEE);
-
-        if (faltaInicioRequerido || faltaFinRequerido) {
-            return 'table-danger';
+        // --- 2. NUEVA LÓGICA: Damos prioridad máxima a las licencias ---
+        if (tieneLicencia) {
+            return 'table-info'; // Color azul claro para licencias
         }
-    }
-        // Por defecto, sin color (estado "No Guardado")
+        if (dia.estado_final === 'Validado') {
+            return 'table-success';
+        }
+        if (dia.estado_final === 'Pendiente por Corrección') {
+            return 'table-warning';
+        }
+        if (fechaDia > hoy) {
+            return 'table-secondary';
+        }
+
+        if (!esDescanso) {
+            const tieneHHEEInicio = dia.hhee_inicio_calculadas > 0 || dia.hhee_aprobadas_inicio > 0;
+            const tieneHHEEFin = dia.hhee_fin_calculadas > 0 || dia.hhee_aprobadas_fin > 0;
+            const noHayHHEE = !tieneHHEEInicio && !tieneHHEEFin;
+            const faltaInicioRequerido = !dia.marca_real_inicio && (tieneHHEEInicio || noHayHHEE);
+            const faltaFinRequerido = !dia.marca_real_fin && (tieneHHEEFin || noHayHHEE);
+
+            if (faltaInicioRequerido || faltaFinRequerido) {
+                return 'table-danger';
+            }
+        }
         return '';
     };
 
     const renderInputsHHEE = () => {
         const partes = [];
-        
         if (dia.hhee_aprobadas_inicio > 0) partes.push(<div key="antes-val" className="mb-1 text-success">✅ Antes: {decimalToHHMM(dia.hhee_aprobadas_inicio)}</div>);
         if (dia.hhee_aprobadas_fin > 0) partes.push(<div key="despues-val" className="text-success">✅ Después: {decimalToHHMM(dia.hhee_aprobadas_fin)}</div>);
         if (dia.hhee_aprobadas_descanso > 0) partes.push(<div key="desc-val" className="text-success">✅ Descanso: {decimalToHHMM(dia.hhee_aprobadas_descanso)}</div>);
-        
         const isDisabledGeneral = validacionDia.pendiente;
         
-        // --- INICIO DE LA CORRECCIÓN CLAVE ---
-        // Condición para mostrar el input "Antes":
-        // 1. Hay HHEE calculadas de "Antes".
-        // 2. AÚN NO han sido validadas por el supervisor.
-        // 3. AÚN NO han sido aprobadas por RRHH.
         const mostrarAntes = dia.hhee_inicio_calculadas > 0 && !dia.hhee_aprobadas_inicio && !dia.hhee_autorizadas_antes_gv;
-        
-        // La misma lógica para el input "Después"
         const mostrarDespues = dia.hhee_fin_calculadas > 0 && !dia.hhee_aprobadas_fin && !dia.hhee_autorizadas_despues_gv;
-        
         const mostrarDescanso = esDescanso && dia.cantidad_hhee_calculadas > 0 && !dia.hhee_aprobadas_descanso;
 
         if (mostrarAntes) {
@@ -113,8 +97,6 @@ const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLower
                 </div>
             );
         }
-        // --- FIN DE LA CORRECCIÓN CLAVE ---
-
         return partes.length > 0 ? partes : '---';
     };
 
@@ -161,10 +143,10 @@ const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLower
     const renderHHEERRHH = () => {
         if (esDescanso) {
             const totalDescansoRRHH = (dia.hhee_autorizadas_antes_gv || 0) + (dia.hhee_autorizadas_despues_gv || 0);
-            return totalDescansoRRHH > 0 ? <span className="text-primary">☑️☑️ Descanso: {decimalToHHMM(totalDescansoRRHH)}</span> : "";
+            return totalDescansoRRHH > 0 ? <span className="text-primary">☑️ Descanso: {decimalToHHMM(totalDescansoRRHH)}</span> : "";
         }
-        const antes = dia.hhee_autorizadas_antes_gv > 0 ? <span className="text-primary">☑️☑️ Antes: {decimalToHHMM(dia.hhee_autorizadas_antes_gv)}</span> : null;
-        const despues = dia.hhee_autorizadas_despues_gv > 0 ? <span className="text-primary">☑️☑️ Después: {decimalToHHMM(dia.hhee_autorizadas_despues_gv)}</span> : null;
+        const antes = dia.hhee_autorizadas_antes_gv > 0 ? <span className="text-primary">☑️ Antes: {decimalToHHMM(dia.hhee_autorizadas_antes_gv)}</span> : null;
+        const despues = dia.hhee_autorizadas_despues_gv > 0 ? <span className="text-primary">☑️ Después: {decimalToHHMM(dia.hhee_autorizadas_despues_gv)}</span> : null;
         if (!antes && !despues) return "";
         return (<>{antes && <div>{antes}</div>}{despues && <div>{despues}</div>}</>);
     };
@@ -177,9 +159,21 @@ const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLower
                 <div>Turno: {esDescanso ? 'Descanso' : `${dia.inicio_turno_teorico || 'N/A'} - ${dia.fin_turno_teorico || 'N/A'}`}</div>
                 <div>Marcas: {`${dia.marca_real_inicio || 'N/A'} - ${dia.marca_real_fin || 'N/A'}`}</div>
             </td>
-            <td>{renderInputsHHEE()}</td>
-            <td>{renderHHEERRHH()}</td>
-            <td>{renderCeldaPendiente()}</td>
+
+            {/* --- 3. NUEVA LÓGICA: Renderizado condicional --- */}
+            {tieneLicencia ? (
+                <td colSpan="3" className="text-center fw-bold align-middle">
+                    <Badge bg="info-subtle" text="dark" className="p-2 fs-6">
+                        Licencia: {dia.permisos.join(', ')}
+                    </Badge>
+                </td>
+            ) : (
+                <>
+                    <td>{renderInputsHHEE()}</td>
+                    <td>{renderHHEERRHH()}</td>
+                    <td>{renderCeldaPendiente()}</td>
+                </>
+            )}
         </tr>
     );
 }
