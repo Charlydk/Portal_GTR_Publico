@@ -29,10 +29,6 @@ function MetricasHHEEPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // Quitamos el useEffect que cargaba los pendientes al inicio
-    // const [loadingPendientes, setLoadingPendientes] = useState(true);
-    // useEffect(() => { ... }, [authToken]);
-
     const formatDate = (date) => date.toISOString().split('T')[0];
 
     const handlePeriodoChange = (seleccion) => {
@@ -56,17 +52,31 @@ function MetricasHHEEPage() {
     
     const fetchMetricas = async (e) => {
         if (e) e.preventDefault();
+        
+        // --- INICIO DE LA NUEVA VALIDACIÓN ---
         if (!fechaInicio || !fechaFin) {
             setError("Por favor, seleccione un rango de fechas.");
             return;
         }
+
+        const dInicio = new Date(fechaInicio);
+        const dFin = new Date(fechaFin);
+        const diffTime = Math.abs(dFin - dInicio);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays > 31) {
+            setError("El rango de fechas no puede ser mayor a 31 días para evitar errores de consulta.");
+            return;
+        }
+        // --- FIN DE LA NUEVA VALIDACIÓN ---
+
         setLoading(true); setError(null); setMetricas(null); setMetricasPendientes(null);
         try {
             const [metricasRes, pendientesRes] = await Promise.all([
                 fetch(`${API_BASE_URL}/hhee/metricas`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-                    body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin, formato: "OPERACIONES" }),
+                    body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
                 }),
                 fetch(`${API_BASE_URL}/hhee/metricas-pendientes`, {
                     headers: { 'Authorization': `Bearer ${authToken}` },
