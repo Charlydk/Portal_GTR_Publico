@@ -3,10 +3,10 @@ import { Form, Button } from 'react-bootstrap';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
 
 function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange, onRevalidar, isPendientesView }) {
-    
+    console.log("Datos para la fila:", dia);
     if (!validacionDia) return null;
 
-    const esDescanso = (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
+const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLowerCase() === 'descanso' || (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
 
     const handleTimeChange = (e, tipo, maxDecimal) => {
         const nuevoValorHHMM = e.target.value;
@@ -20,19 +20,45 @@ function ResultadoFila({ dia, validacionDia, onValidationChange, onSimpleChange,
         }
     };
 
-    const getRowClassName = () => {
-        const hoy = new Date();
-        hoy.setHours(0, 0, 0, 0);
-        const fechaDia = new Date(dia.fecha);
-        if (fechaDia > hoy) {
-            return 'table-secondary';
-        }
-        if (dia.estado_final === 'Pendiente por Corrección') {
-            return 'table-warning';
-        }
-        if (!esDescanso && (!dia.marca_real_inicio || !dia.marca_real_fin)) {
+     const getRowClassName = () => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const fechaDia = new Date(dia.fecha + 'T00:00:00');
+
+    // Prioridad 1: Días ya validados correctamente (Verde)
+    if (dia.estado_final === 'Validado') {
+        return 'table-success';
+    }
+    // Prioridad 2: Días marcados como pendientes (Amarillo)
+    if (dia.estado_final === 'Pendiente por Corrección') {
+        return 'table-warning';
+    }
+    // Prioridad 3: Fechas futuras (Gris)
+    if (fechaDia > hoy) {
+        return 'table-secondary';
+    }
+
+    // Prioridad 4: Errores críticos de marcas (Rojo)
+    const esDescanso = !dia.inicio_turno_teorico || dia.inicio_turno_teorico.toLowerCase() === 'descanso' || (dia.inicio_turno_teorico === '00:00' && dia.fin_turno_teorico === '00:00');
+    if (!esDescanso) {
+        // Un día tiene HHEE de inicio si están calculadas O si ya fueron aprobadas previamente.
+        const tieneHHEEInicio = dia.hhee_inicio_calculadas > 0 || dia.hhee_aprobadas_inicio > 0;
+        // Lo mismo para las HHEE de fin.
+        const tieneHHEEFin = dia.hhee_fin_calculadas > 0 || dia.hhee_aprobadas_fin > 0;
+        
+        // El día no tiene HHEE de ningún tipo.
+        const noHayHHEE = !tieneHHEEInicio && !tieneHHEEFin;
+
+        // La falta de marca de inicio es un error si hay HHEE de inicio o si es un día normal sin HHEE.
+        const faltaInicioRequerido = !dia.marca_real_inicio && (tieneHHEEInicio || noHayHHEE);
+        // La falta de marca de fin es un error si hay HHEE de fin o si es un día normal sin HHEE.
+        const faltaFinRequerido = !dia.marca_real_fin && (tieneHHEEFin || noHayHHEE);
+
+        if (faltaInicioRequerido || faltaFinRequerido) {
             return 'table-danger';
         }
+    }
+        // Por defecto, sin color (estado "No Guardado")
         return '';
     };
 

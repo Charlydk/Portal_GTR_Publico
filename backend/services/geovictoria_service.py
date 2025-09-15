@@ -38,7 +38,6 @@ def hhmm_to_decimal(time_str):
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     
-    # --- LÓGICA DE LOTES ---
     CHUNK_SIZE = 20
     todos_los_usuarios_gv = []
 
@@ -61,12 +60,10 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
         except Exception as e:
             print(f"Error en el servicio de GeoVictoria para el lote {i // CHUNK_SIZE + 1}: {e}")
             continue
-    # --- FIN DE LÓGICA DE LOTES ---
 
     if not todos_los_usuarios_gv:
         return []
     
-    # --- INICIO DE LA LÓGICA DE PROCESAMIENTO (DE TU VERSIÓN DEL ARCHIVO) ---
     dias_procesados_total = []
     
     for usuario in todos_los_usuarios_gv:
@@ -81,8 +78,17 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
             fecha_actual_str = fecha_dt.strftime('%Y-%m-%d')
 
             marcas = sorted([p for p in intervalo_diario.get("Punches", []) or [] if p.get("Date")], key=lambda x: x['Date'])
-            entradas = [pd.to_datetime(p['Date'], format='%Y%m%d%H%M%S') for p in marcas if p.get('Type') == 'Entrada']
-            salidas = [pd.to_datetime(p['Date'], format='%Y%m%d%H%M%S') for p in marcas if p.get('Type') == 'Salida']
+            
+            entradas = []
+            salidas = []
+            if marcas:
+                # Convertimos todas las marcas a objetos datetime para poder compararlas
+                marcas_dt = [pd.to_datetime(p['Date'], format='%Y%m%d%H%M%S') for p in marcas]
+                # La primera marca del día (la más temprana) es siempre la entrada
+                entradas.append(min(marcas_dt))
+                # Si hay más de una marca, la última (la más tardía) es la salida
+                if len(marcas_dt) > 1:
+                    salidas.append(max(marcas_dt))
             
             turno = (intervalo_diario.get("Shifts", []) or [{}])[0]
             
@@ -96,7 +102,7 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
                 "fecha": fecha_actual_str,
                 "nombre_apellido": f"{usuario.get('Name', '')} {usuario.get('LastName', '')}".strip(),
                 "rut_limpio": rut_usuario,
-                "rut": rut_usuario, # Añadimos rut para consistencia
+                "rut": rut_usuario,
                 "campaña": usuario.get('GroupDescription'),
                 "inicio_turno_teorico": turno.get('StartTime'),
                 "fin_turno_teorico": turno.get('ExitTime'),
@@ -109,7 +115,6 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
             dias_procesados_total.append(datos_dia)
             
     return dias_procesados_total
-    # --- FIN DE LA LÓGICA DE PROCESAMIENTO ---
     
 def aplicar_logica_de_negocio(datos_procesados):
     """
