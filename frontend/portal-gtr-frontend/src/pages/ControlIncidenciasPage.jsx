@@ -1,6 +1,7 @@
 // RUTA: src/pages/ControlIncidenciasPage.jsx
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table, Badge } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL } from '../api';
@@ -9,12 +10,11 @@ import { formatDateTime } from '../utils/dateFormatter';
 function ControlIncidenciasPage() {
     const { authToken } = useAuth();
 
-    // --- ESTADOS PRINCIPALES ---
+    // --- ESTADOS ---
     const [incidencias, setIncidencias] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-
-    // --- ESTADOS PARA LOS FILTROS ---
+    const [updatingStatusId, setUpdatingStatusId] = useState(null); // Para el spinner de cada fila
     const [filtros, setFiltros] = useState({
         fecha_inicio: '',
         fecha_fin: '',
@@ -27,13 +27,13 @@ function ControlIncidenciasPage() {
 
     // --- LÓGICA PARA CARGAR DATOS ---
 
-    // Carga las listas de campañas y analistas para poblar los menús de filtro
+    // Carga los datos para los menús de filtro (campañas y analistas)
     const fetchFilterData = useCallback(async () => {
         if (!authToken) return;
         try {
             const [campanasRes, analistasRes] = await Promise.all([
                 fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${GTR_API_URL}/analistas/listado-simple/`, { headers: { 'Authorization': `Bearer ${authToken}` } }) // <-- CAMBIA A ESTA NUEVA RUTA
+                fetch(`${GTR_API_URL}/analistas/listado-simple/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
             ]);
             if (!campanasRes.ok || !analistasRes.ok) throw new Error("No se pudieron cargar los datos para los filtros.");
             
@@ -48,12 +48,11 @@ function ControlIncidenciasPage() {
         fetchFilterData();
     }, [fetchFilterData]);
 
-    // Busca las incidencias en la API según los filtros aplicados
+    // Busca las incidencias según los filtros aplicados
     const fetchIncidencias = useCallback(async () => {
         setLoading(true);
         setError(null);
         
-        // Construye los parámetros de la URL solo con los filtros que tienen valor
         const params = new URLSearchParams();
         Object.entries(filtros).forEach(([key, value]) => {
             if (value) {
@@ -88,13 +87,41 @@ function ControlIncidenciasPage() {
             fecha_inicio: '', fecha_fin: '', campana_id: '',
             estado: '', asignado_a_id: ''
         });
-        setIncidencias([]); // Limpia los resultados de la tabla
+        setIncidencias([]);
     };
 
+    // Función para cambiar el estado de una incidencia
+    const handleStatusChange = async (incidenciaId, nuevoEstado) => {
+        setUpdatingStatusId(incidenciaId);
+        setError(null);
+        try {
+            const response = await fetch(`${GTR_API_URL}/incidencias/${incidenciaId}/estado`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                body: JSON.stringify({ estado: nuevoEstado, comentario_cierre: "Actualizado desde Portal de Control" })
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail);
+            }
+            
+            // Actualiza la fila modificada en la tabla sin recargar todo
+            const incidenciaActualizada = await response.json();
+            setIncidencias(prev => prev.map(inc => inc.id === incidenciaId ? incidenciaActualizada : inc));
+
+        } catch (err) {
+            setError(`Error al actualizar incidencia #${incidenciaId}: ${err.message}`);
+            setTimeout(() => setError(null), 5000); // Limpia el error después de 5 segundos
+        } finally {
+            setUpdatingStatusId(null);
+        }
+    };
+    
     const getStatusVariant = (estado) => {
         const map = { 'ABIERTA': 'danger', 'EN_PROGRESO': 'warning', 'CERRADA': 'success' };
         return map[estado] || 'secondary';
     };
+
 
     return (
         <Container fluid className="py-4">
@@ -103,7 +130,7 @@ function ControlIncidenciasPage() {
                     Portal de Control de Incidencias
                 </Card.Header>
                 <Card.Body>
-                    {/* --- FORMULARIO DE FILTROS --- */}
+                    {/* Formulario de Filtros */}
                     <Card className="mb-4 p-3 bg-light">
                         <Form>
                             <Row className="g-3">
@@ -113,7 +140,7 @@ function ControlIncidenciasPage() {
                                 <Col md={3}><Form.Group><Form.Label>Estado</Form.Label><Form.Select name="estado" value={filtros.estado} onChange={handleFiltroChange}><option value="">Todos</option><option value="ABIERTA">Abierta</option><option value="EN_PROGRESO">En Progreso</option><option value="CERRADA">Cerrada</option></Form.Select></Form.Group></Col>
                                 <Col md={3}><Form.Group><Form.Label>Analista Asignado</Form.Label><Form.Select name="asignado_a_id" value={filtros.asignado_a_id} onChange={handleFiltroChange}><option value="">Todos</option><option value="0">Sin Asignar</option>{listaAnalistas.map(a => <option key={a.id} value={a.id}>{`${a.nombre} ${a.apellido}`}</option>)}</Form.Select></Form.Group></Col>
                                 <Col md={6} className="d-flex align-items-end gap-2">
-                                    <Button variant="primary" onClick={fetchIncidencias} disabled={loading} className="w-100">{loading ? <Spinner size="sm" /> : 'Filtrar'}</Button>
+                                    <Button variant="primary" onClick={fetchIncidencias} disabled={loading} className="w-100">{loading && !updatingStatusId ? <Spinner size="sm" /> : 'Filtrar'}</Button>
                                     <Button variant="outline-secondary" onClick={handleLimpiarFiltros} className="w-100">Limpiar</Button>
                                 </Col>
                             </Row>
@@ -122,7 +149,7 @@ function ControlIncidenciasPage() {
 
                     {error && <Alert variant="danger">{error}</Alert>}
                     
-                    {/* --- TABLA DE RESULTADOS --- */}
+                    {/* Tabla de Resultados */}
                     <div className="table-responsive">
                         <Table striped bordered hover>
                             <thead>
@@ -130,12 +157,11 @@ function ControlIncidenciasPage() {
                                     <th>ID</th>
                                     <th>Título</th>
                                     <th>Campaña</th>
-                                    <th>Estado</th>
-                                    <th>Creador</th>
-                                    {/* Cambiamos el encabezado para que sea más general */}
-                                    <th>Responsable</th> 
+                                    <th style={{minWidth: '170px'}}>Estado</th>
+                                    <th>Responsable</th>
                                     <th>Fecha Apertura</th>
                                     <th>Fecha Cierre</th>
+                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -147,25 +173,28 @@ function ControlIncidenciasPage() {
                                             <td>{inc.id}</td>
                                             <td>{inc.titulo}</td>
                                             <td>{inc.campana.nombre}</td>
-                                            <td><Badge bg={getStatusVariant(inc.estado)}>{inc.estado.replace('_', ' ')}</Badge></td>
-                                            <td>{`${inc.creador.nombre} ${inc.creador.apellido}`}</td>
-                                            
-                                           
+                                            {/* --- CAMBIO: La columna de estado vuelve a ser estática --- */}
                                             <td>
-                                                {inc.estado === 'CERRADA' && inc.cerrado_por ? (
-                                                    <span title={`Cerrada por ${inc.cerrado_por.nombre} ${inc.cerrado_por.apellido}`}>
-                                                        {`${inc.cerrado_por.nombre} ${inc.cerrado_por.apellido}`}
-                                                    </span>
-                                                ) : inc.asignado_a ? (
-                                                    `${inc.asignado_a.nombre} ${inc.asignado_a.apellido}`
-                                                ) : (
-                                                    <span className="text-muted">Sin Asignar</span>
-                                                )}
+                                                <Badge bg={getStatusVariant(inc.estado)}>
+                                                    {inc.estado.replace('_', ' ')}
+                                                </Badge>
                                             </td>
-                                            
-
+                                            <td>
+                                                {inc.estado === 'CERRADA' && inc.cerrado_por 
+                                                    ? <span title={`Cerrada por ${inc.cerrado_por.nombre}`}>{inc.cerrado_por.nombre}</span>
+                                                    : inc.asignado_a 
+                                                        ? `${inc.asignado_a.nombre} ${inc.asignado_a.apellido}` 
+                                                        : <span className="text-muted fst-italic">Sin Asignar</span>}
+                                            </td>
                                             <td>{formatDateTime(inc.fecha_apertura)}</td>
                                             <td>{formatDateTime(inc.fecha_cierre)}</td>
+                                            <td>
+                                                <Link to={`/incidencias/${inc.id}`}>
+                                                    <Button variant="outline-primary" size="sm">
+                                                        Ver Detalle
+                                                    </Button>
+                                                </Link>
+                                            </td>
                                         </tr>
                                     ))
                                 ) : (
@@ -174,7 +203,6 @@ function ControlIncidenciasPage() {
                             </tbody>
                         </Table>
                     </div>
-
                 </Card.Body>
             </Card>
         </Container>
