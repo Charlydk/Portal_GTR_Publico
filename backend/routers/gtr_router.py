@@ -171,7 +171,11 @@ async def obtener_analistas_simple(
     Devuelve una lista ligera de analistas (ID, nombre, apellido, email, rol)
     ideal para poblar menús desplegables en el frontend sin sobrecargar la API.
     """
-    query = select(models.Analista).where(models.Analista.esta_activo == True).order_by(models.Analista.nombre)
+    query = select(models.Analista).where(
+        models.Analista.esta_activo == True,
+        models.Analista.role != UserRole.SUPERVISOR_OPERACIONES
+    ).order_by(models.Analista.nombre)
+    
     result = await db.execute(query)
     analistas = result.scalars().all()
     return analistas
