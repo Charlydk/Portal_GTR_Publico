@@ -132,7 +132,8 @@ function ControlIncidenciasPage() {
                                     <th>Campaña</th>
                                     <th>Estado</th>
                                     <th>Creador</th>
-                                    <th>Asignado a</th>
+                                    {/* Cambiamos el encabezado para que sea más general */}
+                                    <th>Responsable</th> 
                                     <th>Fecha Apertura</th>
                                     <th>Fecha Cierre</th>
                                 </tr>
@@ -148,7 +149,21 @@ function ControlIncidenciasPage() {
                                             <td>{inc.campana.nombre}</td>
                                             <td><Badge bg={getStatusVariant(inc.estado)}>{inc.estado.replace('_', ' ')}</Badge></td>
                                             <td>{`${inc.creador.nombre} ${inc.creador.apellido}`}</td>
-                                            <td>{inc.asignado_a ? `${inc.asignado_a.nombre} ${inc.asignado_a.apellido}` : <span className="text-muted">Sin Asignar</span>}</td>
+                                            
+                                           
+                                            <td>
+                                                {inc.estado === 'CERRADA' && inc.cerrado_por ? (
+                                                    <span title={`Cerrada por ${inc.cerrado_por.nombre} ${inc.cerrado_por.apellido}`}>
+                                                        {`${inc.cerrado_por.nombre} ${inc.cerrado_por.apellido}`}
+                                                    </span>
+                                                ) : inc.asignado_a ? (
+                                                    `${inc.asignado_a.nombre} ${inc.asignado_a.apellido}`
+                                                ) : (
+                                                    <span className="text-muted">Sin Asignar</span>
+                                                )}
+                                            </td>
+                                            
+
                                             <td>{formatDateTime(inc.fecha_apertura)}</td>
                                             <td>{formatDateTime(inc.fecha_cierre)}</td>
                                         </tr>

@@ -193,7 +193,8 @@ class Incidencia(Base):
     asignado_a_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     creador_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
-    
+    cerrado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    cerrado_por = relationship("Analista", foreign_keys=[cerrado_por_id])
     creador = relationship("Analista", back_populates="incidencias_creadas", foreign_keys=[creador_id])
     asignado_a = relationship("Analista", back_populates="incidencias_asignadas", foreign_keys=[asignado_a_id])
     campana = relationship("Campana", back_populates="incidencias")

@@ -2151,18 +2151,18 @@ async def update_incidencia_estado(
 
     comentario_final = f"El estado de la incidencia cambió de '{estado_anterior}' a '{update_data.estado.value}'."
     
-    # Si estamos cerrando la incidencia y se proporcionó un comentario, lo añadimos.
-    if update_data.estado == EstadoIncidencia.CERRADA and update_data.comentario_cierre:
+    if update_data.estado == EstadoIncidencia.CERRADA:
         db_incidencia.fecha_cierre = update_data.fecha_cierre or datetime.utcnow()
         db_incidencia.asignado_a_id = None
-        # Combinamos el cambio de estado con el comentario del usuario
-        comentario_final += f"\nComentario de cierre: {update_data.comentario_cierre}"
+        db_incidencia.cerrado_por_id = current_analista.id
+        if update_data.comentario_cierre:
+            comentario_final += f"\nComentario de cierre: {update_data.comentario_cierre}"
 
     elif update_data.estado == EstadoIncidencia.ABIERTA:
         db_incidencia.fecha_cierre = None
         db_incidencia.asignado_a_id = None
-    
-    # Creamos la actualización con el comentario final (combinado o no)
+        db_incidencia.cerrado_por_id = None
+
     nueva_actualizacion = models.ActualizacionIncidencia(
         comentario=comentario_final,
         incidencia_id=incidencia_id,
@@ -2173,6 +2173,7 @@ async def update_incidencia_estado(
     await db.commit()
     
     return await get_incidencia_by_id(incidencia_id, db, current_analista)
+
 @router.put("/incidencias/{incidencia_id}/asignar", response_model=Incidencia, summary="Asignar una incidencia al usuario actual")
 async def asignar_incidencia_a_usuario_actual(
     incidencia_id: int,

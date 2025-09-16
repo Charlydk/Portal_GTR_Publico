@@ -231,6 +231,7 @@ class IncidenciaSimple(BaseModel):
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
     creador: AnalistaSimple
+    cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
     class Config:
@@ -247,6 +248,7 @@ class Incidencia(BaseModel):
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
     creador: AnalistaSimple
+    cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
     actualizaciones: List[ActualizacionIncidencia] = []
