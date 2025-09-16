@@ -2051,6 +2051,47 @@ async def get_incidencia_by_id(
     
     return incidencia
 
+@router.get("/incidencias/filtradas/", response_model=List[IncidenciaSimple], summary="[Portal de Control] Obtener incidencias con filtros avanzados")
+async def get_incidencias_filtradas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE])),
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+    campana_id: Optional[int] = None,
+    estado: Optional[EstadoIncidencia] = None,
+    asignado_a_id: Optional[int] = None
+):
+    """
+    Endpoint para el portal de control de incidencias.
+    Permite filtrar por rango de fechas, campaña, estado y analista asignado.
+    """
+    query = select(models.Incidencia).options(
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.asignado_a)
+    ).order_by(models.Incidencia.fecha_apertura.desc())
+
+    if fecha_inicio:
+        query = query.filter(models.Incidencia.fecha_apertura >= datetime.combine(fecha_inicio, time.min))
+    
+    if fecha_fin:
+        query = query.filter(models.Incidencia.fecha_apertura <= datetime.combine(fecha_fin, time.max))
+
+    if campana_id:
+        query = query.filter(models.Incidencia.campana_id == campana_id)
+
+    if estado:
+        query = query.filter(models.Incidencia.estado == estado)
+
+    if asignado_a_id is not None:
+        if asignado_a_id == 0:  # Usamos 0 como señal para buscar "Sin Asignar"
+            query = query.filter(models.Incidencia.asignado_a_id.is_(None))
+        else:
+            query = query.filter(models.Incidencia.asignado_a_id == asignado_a_id)
+            
+    result = await db.execute(query)
+    return result.scalars().unique().all()
+
 @router.post("/incidencias/{incidencia_id}/actualizaciones", response_model=ActualizacionIncidencia, summary="Añadir una actualización a una Incidencia")
 async def add_actualizacion_incidencia(
     incidencia_id: int,

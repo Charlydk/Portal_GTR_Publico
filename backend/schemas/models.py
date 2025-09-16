@@ -229,6 +229,8 @@ class IncidenciaSimple(BaseModel):
     estado: EstadoIncidencia
     tipo: TipoIncidencia
     fecha_apertura: datetime
+    fecha_cierre: Optional[datetime] = None
+    creador: AnalistaSimple
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
     class Config:
