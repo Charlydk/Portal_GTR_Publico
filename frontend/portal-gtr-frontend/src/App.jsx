@@ -26,6 +26,7 @@ import DetalleCampanaPage from './pages/DetalleCampanaPage';
 import DetalleTareaPage from './pages/DetalleTareaPage';
 import RegisterPage from './pages/RegisterPage';
 import ListaIncidenciasPage from './pages/ListaIncidenciasPage';
+import ControlIncidenciasPage from './pages/ControlIncidenciasPage';
 import DetalleTareaGeneradaPage from './pages/DetalleTareaGeneradaPage';
 import FormularioIncidenciaPage from './pages/FormularioIncidenciaPage';
 import DetalleIncidenciaPage from './pages/DetalleIncidenciaPage';
@@ -97,6 +98,7 @@ const AppContent = () => {
           <Route path="/campanas/editar/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioCampanaPage /></PrivateRoute>} />
           <Route path="/asignar-campanas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AsignacionCampanasPage /></PrivateRoute>} />
           <Route path="/incidencias" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><ListaIncidenciasPage /></PrivateRoute>} />
+          <Route path="/control-incidencias" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><ControlIncidenciasPage /></PrivateRoute>} />
           <Route path="/incidencias/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioIncidenciaPage /></PrivateRoute>} />
           <Route path="/incidencias/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleIncidenciaPage /></PrivateRoute>} />
           <Route path="/hhee/portal" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']}><PortalHHEEPage /></PrivateRoute>} />

@@ -46,6 +46,7 @@ function NavbarComponent() {
                         {isGtrAdmin && (
                             <>
                                 <Nav.Link as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</Nav.Link>
+                                <Nav.Link as={Link} to="/control-incidencias" onClick={() => setExpanded(false)}>Control Incidencias</Nav.Link>
                                 <Nav.Link as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</Nav.Link>
                             </>
                         )}
