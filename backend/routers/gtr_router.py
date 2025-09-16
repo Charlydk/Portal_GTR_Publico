@@ -2097,9 +2097,10 @@ async def get_incidencias_filtradas(
         query = query.filter(models.Incidencia.estado == estado)
 
     if asignado_a_id is not None:
-        if asignado_a_id == 0:  # Usamos 0 como señal para buscar "Sin Asignar"
+        if asignado_a_id == 0:  # 0 es la señal para buscar "Sin Asignar"
             query = query.filter(models.Incidencia.asignado_a_id.is_(None))
         else:
+            # Hacemos la condición más explícita para evitar ambigüedades
             query = query.filter(models.Incidencia.asignado_a_id == asignado_a_id)
             
     result = await db.execute(query)
