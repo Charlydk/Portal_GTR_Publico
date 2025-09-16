@@ -5,6 +5,7 @@ import { Container, Card, Button, Alert, Spinner, Badge } from 'react-bootstrap'
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import HistorialTarea from '../components/HistorialTarea';
+import { formatDateTime } from '../utils/dateFormatter';
 
 function DetalleTareaGeneradaPage() {
   const { id } = useParams();
@@ -116,7 +117,7 @@ function DetalleTareaGeneradaPage() {
     }
   };
 
-  const formatDateTime = (apiDateString) => {
+  /*const formatDateTime = (apiDateString) => {
     // Si no hay fecha, devuelve N/A
     if (!apiDateString) {
         return 'N/A';
@@ -143,7 +144,7 @@ function DetalleTareaGeneradaPage() {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-};
+};*/
 
   if (authLoading || loading) {
     return (

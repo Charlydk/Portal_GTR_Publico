@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
+import { formatDateTime } from '../utils/dateFormatter';
 
 function DetalleAnalistaPage() {
   const { id } = useParams(); // Obtiene el ID del analista de la URL
@@ -69,7 +70,7 @@ function DetalleAnalistaPage() {
     }
   }, [id, authToken, fetchAnalista]);
 
-  const formatDateTime = (apiDateString) => {
+  /*const formatDateTime = (apiDateString) => {
     // Si no hay fecha, devuelve N/A
     if (!apiDateString) {
         return 'N/A';
@@ -96,7 +97,7 @@ function DetalleAnalistaPage() {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-};
+};*/
 
   // Función para manejar la desactivación de un analista
   const handleDesactivarAnalista = async () => {

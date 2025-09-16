@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge, Fo
 import { useAuth } from '../hooks/useAuth';
 import { API_BASE_URL, GTR_API_URL } from '../api';
 import { useNavigate } from 'react-router-dom';
+import { formatDateTime } from '../utils/dateFormatter';
 
 function TareasPage() {
     const { user, authToken, loading: authLoading } = useAuth();
@@ -110,7 +111,7 @@ function TareasPage() {
     };
     
     // El resto de funciones no cambian
-    const formatDateTime = (apiDateString) => {
+    /*const formatDateTime = (apiDateString) => {
         if (!apiDateString) return 'N/A';
         const date = new Date(apiDateString + 'Z');
         if (isNaN(date.getTime())) return 'Fecha inválida';
@@ -120,7 +121,7 @@ function TareasPage() {
         const hours = String(date.getHours()).padStart(2, '0');
         const minutes = String(date.getMinutes()).padStart(2, '0');
         return `${day}/${month}/${year}, ${hours}:${minutes}`;
-    };
+    };*/
 
     if (authLoading) return <Container className="text-center py-5"><Spinner /></Container>;
 

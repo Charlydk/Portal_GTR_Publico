@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Card, Spinner, Alert, Table, Badge } from 'react-bootstrap';
+import { formatDateTime } from '../utils/dateFormatter';
 
 function ListaIncidenciasPage() {
     const { authToken } = useAuth();
@@ -36,7 +37,7 @@ function ListaIncidenciasPage() {
         return map[estado] || 'secondary';
     };
 
-    const formatDateTime = (apiDateString) => {
+    /*const formatDateTime = (apiDateString) => {
         // Si no hay fecha, devuelve N/A
         if (!apiDateString) {
             return 'N/A';
@@ -63,7 +64,7 @@ function ListaIncidenciasPage() {
         const seconds = String(date.getSeconds()).padStart(2, '0');
     
         return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-    };
+    };*/
 
     if (loading) return <Container className="text-center py-5"><Spinner animation="border" /></Container>;
     if (error) return <Container className="mt-4"><Alert variant="danger">{error}</Alert></Container>;

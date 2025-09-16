@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
+import { formatDateTime } from '../utils/dateFormatter';
 // CORRECCIÓN: Añadimos 'Modal' a la lista de importaciones
 import { Container, Card, Spinner, Alert, ListGroup, Badge, Form, Button, Row, Col, Modal } from 'react-bootstrap';
 
@@ -20,7 +21,7 @@ function DetalleIncidenciaPage() {
     const [fechaCierreManual, setFechaCierreManual] = useState('');
     const [comentarioCierre, setComentarioCierre] = useState('');
 
-    const formatDateTime = (apiDateString) => {
+    /*const formatDateTime = (apiDateString) => {
         // Si no hay fecha, devuelve N/A
         if (!apiDateString) {
             return 'N/A';
@@ -47,7 +48,7 @@ function DetalleIncidenciaPage() {
         const seconds = String(date.getSeconds()).padStart(2, '0');
     
         return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-    };
+    };*/
 
     const getStatusInfo = (incidencia) => {
         if (!incidencia) return { text: '', variant: 'secondary' };

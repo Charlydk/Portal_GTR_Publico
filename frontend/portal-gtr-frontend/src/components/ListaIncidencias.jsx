@@ -2,6 +2,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ListGroup, Badge, Button, Card } from 'react-bootstrap';
+import { formatDateTime } from '../utils/dateFormatter';
 
 // Este componente recibe las incidencias directamente de su página padre
 const ListaIncidencias = ({ incidencias, campanaId }) => {
@@ -20,7 +21,7 @@ const ListaIncidencias = ({ incidencias, campanaId }) => {
     }
   };
 
-  const formatDateTime = (apiDateString) => {
+  /*const formatDateTime = (apiDateString) => {
     // Si no hay fecha, devuelve N/A
     if (!apiDateString) {
         return 'N/A';
@@ -47,7 +48,7 @@ const ListaIncidencias = ({ incidencias, campanaId }) => {
     const seconds = String(date.getSeconds()).padStart(2, '0');
 
     return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-};
+};*/
 
   return (
     <Card>

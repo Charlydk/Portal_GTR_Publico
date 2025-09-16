@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
+import { formatDateTime } from '../utils/dateFormatter';
 
 function TareasDisponiblesPage() {
     const navigate = useNavigate();
@@ -13,7 +14,7 @@ function TareasDisponiblesPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    const formatDateTime = (utcIsoString) => {
+    /*const formatDateTime = (utcIsoString) => {
         if (!utcIsoString) return 'N/A';
         const date = new Date(utcIsoString + 'Z');
         if (isNaN(date.getTime())) return 'Fecha inválida';
@@ -23,7 +24,7 @@ function TareasDisponiblesPage() {
         const hours = String(date.getHours()).padStart(2, '0');
         const minutes = String(date.getMinutes()).padStart(2, '0');
         return `${day}/${month}/${year}, ${hours}:${minutes}`;
-    };
+    };*/
 
     const fetchTareasDisponibles = useCallback(async () => {
         if (!authToken) {

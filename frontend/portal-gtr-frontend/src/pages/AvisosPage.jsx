@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { GTR_API_URL } from '../api'; // <-- CAMBIO
 import { useAuth } from '../hooks/useAuth';
 import { Button, Spinner, Alert, Table } from 'react-bootstrap';
+import { formatDateTime } from '../utils/dateFormatter';
+
 
 function AvisosPage() {
   const [avisos, setAvisos] = useState([]);
@@ -72,7 +74,7 @@ function AvisosPage() {
     }
   };
 
-  const formatDateTime = (apiDateString) => {
+  /*const formatDateTime = (apiDateString) => {
     if (!apiDateString) return 'N/A';
     const date = new Date(apiDateString + 'Z');
     if (isNaN(date.getTime())) return 'Fecha inválida';
@@ -82,7 +84,7 @@ function AvisosPage() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${day}/${month}/${year}, ${hours}:${minutes}`;
-  };
+  };*/
 
   if (loading) {
     return (
