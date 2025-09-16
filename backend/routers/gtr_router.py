@@ -162,6 +162,19 @@ async def obtener_analistas(
     analistas = result.scalars().unique().all()
     return analistas
 
+@router.get("/analistas/listado-simple/", response_model=List[AnalistaSimple], summary="Obtener una lista simple de analistas para selectores")
+async def obtener_analistas_simple(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Devuelve una lista ligera de analistas (ID, nombre, apellido, email, rol)
+    ideal para poblar menús desplegables en el frontend sin sobrecargar la API.
+    """
+    query = select(models.Analista).where(models.Analista.esta_activo == True).order_by(models.Analista.nombre)
+    result = await db.execute(query)
+    analistas = result.scalars().all()
+    return analistas
 
 @router.get("/analistas/{analista_id}", response_model=Analista, summary="Obtener Analista por ID")
 async def obtener_analista_por_id(
