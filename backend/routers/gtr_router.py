@@ -2562,7 +2562,8 @@ async def get_recientes_incidencias_activas(
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
-        selectinload(models.Incidencia.asignado_a)
+        selectinload(models.Incidencia.asignado_a),
+        selectinload(models.Incidencia.creador)
     ).filter(
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
     ).order_by(
