@@ -2654,9 +2654,6 @@ async def get_dashboard_stats(
 ):
     """
     Devuelve un conjunto de estadísticas para el dashboard.
-    - Para ANALISTAS: Devuelve el conteo de incidencias sin asignar, 
-      las asignadas a él y la lista de incidencias activas del día en sus campañas.
-    - Para SUPERVISORES: Devuelve el conteo total de incidencias activas en el sistema.
     """
     today_start = datetime.combine(date.today(), time.min)
     today_end = datetime.combine(date.today(), time.max)
@@ -2694,7 +2691,8 @@ async def get_dashboard_stats(
 
         daily_incidents_query = select(models.Incidencia).options(
             selectinload(models.Incidencia.campana),
-            selectinload(models.Incidencia.creador) # <-- ESTA ES LA LÍNEA QUE FALTABA
+            selectinload(models.Incidencia.creador),
+            selectinload(models.Incidencia.cerrado_por) # <-- ESTA ES LA LÍNEA QUE FALTABA
         ).filter(
             models.Incidencia.campana_id.in_(assigned_campaign_ids),
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO]),

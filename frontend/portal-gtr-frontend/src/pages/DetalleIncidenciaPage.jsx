@@ -177,6 +177,7 @@ function DetalleIncidenciaPage() {
                         <Col md={6}>
                             <p><strong>Herramienta Afectada:</strong> {incidencia.herramienta_afectada || 'N/A'}</p>
                             <p><strong>Indicador Afectado:</strong> {incidencia.indicador_afectado || 'N/A'}</p>
+                            <p><strong>Gravedad:</strong> <Badge bg={incidencia.gravedad === 'ALTA' ? 'danger' : incidencia.gravedad === 'MEDIA' ? 'warning' : 'info'}>{incidencia.gravedad}</Badge></p>
                             <p><strong>Fecha Apertura:</strong> {formatDateTime(incidencia.fecha_apertura)}</p>
                             <p><strong>Fecha Cierre:</strong> {formatDateTime(incidencia.fecha_cierre)}</p>
                         </Col>

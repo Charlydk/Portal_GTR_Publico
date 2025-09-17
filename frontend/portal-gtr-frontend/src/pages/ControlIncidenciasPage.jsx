@@ -157,6 +157,7 @@ function ControlIncidenciasPage() {
                                     <th>ID</th>
                                     <th>Título</th>
                                     <th>Campaña</th>
+                                    <th>Gravedad</th>
                                     <th style={{minWidth: '170px'}}>Estado</th>
                                     <th>Responsable</th>
                                     <th>Fecha Apertura</th>
@@ -173,7 +174,11 @@ function ControlIncidenciasPage() {
                                             <td>{inc.id}</td>
                                             <td>{inc.titulo}</td>
                                             <td>{inc.campana.nombre}</td>
-                                            {/* --- CAMBIO: La columna de estado vuelve a ser estática --- */}
+                                            <td>
+                                                <Badge bg={inc.gravedad === 'ALTA' ? 'danger' : inc.gravedad === 'MEDIA' ? 'warning' : 'info'}>
+                                                    {inc.gravedad}
+                                                </Badge>
+                                            </td>
                                             <td>
                                                 <Badge bg={getStatusVariant(inc.estado)}>
                                                     {inc.estado.replace('_', ' ')}
