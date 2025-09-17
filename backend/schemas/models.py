@@ -129,6 +129,19 @@ class AnalistaSimple(BaseModel):
     class Config:
         from_attributes = True
 
+class AnalistaListado(BaseModel):
+    id: int
+    nombre: str
+    apellido: str
+    email: EmailStr
+    bms_id: int
+    rut: Optional[str] = None
+    role: UserRole
+    esta_activo: bool
+
+    class Config:
+        from_attributes = True
+
 # ===================================================================
 # IMPORTANTE: Los schemas de ComentarioTarea AHORA ESTÁN AQUÍ,
 #             ANTES de la definición del schema 'Tarea'.

@@ -19,7 +19,7 @@ from sql_app.crud import get_analista_by_email
 
 # --- IMPORTS COMPLETOS DE SCHEMAS PARA GTR ---
 from schemas.models import (
-    Analista, AnalistaCreate, AnalistaSimple, AnalistaBase, PasswordUpdate,
+    Analista, AnalistaCreate, AnalistaSimple, AnalistaBase, PasswordUpdate, AnalistaListado,
     Campana, CampanaBase, CampanaSimple,
     Tarea, TareaBase, TareaSimple, TareaListOutput, TareaUpdate,
     ChecklistItem, ChecklistItemBase, ChecklistItemSimple, ChecklistItemUpdate,
@@ -139,27 +139,20 @@ async def crear_analista(
             detail=f"Error inesperado al crear analista: {e}"
         )
 
-@router.get("/analistas/", response_model=List[Analista], summary="Obtener todos los Analistas Activos")
+@router.get("/analistas/", response_model=List[AnalistaListado], summary="Obtener todos los Analistas Activos para la tabla principal")
 async def obtener_analistas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    query = select(models.Analista).where(models.Analista.esta_activo == True).options(
-        # CORRECCIÓN: Añadimos la carga ansiosa completa
-        selectinload(models.Analista.campanas_asignadas),
-        selectinload(models.Analista.tareas),
-        selectinload(models.Analista.avisos_creados),
-        selectinload(models.Analista.acuses_recibo_avisos),
-        selectinload(models.Analista.tareas_generadas_por_avisos),
-        selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-        selectinload(models.Analista.incidencias_asignadas),
-        selectinload(models.Analista.solicitudes_realizadas),
-        selectinload(models.Analista.solicitudes_gestionadas)
-        
-
-    )
+    """
+    Devuelve una lista de analistas con los campos necesarios para la tabla principal.
+    Esta consulta es simple y eficiente, no carga relaciones anidadas innecesarias.
+    """
+    query = select(models.Analista).where(models.Analista.esta_activo == True).order_by(models.Analista.nombre)
+    
     result = await db.execute(query)
-    analistas = result.scalars().unique().all()
+    analistas = result.scalars().all()
+    
     return analistas
 
 @router.get("/analistas/listado-simple/", response_model=List[AnalistaSimple], summary="Obtener una lista simple de analistas para selectores")
