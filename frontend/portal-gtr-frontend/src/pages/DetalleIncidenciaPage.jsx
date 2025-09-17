@@ -21,35 +21,6 @@ function DetalleIncidenciaPage() {
     const [fechaCierreManual, setFechaCierreManual] = useState('');
     const [comentarioCierre, setComentarioCierre] = useState('');
 
-    /*const formatDateTime = (apiDateString) => {
-        // Si no hay fecha, devuelve N/A
-        if (!apiDateString) {
-            return 'N/A';
-        }
-    
-        
-        // Le añadimos la 'Z' al final para forzar a que JavaScript
-        // interprete el string como una fecha en formato UTC universal.
-        const date = new Date(apiDateString + 'Z');
-        // --------------------------------
-    
-        // Verificamos si la fecha parseada es válida
-        if (isNaN(date.getTime())) {
-            return 'Fecha inválida';
-        }
-    
-        // A partir de aquí, el resto del código funciona como se espera
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0'); // Los meses son de 0 a 11
-        const year = date.getFullYear();
-        
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-    
-        return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-    };*/
-
     const getStatusInfo = (incidencia) => {
         if (!incidencia) return { text: '', variant: 'secondary' };
         if (incidencia.estado === 'EN_PROGRESO' && incidencia.asignado_a) {
@@ -251,7 +222,11 @@ function DetalleIncidenciaPage() {
                     <Card.Header as="h4">Gestionar Incidencia</Card.Header>
                     <Card.Body className="text-center">
                         <p>Acciones disponibles:</p>
-                        
+                        <Link to={`/incidencias/editar/${incidencia.id}`}>
+                            <Button variant="warning" disabled={isSubmitting} className="me-2">
+                                Modificar Incidencia
+                            </Button>
+                        </Link>
                         {/* CAMBIO: Nuevo botón para asignarse la tarea */}
                         {showAssignButton && (
                             <Button variant="warning" onClick={handleAssignToMe} disabled={isSubmitting} className="me-2">

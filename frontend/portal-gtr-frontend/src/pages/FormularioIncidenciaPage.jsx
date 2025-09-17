@@ -1,11 +1,15 @@
-// src/pages/FormularioIncidenciaPage.jsx
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+// RUTA: src/pages/FormularioIncidenciaPage.jsx
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
-import { Form, Button, Container, Card, Spinner, Alert, Row, Col } from 'react-bootstrap';
+import { Container, Card, Spinner, Alert } from 'react-bootstrap';
+import FormularioIncidencia from '../components/incidencias/FormularioIncidencia'; // <-- IMPORTAMOS EL NUEVO COMPONENTE
 
 function FormularioIncidenciaPage() {
+    const { id } = useParams();
+    const isEditing = !!id;
     const navigate = useNavigate();
     const location = useLocation();
     const { authToken } = useAuth();
@@ -14,35 +18,54 @@ function FormularioIncidenciaPage() {
     const campanaIdFromQuery = queryParams.get('campanaId');
 
     const [formData, setFormData] = useState({
-        titulo: '',
-        descripcion_inicial: '',
-        herramienta_afectada: '',
-        indicador_afectado: '',
-        tipo: 'TECNICA',
-        campana_id: campanaIdFromQuery || '',
-        fecha_apertura: '',
+        titulo: '', descripcion_inicial: '', herramienta_afectada: '',
+        indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA',
+        campana_id: campanaIdFromQuery || '', asignado_a_id: ''
     });
-    const [usarAhoraCreacion, setUsarAhoraCreacion] = useState(true);
+
     const [campanas, setCampanas] = useState([]);
+    const [analistas, setAnalistas] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        const fetchCampanas = async () => {
-            if (!authToken) return;
-            try {
-                const response = await fetch(`${GTR_API_URL}/campanas/`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` },
+    const fetchData = useCallback(async () => {
+        if (!authToken) return;
+        setLoading(true);
+        try {
+            const [campanasRes, analistasRes] = await Promise.all([
+                fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetch(`${GTR_API_URL}/analistas/listado-simple/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+            ]);
+            if (!campanasRes.ok || !analistasRes.ok) throw new Error('No se pudieron cargar los datos necesarios.');
+            setCampanas(await campanasRes.json());
+            setAnalistas(await analistasRes.json());
+
+            if (isEditing) {
+                const incidenciaRes = await fetch(`${GTR_API_URL}/incidencias/${id}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+                if (!incidenciaRes.ok) throw new Error('No se pudo cargar la incidencia para editar.');
+                const incidenciaData = await incidenciaRes.json();
+                setFormData({
+                    titulo: incidenciaData.titulo || '',
+                    descripcion_inicial: incidenciaData.descripcion_inicial || '',
+                    herramienta_afectada: incidenciaData.herramienta_afectada || '',
+                    indicador_afectado: incidenciaData.indicador_afectado || '',
+                    tipo: incidenciaData.tipo || 'TECNICA',
+                    gravedad: incidenciaData.gravedad || 'MEDIA',
+                    campana_id: incidenciaData.campana?.id || '',
+                    asignado_a_id: incidenciaData.asignado_a?.id || ''
                 });
-                if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
-                const data = await response.json();
-                setCampanas(data);
-            } catch (err) {
-                setError(err.message);
             }
-        };
-        fetchCampanas();
-    }, [authToken]);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [authToken, id, isEditing]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -53,41 +76,29 @@ function FormularioIncidenciaPage() {
         setIsSubmitting(true);
         setError(null);
 
-        // Preparamos el payload que se enviará
-        const payload = {
+        const url = isEditing ? `${GTR_API_URL}/incidencias/${id}` : `${GTR_API_URL}/incidencias/`;
+        const method = isEditing ? 'PUT' : 'POST';
+        
+        const payload = isEditing ? {
+             ...formData,
+             asignado_a_id: formData.asignado_a_id ? parseInt(formData.asignado_a_id, 10) : null
+        } : {
             ...formData,
             campana_id: parseInt(formData.campana_id, 10),
         };
 
-        // Si el checkbox está marcado, no enviamos fecha_apertura
-        // para que el backend use la hora actual.
-        if (usarAhoraCreacion) {
-            delete payload.fecha_apertura;
-        } else if (!payload.fecha_apertura) {
-            // Si no está marcado, nos aseguramos de que se haya introducido una fecha
-            setError("Debe especificar una fecha y hora de apertura.");
-            setIsSubmitting(false);
-            return;
-        }
-
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(payload),
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error al crear la incidencia.');
+                throw new Error(errorData.detail || `Error al ${isEditing ? 'actualizar' : 'crear'} la incidencia.`);
             }
-            
-            const nuevaIncidencia = await response.json();
-            navigate(`/incidencias/${nuevaIncidencia.id}`);
-
+            const result = await response.json();
+            navigate(`/incidencias/${result.id}`);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -95,89 +106,25 @@ function FormularioIncidenciaPage() {
         }
     };
 
+    if (loading && !isEditing) return <Container className="text-center py-5"><Spinner /></Container>;
+
     return (
         <Container className="py-5">
             <Card className="shadow-lg">
-                <Card.Header as="h2" className="bg-danger text-white">Registrar Nueva Incidencia</Card.Header>
+                <Card.Header as="h2" className="bg-danger text-white">{isEditing ? 'Modificar Incidencia' : 'Registrar Nueva Incidencia'}</Card.Header>
                 <Card.Body>
-                    {error && <Alert variant="danger">{error}</Alert>}
-                    <Form onSubmit={handleSubmit}>
-                        <Form.Group className="mb-3" controlId="titulo">
-                            <Form.Label>Título</Form.Label>
-                            <Form.Control type="text" name="titulo" value={formData.titulo} onChange={handleChange} required />
-                        </Form.Group>
-
-                        <Form.Group className="mb-3" controlId="descripcion_inicial">
-                            <Form.Label>Descripción Inicial</Form.Label>
-                            <Form.Control as="textarea" rows={4} name="descripcion_inicial" value={formData.descripcion_inicial} onChange={handleChange} required />
-                        </Form.Group>
-
-                        <Form.Group className="mb-3" controlId="fecha_apertura_group">
-                            <Form.Check 
-                                type="checkbox"
-                                id="usarAhoraCreacion"
-                                label="Usar fecha y hora actual para la apertura"
-                                checked={usarAhoraCreacion}
-                                onChange={(e) => setUsarAhoraCreacion(e.target.checked)}
-                            />
-                            {!usarAhoraCreacion && (
-                                <Form.Control
-                                    type="datetime-local"
-                                    name="fecha_apertura"
-                                    value={formData.fecha_apertura}
-                                    onChange={handleChange}
-                                    className="mt-2"
-                                />
-                            )}
-                        </Form.Group>
-
-                        <Row>
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="herramienta_afectada">
-                                    <Form.Label>Herramienta Afectada</Form.Label>
-                                    <Form.Control type="text" name="herramienta_afectada" value={formData.herramienta_afectada} onChange={handleChange} />
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="indicador_afectado">
-                                    <Form.Label>Indicador Afectado</Form.Label>
-                                    <Form.Control type="text" name="indicador_afectado" value={formData.indicador_afectado} onChange={handleChange} />
-                                </Form.Group>
-                            </Col>
-                        </Row>
-
-                        <Row>
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="tipo">
-                                    <Form.Label>Tipo de Incidencia</Form.Label>
-                                    <Form.Select name="tipo" value={formData.tipo} onChange={handleChange}>
-                                        <option value="TECNICA">Técnica</option>
-                                        <option value="OPERATIVA">Operativa</option>
-                                        <option value="HUMANA">Humana</option>
-                                        <option value="OTRO">Otro</option>
-                                    </Form.Select>
-                                </Form.Group>
-                            </Col>
-                            <Col md={6}>
-                                <Form.Group className="mb-3" controlId="campana_id">
-                                    <Form.Label>Campaña</Form.Label>
-                                    <Form.Select name="campana_id" value={formData.campana_id} onChange={handleChange} required disabled={!!campanaIdFromQuery}>
-                                        <option value="">Seleccione una campaña</option>
-                                        {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                                    </Form.Select>
-                                </Form.Group>
-                            </Col>
-                        </Row>
-                        
-                        <div className="text-end">
-                            <Link to={campanaIdFromQuery ? `/campanas/${campanaIdFromQuery}` : '/incidencias'} className="btn btn-secondary me-2">
-                                Cancelar
-                            </Link>
-                            <Button type="submit" variant="primary" disabled={isSubmitting}>
-                                {isSubmitting ? <Spinner as="span" animation="border" size="sm" /> : 'Registrar Incidencia'}
-                            </Button>
-                        </div>
-                    </Form>
+                    <FormularioIncidencia
+                        formData={formData}
+                        handleChange={handleChange}
+                        handleSubmit={handleSubmit}
+                        isEditing={isEditing}
+                        isSubmitting={isSubmitting}
+                        loading={loading}
+                        campanas={campanas}
+                        analistas={analistas}
+                        error={error}
+                        campanaIdFromQuery={campanaIdFromQuery}
+                    />
                 </Card.Body>
             </Card>
         </Container>

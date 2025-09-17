@@ -2,7 +2,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date, time
 from typing import List, Optional
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE
+from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
 
 # --- Schemas Base (para creación y actualización) ---
 
@@ -110,6 +110,7 @@ class IncidenciaCreate(BaseModel):
     herramienta_afectada: Optional[str] = None
     indicador_afectado: Optional[str] = None
     tipo: TipoIncidencia
+    gravedad: GravedadIncidencia
     campana_id: int
     fecha_apertura: Optional[datetime] = None
 
@@ -241,6 +242,7 @@ class IncidenciaSimple(BaseModel):
     titulo: str
     estado: EstadoIncidencia
     tipo: TipoIncidencia
+    gravedad: Optional[GravedadIncidencia] = 'MEDIA'
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
     creador: AnalistaSimple
@@ -257,6 +259,7 @@ class Incidencia(BaseModel):
     herramienta_afectada: Optional[str] = None
     indicador_afectado: Optional[str] = None
     tipo: TipoIncidencia
+    gravedad: GravedadIncidencia
     estado: EstadoIncidencia
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
@@ -268,6 +271,16 @@ class Incidencia(BaseModel):
     class Config:
         from_attributes = True
 
+class IncidenciaUpdate(BaseModel):
+    titulo: Optional[str] = None
+    descripcion_inicial: Optional[str] = None
+    herramienta_afectada: Optional[str] = None
+    indicador_afectado: Optional[str] = None
+    tipo: Optional[TipoIncidencia] = None
+    gravedad: Optional[GravedadIncidencia] = None
+    campana_id: Optional[int] = None
+    asignado_a_id: Optional[int] = None
+
 # --- Actualización de relaciones en schemas existentes ---
 
 class Campana(CampanaBase):
@@ -275,7 +288,6 @@ class Campana(CampanaBase):
     fecha_creacion: datetime
     analistas_asignados: List[AnalistaSimple] = []
     comentarios_generales: List["ComentarioGeneralBitacora"] = []
-    incidencias: List[IncidenciaSimple] = []
     class Config:
         from_attributes = True
 

@@ -30,7 +30,7 @@ from schemas.models import (
 
     BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate,
     ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate,
-    Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,
+    Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
     TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase
@@ -2039,6 +2039,52 @@ async def get_incidencias(
     result = await db.execute(query)
     return result.scalars().unique().all()
 
+@router.put("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Actualizar los detalles de una Incidencia")
+async def update_incidencia(
+    incidencia_id: int,
+    update_data: IncidenciaUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    result = await db.execute(
+        select(models.Incidencia)
+        .options(selectinload(models.Incidencia.asignado_a))
+        .filter(models.Incidencia.id == incidencia_id)
+    )
+    db_incidencia = result.scalars().first()
+    if not db_incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+
+    update_dict = update_data.model_dump(exclude_unset=True)
+    historial_comentarios = []
+
+    for key, value in update_dict.items():
+        old_value = getattr(db_incidencia, key)
+        if old_value != value:
+            # Lógica especial para campos con relaciones (IDs)
+            if key == "asignado_a_id":
+                old_analyst_name = db_incidencia.asignado_a.nombre if db_incidencia.asignado_a else "Nadie"
+                new_analyst_result = await db.execute(select(models.Analista).filter(models.Analista.id == value))
+                new_analyst = new_analyst_result.scalars().first()
+                new_analyst_name = new_analyst.nombre if new_analyst else "Nadie"
+                historial_comentarios.append(f"Campo 'Asignado a' cambiado de '{old_analyst_name}' a '{new_analyst_name}'.")
+            else:
+                historial_comentarios.append(f"Campo '{key}' cambiado de '{old_value}' a '{value}'.")
+            
+            setattr(db_incidencia, key, value)
+    
+    if historial_comentarios:
+        comentario_texto = "Incidencia actualizada por " + current_analista.nombre + ":\n- " + "\n- ".join(historial_comentarios)
+        nueva_actualizacion = models.ActualizacionIncidencia(
+            comentario=comentario_texto,
+            incidencia_id=incidencia_id,
+            autor_id=current_analista.id
+        )
+        db.add(nueva_actualizacion)
+
+    await db.commit()
+    return await get_incidencia_by_id(incidencia_id, db, current_analista)
+
 @router.get("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Obtener detalles de una Incidencia")
 async def get_incidencia_by_id(
     incidencia_id: int,
@@ -2564,7 +2610,14 @@ async def get_recientes_incidencias_activas(
     ).limit(5)
     
     result = await db.execute(query)
-    return result.scalars().unique().all()
+    incidencias_db = result.scalars().unique().all()
+
+    response_list = []
+    for inc in incidencias_db:
+        incidencia_pydantic = IncidenciaSimple.model_validate(inc)
+        response_list.append(incidencia_pydantic)
+        
+    return response_list
 
 
 @router.get("/analistas/me/incidencias_asignadas", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
@@ -2608,9 +2661,7 @@ async def get_dashboard_stats(
     today_start = datetime.combine(date.today(), time.min)
     today_end = datetime.combine(date.today(), time.max)
     
-    # Si el usuario es Supervisor o Responsable
     if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
-        # Contar todas las incidencias abiertas o en progreso
         query = select(func.count(models.Incidencia.id)).filter(
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
         )
@@ -2618,19 +2669,16 @@ async def get_dashboard_stats(
         total_activas = result.scalar_one()
         return DashboardStatsSupervisor(total_incidencias_activas=total_activas)
 
-    # Si el usuario es Analista
     elif current_analista.role == UserRole.ANALISTA:
         assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
         
         if not assigned_campaign_ids:
-             # Si no tiene campañas, devuelve ceros para evitar errores.
              return DashboardStatsAnalista(
                  incidencias_sin_asignar=0,
                  mis_incidencias_asignadas=0,
                  incidencias_del_dia=[]
              )
 
-        # 1. Contar incidencias sin asignar en sus campañas
         unassigned_query = select(func.count(models.Incidencia.id)).filter(
             models.Incidencia.campana_id.in_(assigned_campaign_ids),
             models.Incidencia.asignado_a_id.is_(None)
@@ -2638,16 +2686,15 @@ async def get_dashboard_stats(
         unassigned_result = await db.execute(unassigned_query)
         unassigned_count = unassigned_result.scalar_one()
 
-        # 2. Contar incidencias asignadas a él
         my_assigned_query = select(func.count(models.Incidencia.id)).filter(
             models.Incidencia.asignado_a_id == current_analista.id
         )
         my_assigned_result = await db.execute(my_assigned_query)
         my_assigned_count = my_assigned_result.scalar_one()
 
-        # 3. Obtener lista de incidencias del día (abiertas o en progreso) en sus campañas
         daily_incidents_query = select(models.Incidencia).options(
-            selectinload(models.Incidencia.campana)
+            selectinload(models.Incidencia.campana),
+            selectinload(models.Incidencia.creador) # <-- ESTA ES LA LÍNEA QUE FALTABA
         ).filter(
             models.Incidencia.campana_id.in_(assigned_campaign_ids),
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO]),
@@ -2663,5 +2710,4 @@ async def get_dashboard_stats(
             incidencias_del_dia=daily_incidents
         )
     
-    # Por si acaso, si hay un rol no contemplado
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard definido.")

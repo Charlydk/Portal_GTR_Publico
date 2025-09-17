@@ -1,12 +1,12 @@
 # sql_app/models.py
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, ForeignKey, 
-                        Enum as SQLEnum, Date, Time, Text, Float, Date, DateTime)
+                        Enum as SQLEnum, Enum, Date, Time, Text, Float, Date, DateTime)
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE
+from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
 
 import sqlalchemy as sa
 
@@ -187,6 +187,7 @@ class Incidencia(Base):
     herramienta_afectada = Column(String, nullable=True)
     indicador_afectado = Column(String, nullable=True)
     tipo = Column(SQLEnum(TipoIncidencia, name="tipoincidencia_inc"), nullable=False)
+    gravedad = Column(Enum(GravedadIncidencia, name="gravedadincidencia_enum", native_enum=False), nullable=False, default=GravedadIncidencia.MEDIA)
     estado = Column(SQLEnum(EstadoIncidencia), nullable=False, default=EstadoIncidencia.ABIERTA)
     fecha_apertura = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     fecha_cierre = Column(DateTime(timezone=True), nullable=True)

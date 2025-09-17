@@ -32,3 +32,8 @@ class EstadoSolicitudHHEE(str, Enum):
     PENDIENTE = "PENDIENTE"
     APROBADA = "APROBADA"
     RECHAZADA = "RECHAZADA"
+    
+class GravedadIncidencia(str, Enum):
+    BAJA = "BAJA"
+    MEDIA = "MEDIA"
+    ALTA = "ALTA"

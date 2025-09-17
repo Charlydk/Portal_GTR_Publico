@@ -1,11 +1,12 @@
-// src/pages/DashboardPage.jsx
+// RUTA: src/pages/DashboardPage.jsx
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL } from '../api';
 import { Link } from 'react-router-dom';
 
-// Importamos todos nuestros widgets
+// Importamos todos los widgets que usaremos
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import IncidenciasActivasWidget from '../components/dashboard/IncidenciasActivasWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
@@ -34,7 +35,7 @@ function DashboardPage() {
                 fetch(`${GTR_API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             ];
 
-            // Añadimos peticiones específicas por rol
+            // Añadimos peticiones específicas por rol de Analista
             if (user.role === 'ANALISTA') {
                 requests.push(fetch(`${GTR_API_URL}/analistas/me/incidencias_asignadas`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
                 requests.push(fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
@@ -68,8 +69,8 @@ function DashboardPage() {
 
     useEffect(() => {
         if (!authLoading && user) {
-            // El dashboard GTR solo se carga para Supervisores y Responsables
-            if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
+            // El dashboard GTR completo se carga para los roles GTR
+            if (['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role)) {
                 fetchDashboardData();
             } else {
                 setLoading(false);
@@ -83,9 +84,9 @@ function DashboardPage() {
     
     if (!user) return null;
     
-    // --- LÓGICA DE ROLES MODIFICADA ---
+    // --- LÓGICA DE RENDERIZADO POR ROL ---
 
-    // 1. Vista para Supervisor de Operaciones (sin cambios)
+    // 1. Vista para Supervisor de Operaciones
     if (user.role === 'SUPERVISOR_OPERACIONES') {
         return (
             <Container className="py-5 text-center">
@@ -100,38 +101,38 @@ function DashboardPage() {
         );
     }
 
-    // 2. NUEVA VISTA: Panel simple para Analistas
-    if (user.role === 'ANALISTA') {
-        return (
-            <Container className="py-5 text-center">
-                <Card className="shadow-lg p-4 mx-auto" style={{maxWidth: '600px'}}>
-                    <Card.Body>
-                        <Card.Title as="h2">¡Bienvenido, {user.nombre}!</Card.Title>
-                        <Card.Text className="my-4">Accede a tu portal para solicitar y revisar tus Horas Extras.</Card.Text>
-                        <Link to="/mis-solicitudes-hhee" className="btn btn-primary btn-lg">Ir a Mis Solicitudes HHEE</Link>
-                    </Card.Body>
-                </Card>
-            </Container>
-        );
-    }
-
-    // 3. El Dashboard GTR completo ahora solo es visible para SUPERVISOR y RESPONSABLE
+    // 2. Vista para Analistas, Supervisores y Responsables (el dashboard GTR completo)
     return (
         <Container fluid className="p-4">
             <h1 className="mb-4">Bitácora y Centro de Comando GTR</h1>
             {error && <Alert variant="danger">{error}</Alert>}
             
             <Row className="g-4">
+                {/* Columna Izquierda */}
                 <Col lg={5}>
                     <PanelRegistroWidget onUpdate={fetchDashboardData} />
                 </Col>
+
+                {/* Columna Derecha */}
                 <Col lg={7}>
                     <Row className="g-4">
                         <Col md={12}>
                              <IncidenciasActivasWidget incidencias={incidenciasActivas} loading={loading} />
                         </Col>
+
+                        {/* Widget de "Mis Incidencias" solo para Analistas */}
+                        {user.role === 'ANALISTA' && (
+                             <Col md={12}>
+                                <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
+                            </Col>
+                        )}
+                       
                         <Col md={12}>
-                            <EstadisticasGTRWidget stats={dashboardStats} user={user} />
+                            <EstadisticasGTRWidget 
+                                stats={dashboardStats} 
+                                user={user} 
+                                tareasDisponibles={tareasDisponibles.length} 
+                            />
                         </Col>
                     </Row>
                 </Col>
