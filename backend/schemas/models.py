@@ -249,6 +249,7 @@ class IncidenciaSimple(BaseModel):
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
+    ultimo_comentario: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -267,6 +268,7 @@ class Incidencia(BaseModel):
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
+    ultimo_comentario: Optional[str] = None 
     actualizaciones: List[ActualizacionIncidencia] = []
     class Config:
         from_attributes = True

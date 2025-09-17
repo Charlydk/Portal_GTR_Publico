@@ -1,5 +1,3 @@
-// RUTA: src/pages/DashboardPage.jsx
-
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
@@ -29,13 +27,11 @@ function DashboardPage() {
         setLoading(true);
         setError(null);
         try {
-            // Hacemos todas las peticiones en paralelo
             const requests = [
                 fetch(`${GTR_API_URL}/incidencias/activas/recientes`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
                 fetch(`${GTR_API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             ];
 
-            // Añadimos peticiones específicas por rol de Analista
             if (user.role === 'ANALISTA') {
                 requests.push(fetch(`${GTR_API_URL}/analistas/me/incidencias_asignadas`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
                 requests.push(fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
@@ -69,7 +65,6 @@ function DashboardPage() {
 
     useEffect(() => {
         if (!authLoading && user) {
-            // El dashboard GTR completo se carga para los roles GTR
             if (['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role)) {
                 fetchDashboardData();
             } else {
@@ -84,9 +79,7 @@ function DashboardPage() {
     
     if (!user) return null;
     
-    // --- LÓGICA DE RENDERIZADO POR ROL ---
-
-    // 1. Vista para Supervisor de Operaciones
+    // Vista para Supervisor de Operaciones
     if (user.role === 'SUPERVISOR_OPERACIONES') {
         return (
             <Container className="py-5 text-center">
@@ -101,38 +94,47 @@ function DashboardPage() {
         );
     }
 
-    // 2. Vista para Analistas, Supervisores y Responsables (el dashboard GTR completo)
+    // --- RENDERIZADO PARA ANALISTAS Y SUPERVISORES ---
     return (
         <Container fluid className="p-4">
             <h1 className="mb-4">Bitácora y Centro de Comando GTR</h1>
             {error && <Alert variant="danger">{error}</Alert>}
             
             <Row className="g-4">
-                {/* Columna Izquierda */}
+                {/* Columna Izquierda: Formularios */}
                 <Col lg={5}>
                     <PanelRegistroWidget onUpdate={fetchDashboardData} />
                 </Col>
 
-                {/* Columna Derecha */}
+                {/* Columna Derecha: Widgets de Información */}
                 <Col lg={7}>
                     <Row className="g-4">
-                        <Col md={12}>
-                             <IncidenciasActivasWidget incidencias={incidenciasActivas} loading={loading} />
-                        </Col>
-
-                        {/* Widget de "Mis Incidencias" solo para Analistas */}
-                        {user.role === 'ANALISTA' && (
-                             <Col md={12}>
-                                <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
+                         {/* Estadísticas siempre arriba para Supervisor/Responsable */}
+                        {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                            <Col md={12}>
+                                <EstadisticasGTRWidget stats={dashboardStats} user={user} />
                             </Col>
                         )}
+
+                        {/* Para Analista, estadísticas y "Mis Incidencias" arriba */}
+                        {user.role === 'ANALISTA' && (
+                            <>
+                                <Col md={12}>
+                                     <EstadisticasGTRWidget 
+                                        stats={dashboardStats} 
+                                        user={user} 
+                                        tareasDisponibles={tareasDisponibles.length} 
+                                    />
+                                </Col>
+                                <Col md={12}>
+                                    <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
+                                </Col>
+                            </>
+                        )}
                        
+                        {/* Incidencias Activas para todos los roles GTR */}
                         <Col md={12}>
-                            <EstadisticasGTRWidget 
-                                stats={dashboardStats} 
-                                user={user} 
-                                tareasDisponibles={tareasDisponibles.length} 
-                            />
+                             <IncidenciasActivasWidget incidencias={incidenciasActivas} loading={loading} />
                         </Col>
                     </Row>
                 </Col>

@@ -9,11 +9,14 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func
+from sqlalchemy import case
+
+
 
 # --- Imports de la aplicación ---
 from database import get_db
 from sql_app import models
-from enums import UserRole, ProgresoTarea, EstadoIncidencia
+from enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
 from dependencies import get_current_analista, require_role
 from sql_app.crud import get_analista_by_email
 
@@ -2590,24 +2593,33 @@ async def get_tarea_generada_historial_estados(
 
 # --- NUEVOS ENDPOINTS PARA WIDGETS DEL DASHBOARD ---
 
-@router.get("/incidencias/activas/recientes", response_model=List[IncidenciaSimple], summary="Obtener las 5 incidencias activas más recientes")
+@router.get("/incidencias/activas/recientes", response_model=List[IncidenciaSimple], summary="Obtener todas las incidencias activas")
 async def get_recientes_incidencias_activas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA, UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     """
-    Devuelve una lista de las 5 incidencias más recientes que están
-    en estado 'ABIERTA' o 'EN_PROGRESO'.
+    Devuelve una lista de TODAS las incidencias activas (Abierta o En Progreso),
+    ordenadas por gravedad y luego por fecha.
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
         selectinload(models.Incidencia.asignado_a),
-        selectinload(models.Incidencia.creador)
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.cerrado_por),
+        selectinload(models.Incidencia.actualizaciones) # Cargamos las actualizaciones para encontrar la última
     ).filter(
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
     ).order_by(
+        # Ordenamos por gravedad: ALTA > MEDIA > BAJA
+        case(
+            (models.Incidencia.gravedad == GravedadIncidencia.ALTA, 1),
+            (models.Incidencia.gravedad == GravedadIncidencia.MEDIA, 2),
+            (models.Incidencia.gravedad == GravedadIncidencia.BAJA, 3),
+            else_=4
+        ),
         models.Incidencia.fecha_apertura.desc()
-    ).limit(5)
+    )
     
     result = await db.execute(query)
     incidencias_db = result.scalars().unique().all()
@@ -2615,6 +2627,13 @@ async def get_recientes_incidencias_activas(
     response_list = []
     for inc in incidencias_db:
         incidencia_pydantic = IncidenciaSimple.model_validate(inc)
+        
+        # Encontramos el último comentario
+        if inc.actualizaciones:
+            ultima_actualizacion = max(inc.actualizaciones, key=lambda x: x.fecha_actualizacion)
+            fecha_str = ultima_actualizacion.fecha_actualizacion.strftime('%d/%m %H:%M')
+            incidencia_pydantic.ultimo_comentario = f"({fecha_str}) {ultima_actualizacion.comentario}"
+        
         response_list.append(incidencia_pydantic)
         
     return response_list

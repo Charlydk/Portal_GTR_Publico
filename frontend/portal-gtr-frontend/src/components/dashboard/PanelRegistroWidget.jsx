@@ -1,5 +1,4 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,26 +8,20 @@ import FormularioIncidencia from '../incidencias/FormularioIncidencia';
 function PanelRegistroWidget({ onUpdate }) {
     const { authToken } = useAuth();
     const [key, setKey] = useState('bitacora');
-
-    // Estados generales
     const [campanas, setCampanas] = useState([]);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState('');
-
-    // --- Lógica de Bitácora (Restaurada) ---
+    const [loadingIncidencia, setLoadingIncidencia] = useState(false);
+    const [loadingBitacora, setLoadingBitacora] = useState(false);
     const [selectedCampana, setSelectedCampana] = useState('');
     const [bitacoraData, setBitacoraData] = useState({ hora: '', comentario: '' });
     const [editingEntry, setEditingEntry] = useState(null);
     const [logDiario, setLogDiario] = useState([]);
     const [loadingLog, setLoadingLog] = useState(false);
-    const [loadingBitacora, setLoadingBitacora] = useState(false); // <-- ESTADO QUE FALTABA
-
-    // --- Lógica para el Formulario de Incidencia ---
     const [incidenciaData, setIncidenciaData] = useState({
         titulo: '', descripcion_inicial: '', herramienta_afectada: '',
         indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: ''
     });
-    const [loadingIncidencia, setLoadingIncidencia] = useState(false);
 
     const fetchCampanas = useCallback(async () => {
         if (!authToken) return;
@@ -38,12 +31,11 @@ function PanelRegistroWidget({ onUpdate }) {
             const data = await response.json();
             setCampanas(data);
             if (data.length > 0 && !selectedCampana) {
-                setSelectedCampana(data[0].id); // Seleccionar la primera por defecto
+                setSelectedCampana(data[0].id);
             }
         } catch (err) { setError(err.message); }
     }, [authToken, selectedCampana]);
-    
-    // Función para cargar el log de la bitácora
+
     const fetchLogDiario = useCallback(async (campanaId) => {
         if (!campanaId) { setLogDiario([]); return; }
         setLoadingLog(true);
@@ -56,10 +48,8 @@ function PanelRegistroWidget({ onUpdate }) {
         finally { setLoadingLog(false); }
     }, [authToken]);
 
-
     useEffect(() => { fetchCampanas(); }, [fetchCampanas]);
     useEffect(() => { if (key === 'bitacora') fetchLogDiario(selectedCampana); }, [key, selectedCampana, fetchLogDiario]);
-
 
     const handleIncidenciaChange = (e) => setIncidenciaData({ ...incidenciaData, [e.target.name]: e.target.value });
     const handleBitacoraFormChange = (e) => setBitacoraData({ ...bitacoraData, [e.target.name]: e.target.value });
@@ -74,7 +64,6 @@ function PanelRegistroWidget({ onUpdate }) {
         setBitacoraData({ hora: '', comentario: '' });
     };
 
-    // --- Lógica para enviar la bitácora ---
     const handleBitacoraSubmit = async (e) => {
         e.preventDefault();
         setLoadingBitacora(true); setError(null); setSuccess('');
@@ -96,7 +85,6 @@ function PanelRegistroWidget({ onUpdate }) {
         }
     };
 
-    // --- Lógica para enviar la incidencia ---
     const handleIncidenciaSubmit = async (e) => {
         e.preventDefault();
         setLoadingIncidencia(true); setError(null); setSuccess('');
