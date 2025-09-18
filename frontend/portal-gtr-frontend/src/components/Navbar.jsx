@@ -1,4 +1,4 @@
-// src/components/Navbar.jsx
+// RUTA: src/components/Navbar.jsx
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -15,15 +15,15 @@ function NavbarComponent() {
         setExpanded(false);
         navigate('/login');
     };
-
-    // --- LÓGICA DE ROLES MODIFICADA ---
-    // Ahora, solo el SUPERVISOR se considera usuario y admin de GTR.
-    const isGtrUser = user && user.role === 'SUPERVISOR';
-    const isGtrAdmin = user && user.role === 'SUPERVISOR';
     
-    // El resto de los roles no cambia.
+    // Roles para GTR (Analista, Supervisor, Responsable)
+    const isGtrUser = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+    // Roles de Admin GTR (Supervisor, Responsable)
+    const isGtrAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+    
+    // Roles para HHEE
     const isHheeUser = user && ['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role);
-    const isAnalyst = user && user.role === 'ANALISTA';
+    const isAnalystHhee = user && user.role === 'ANALISTA';
 
     return (
         <Navbar expand="lg" bg="primary" variant="dark" expanded={expanded} onToggle={() => setExpanded(prev => !prev)} collapseOnSelect>
@@ -34,25 +34,26 @@ function NavbarComponent() {
                     <Nav className="me-auto">
                         {user && <Nav.Link as={Link} to="/dashboard" onClick={() => setExpanded(false)}>Dashboard</Nav.Link>}
                         
-                        {/* Estos enlaces ahora solo los verá el SUPERVISOR */}
                         {isGtrUser && (
-                            <>
-                                <Nav.Link as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</Nav.Link>
-                                <Nav.Link as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</Nav.Link>
-                                <Nav.Link as={Link} to="/campanas" onClick={() => setExpanded(false)}>Campañas</Nav.Link>
-                            </>
+                            <NavDropdown title="Gestión GTR" id="gtr-nav-dropdown">
+                                <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/campanas" onClick={() => setExpanded(false)}>Campañas</NavDropdown.Item>
+                                {/* --- ENLACE MOVIDO AQUÍ --- */}
+                                <NavDropdown.Item as={Link} to="/control-incidencias" onClick={() => setExpanded(false)}>Control Incidencias</NavDropdown.Item>
+                                {isAnalystHhee && <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>}
+                            </NavDropdown>
                         )}
 
                         {isGtrAdmin && (
-                            <>
-                                <Nav.Link as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</Nav.Link>
-                                <Nav.Link as={Link} to="/control-incidencias" onClick={() => setExpanded(false)}>Control Incidencias</Nav.Link>
-                                <Nav.Link as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</Nav.Link>
-                            </>
+                             <NavDropdown title="Admin GTR" id="admin-gtr-nav-dropdown">
+                                <NavDropdown.Item as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</NavDropdown.Item>
+                                {/* --- ENLACE ELIMINADO DE AQUÍ --- */}
+                            </NavDropdown>
                         )}
                         
-                        {/* El analista solo verá su portal de solicitudes HHEE */}
-                        {isAnalyst && (
+                        {isAnalystHhee && (
                              <Nav.Link as={Link} to="/mis-solicitudes-hhee" onClick={() => setExpanded(false)}>Mis Solicitudes HHEE</Nav.Link>
                         )}
 
@@ -76,7 +77,6 @@ function NavbarComponent() {
                         )}
                     </Nav>
 
-                    {/* Menú de Usuario (derecha) */}
                     <Nav>
                         {user ? (
                             <NavDropdown title={`Hola, ${user.nombre} (${user.role})`} id="user-nav-dropdown" align="end">

@@ -98,7 +98,7 @@ const AppContent = () => {
           <Route path="/campanas/editar/:id" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><FormularioCampanaPage /></PrivateRoute>} />
           <Route path="/asignar-campanas" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><AsignacionCampanasPage /></PrivateRoute>} />
           <Route path="/incidencias" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><ListaIncidenciasPage /></PrivateRoute>} />
-          <Route path="/control-incidencias" element={<PrivateRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']}><ControlIncidenciasPage /></PrivateRoute>} />
+          <Route path="/control-incidencias" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><ControlIncidenciasPage /></PrivateRoute>} />
           <Route path="/incidencias/crear" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><FormularioIncidenciaPage /></PrivateRoute>} />
           <Route path="/incidencias/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleIncidenciaPage /></PrivateRoute>} />
           <Route path="/incidencias/:id" element={<PrivateRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE']}><DetalleIncidenciaPage /></PrivateRoute>} />

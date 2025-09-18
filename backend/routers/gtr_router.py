@@ -2,6 +2,7 @@
 
 import pandas as pd
 import io
+import bleach
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -160,7 +161,7 @@ async def obtener_analistas(
 @router.get("/analistas/listado-simple/", response_model=List[AnalistaSimple], summary="Obtener una lista simple de analistas para selectores")
 async def obtener_analistas_simple(
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
     """
     Devuelve una lista ligera de analistas (ID, nombre, apellido, email, rol)
@@ -548,7 +549,15 @@ async def crear_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    db_campana = models.Campana(**campana.model_dump())
+    # --- Lógica de Seguridad ---
+    datos_limpios = campana.model_dump()
+    campos_a_sanitizar = ['nombre', 'descripcion']
+    for campo in campos_a_sanitizar:
+        if datos_limpios.get(campo):
+            datos_limpios[campo] = bleach.clean(datos_limpios[campo])
+    # -------------------------
+
+    db_campana = models.Campana(**datos_limpios)
     db.add(db_campana)
     try:
         await db.commit()
@@ -559,23 +568,19 @@ async def crear_campana(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error inesperado al crear campaña: {e}"
         )
-
+    
+    # El resto de la función para recargar y devolver la campaña sigue igual...
     result = await db.execute(
         select(models.Campana)
         .filter(models.Campana.id == db_campana.id)
         .options(
-            selectinload(models.Campana.analistas_asignados),
-            selectinload(models.Campana.tareas),
-            selectinload(models.Campana.avisos),
-            selectinload(models.Campana.bitacora_entries),
-            # CORRECCIÓN: Usar el nuevo nombre de la relación
-            selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias)
+            selectinload(models.Campana.analistas_asignados)
         )
     )
     campana_to_return = result.scalars().first()
     if not campana_to_return:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar la campaña después de la creación.")
+    
     return campana_to_return
 
 
@@ -1787,22 +1792,24 @@ async def create_bitacora_entry(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # Primero, validamos que la campaña a la que se asocia la entrada existe.
+    # Validamos que la campaña exista
     campana_existente_result = await db.execute(select(models.Campana).filter(models.Campana.id == entry.campana_id))
     if not campana_existente_result.scalars().first():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada."
-    )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
+    # --- Lógica de Seguridad ---
+    datos_limpios = entry.model_dump()
+    if datos_limpios.get("comentario"):
+        datos_limpios["comentario"] = bleach.clean(datos_limpios["comentario"])
+    # -------------------------
     
-    # Creamos el objeto y añadimos el autor_id desde el usuario logueado
+    # Creamos el objeto con los datos ya limpios
     db_entry = models.BitacoraEntry(
-        **entry.model_dump(),
+        **datos_limpios,
         autor_id=current_analista.id
     )
     
     db.add(db_entry)
-    
-    # Usamos un bloque try/except para guardar de forma segura
     try:
         await db.commit()
         await db.refresh(db_entry)
@@ -1813,10 +1820,9 @@ async def create_bitacora_entry(
             detail=f"Error inesperado al crear la entrada de bitácora: {e}"
         )
     
-    # Recargamos la entrada con sus relaciones para devolver una respuesta completa
     result = await db.execute(
         select(models.BitacoraEntry)
-        .options(selectinload(models.BitacoraEntry.campana))
+        .options(selectinload(models.BitacoraEntry.campana), selectinload(models.BitacoraEntry.autor))
         .filter(models.BitacoraEntry.id == db_entry.id)
     )
     entry_to_return = result.scalars().first()
@@ -2005,18 +2011,33 @@ async def create_incidencia(
     if not campana_result.scalars().first():
         raise HTTPException(status_code=404, detail="Campaña no encontrada")
 
-    # CAMBIO: Si no se provee fecha_apertura, la base de datos usará el default=func.now()
+    # --- INICIO DE LA LÓGICA DE SEGURIDAD ---
+
+    # 2. Convertimos los datos que llegan de la API en un diccionario editable
+    datos_limpios = incidencia_data.model_dump()
+
+    # 3. Definimos una lista con los campos de texto que queremos "limpiar"
+    campos_a_sanitizar = ['titulo', 'descripcion_inicial', 'herramienta_afectada', 'indicador_afectado']
+    
+    # 4. Recorremos la lista y aplicamos bleach.clean() a cada campo
+    for campo in campos_a_sanitizar:
+        valor_actual = datos_limpios.get(campo)
+        if valor_actual: # Solo si el campo tiene algún texto
+            datos_limpios[campo] = bleach.clean(valor_actual)
+
+    # --- FIN DE LA LÓGICA DE SEGURIDAD ---
+
+    # 5. Creamos la incidencia usando el diccionario con los datos ya limpios
     db_incidencia = models.Incidencia(
-    **incidencia_data.model_dump(),
-    creador_id=current_analista.id,
-    asignado_a_id=current_analista.id, # <-- Asigna la incidencia al creador
-    estado=EstadoIncidencia.EN_PROGRESO # <-- Cambia el estado inicial
-)
+        **datos_limpios,
+        creador_id=current_analista.id,
+        asignado_a_id=current_analista.id,
+        estado=EstadoIncidencia.EN_PROGRESO
+    )
     db.add(db_incidencia)
     await db.commit()
     await db.refresh(db_incidencia)
     
-    # ... (código de recarga sin cambios)
     result = await db.execute(
         select(models.Incidencia)
         .options(
@@ -2057,13 +2078,20 @@ async def update_incidencia(
     if not db_incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
 
+    # --- INICIO DE LA LÓGICA DE SEGURIDAD ---
     update_dict = update_data.model_dump(exclude_unset=True)
+    campos_a_sanitizar = ['titulo', 'descripcion_inicial', 'herramienta_afectada', 'indicador_afectado']
+    
+    for campo in campos_a_sanitizar:
+        if campo in update_dict and update_dict[campo]:
+            update_dict[campo] = bleach.clean(update_dict[campo])
+    # --- FIN DE LA LÓGICA DE SEGURIDAD ---
+
     historial_comentarios = []
 
     for key, value in update_dict.items():
         old_value = getattr(db_incidencia, key)
         if old_value != value:
-            # Lógica especial para campos con relaciones (IDs)
             if key == "asignado_a_id":
                 old_analyst_name = db_incidencia.asignado_a.nombre if db_incidencia.asignado_a else "Nadie"
                 new_analyst_result = await db.execute(select(models.Analista).filter(models.Analista.id == value))
@@ -2112,7 +2140,7 @@ async def get_incidencia_by_id(
 @router.get("/incidencias/filtradas/", response_model=List[IncidenciaSimple], summary="[Portal de Control] Obtener incidencias con filtros avanzados")
 async def get_incidencias_filtradas(
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE])),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA])),
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     campana_id: Optional[int] = None,
@@ -2121,31 +2149,27 @@ async def get_incidencias_filtradas(
 ):
     """
     Endpoint para el portal de control de incidencias.
-    Permite filtrar por rango de fechas, campaña, estado y analista asignado.
+    Todos los roles con acceso ven la misma información.
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
         selectinload(models.Incidencia.creador),
-        selectinload(models.Incidencia.asignado_a)
+        selectinload(models.Incidencia.asignado_a),
+        selectinload(models.Incidencia.cerrado_por)
     ).order_by(models.Incidencia.fecha_apertura.desc())
 
     if fecha_inicio:
         query = query.filter(models.Incidencia.fecha_apertura >= datetime.combine(fecha_inicio, time.min))
-    
     if fecha_fin:
         query = query.filter(models.Incidencia.fecha_apertura <= datetime.combine(fecha_fin, time.max))
-
     if campana_id:
         query = query.filter(models.Incidencia.campana_id == campana_id)
-
     if estado:
         query = query.filter(models.Incidencia.estado == estado)
-
     if asignado_a_id is not None:
-        if asignado_a_id == 0:  # 0 es la señal para buscar "Sin Asignar"
+        if asignado_a_id == 0:
             query = query.filter(models.Incidencia.asignado_a_id.is_(None))
         else:
-            # Hacemos la condición más explícita para evitar ambigüedades
             query = query.filter(models.Incidencia.asignado_a_id == asignado_a_id)
             
     result = await db.execute(query)
@@ -2158,12 +2182,17 @@ async def add_actualizacion_incidencia(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # (Aquí iría la lógica para verificar permisos si fuera necesario)
+    # 1. Limpiamos el comentario ANTES de usarlo
+    comentario_limpio = bleach.clean(actualizacion_data.comentario)
+
+    # 2. Creamos el objeto para la base de datos con el comentario ya limpio
     db_actualizacion = models.ActualizacionIncidencia(
-        comentario=actualizacion_data.comentario,
+        comentario=comentario_limpio,
         incidencia_id=incidencia_id,
         autor_id=current_analista.id
     )
+    
+    # 3. Guardamos el objeto limpio en la base de datos
     db.add(db_actualizacion)
     await db.commit()
     await db.refresh(db_actualizacion)
