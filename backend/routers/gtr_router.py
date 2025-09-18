@@ -30,9 +30,8 @@ from schemas.models import (
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
     AcuseReciboAviso, AcuseReciboCreate, AcuseReciboAvisoSimple,
-
     BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate,
-    ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate,
+    ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate, BitacoraExportFilters,
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
@@ -1841,7 +1840,10 @@ async def update_bitacora_entry(
     db_entry_result = await db.execute(
         select(models.BitacoraEntry)
         .filter(models.BitacoraEntry.id == entry_id)
-        .options(selectinload(models.BitacoraEntry.campana))
+        .options(
+            selectinload(models.BitacoraEntry.campana),
+            selectinload(models.BitacoraEntry.autor) # <-- AÑADIDO AQUÍ
+        )
     )
     db_entry = db_entry_result.scalars().first()
     if not db_entry:
@@ -1865,7 +1867,10 @@ async def update_bitacora_entry(
     
     result = await db.execute(
         select(models.BitacoraEntry)
-        .options(selectinload(models.BitacoraEntry.campana))
+        .options(
+            selectinload(models.BitacoraEntry.campana),
+            selectinload(models.BitacoraEntry.autor) # <-- Y AQUÍ TAMBIÉN
+        )
         .filter(models.BitacoraEntry.id == db_entry.id)
     )
     entry_to_return = result.scalars().first()
@@ -2762,7 +2767,7 @@ async def get_dashboard_stats(
 async def exportar_incidencias(
     filtros: IncidenciaExportFilters,
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
     """
     Genera un archivo Excel con la lista de incidencias que coinciden con los filtros proporcionados.
@@ -2827,4 +2832,76 @@ async def exportar_incidencias(
         'Content-Disposition': f'attachment; filename="Reporte_Incidencias_{date.today().isoformat()}.xlsx"'
     }
     
+    return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@router.get("/bitacora/filtrar/", response_model=List[BitacoraEntry], summary="[Portal de Control] Obtener entradas de bitácora con filtros")
+async def filtrar_bitacora(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA])),
+    fecha_inicio: Optional[date] = None,
+    fecha_fin: Optional[date] = None,
+    campana_id: Optional[int] = None,
+    autor_id: Optional[int] = None
+):
+    query = select(models.BitacoraEntry).options(
+        selectinload(models.BitacoraEntry.campana),
+        selectinload(models.BitacoraEntry.autor)
+    ).order_by(models.BitacoraEntry.fecha.desc(), models.BitacoraEntry.hora.desc())
+
+    if fecha_inicio:
+        query = query.filter(models.BitacoraEntry.fecha >= fecha_inicio)
+    if fecha_fin:
+        query = query.filter(models.BitacoraEntry.fecha <= fecha_fin)
+    if campana_id:
+        query = query.filter(models.BitacoraEntry.campana_id == campana_id)
+    if autor_id:
+        query = query.filter(models.BitacoraEntry.autor_id == autor_id)
+        
+    result = await db.execute(query)
+    return result.scalars().unique().all()
+
+
+@router.post("/bitacora/exportar/", summary="Exporta entradas de bitácora filtradas a Excel")
+async def exportar_bitacora(
+    filtros: BitacoraExportFilters,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
+):
+    query = select(models.BitacoraEntry).options(
+        selectinload(models.BitacoraEntry.campana),
+        selectinload(models.BitacoraEntry.autor)
+    ).order_by(models.BitacoraEntry.fecha.desc(), models.BitacoraEntry.hora.desc())
+
+    if filtros.fecha_inicio:
+        query = query.filter(models.BitacoraEntry.fecha >= filtros.fecha_inicio)
+    if filtros.fecha_fin:
+        query = query.filter(models.BitacoraEntry.fecha <= filtros.fecha_fin)
+    if filtros.campana_id:
+        query = query.filter(models.BitacoraEntry.campana_id == filtros.campana_id)
+    if filtros.autor_id:
+        query = query.filter(models.BitacoraEntry.autor_id == filtros.autor_id)
+            
+    result = await db.execute(query)
+    entradas = result.scalars().unique().all()
+
+    if not entradas:
+        raise HTTPException(status_code=404, detail="No se encontraron eventos con los filtros seleccionados.")
+
+    datos_para_excel = [{
+        "ID": entry.id,
+        "Fecha": entry.fecha.strftime("%d-%m-%Y"),
+        "Hora": entry.hora.strftime("%H:%M"),
+        "Campaña": entry.campana.nombre if entry.campana else "N/A",
+        "Autor": f"{entry.autor.nombre} {entry.autor.apellido}" if entry.autor else "N/A",
+        "Comentario": entry.comentario
+    } for entry in entradas]
+    
+    df = pd.DataFrame(datos_para_excel)
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Eventos')
+    output.seek(0)
+    
+    headers = {'Content-Disposition': f'attachment; filename="Reporte_Eventos_{date.today().isoformat()}.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

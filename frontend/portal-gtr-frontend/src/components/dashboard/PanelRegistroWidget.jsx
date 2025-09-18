@@ -30,9 +30,7 @@ function PanelRegistroWidget({ onUpdate }) {
             if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
             const data = await response.json();
             setCampanas(data);
-            if (data.length > 0 && !selectedCampana) {
-                setSelectedCampana(data[0].id);
-            }
+            
         } catch (err) { setError(err.message); }
     }, [authToken, selectedCampana]);
 
@@ -77,7 +75,6 @@ function PanelRegistroWidget({ onUpdate }) {
             setSuccess(`Entrada ${isEditing ? 'actualizada' : 'registrada'}!`);
             handleCancelEdit(); 
             fetchLogDiario(selectedCampana); 
-            if(onUpdate) onUpdate();
         } catch (err) { setError(err.message); } 
         finally { 
             setLoadingBitacora(false);

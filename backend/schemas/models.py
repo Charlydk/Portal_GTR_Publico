@@ -455,7 +455,11 @@ class SolicitudHHEELote(BaseModel):
     decisiones: List[SolicitudHHEEProcesarItem]
 
 
-
+class BitacoraExportFilters(BaseModel):
+    fecha_inicio: Optional[date] = None
+    fecha_fin: Optional[date] = None
+    campana_id: Optional[int] = None
+    autor_id: Optional[int] = None
 
 # --- Forward References Update ---
 Campana.model_rebuild()

@@ -158,7 +158,7 @@ function DetalleIncidenciaPage() {
     const status = getStatusInfo(incidencia);
     const canManageStatus = !!user;
     const showAssignButton = user && incidencia.asignado_a?.id !== user.id && incidencia.estado !== 'CERRADA';
-
+    const textoBotonLiberarReabrir = incidencia.estado === 'CERRADA' ? 'Reabrir Incidencia' : 'Liberar Incidencia';
 
     return (
         <Container className="py-5">
@@ -228,10 +228,10 @@ function DetalleIncidenciaPage() {
                                 Modificar Incidencia
                             </Button>
                         </Link>
-                        {/* CAMBIO: Nuevo botón para asignarse la tarea */}
+
                         {showAssignButton && (
-                            <Button variant="warning" onClick={handleAssignToMe} disabled={isSubmitting} className="me-2">
-                                {incidencia.asignado_a ? 'Robar y Asignármela' : 'Asignármela'}
+                            <Button variant="info" onClick={handleAssignToMe} disabled={isSubmitting} className="me-2">
+                                Asignar Incidencia
                             </Button>
                         )}
                         
@@ -239,9 +239,9 @@ function DetalleIncidenciaPage() {
                             Cerrar Incidencia
                         </Button>
                         
-                        {incidencia.estado !== 'ABIERTA' && (
+                        {(incidencia.estado === 'EN_PROGRESO' || incidencia.estado === 'CERRADA') && (
                              <Button variant="danger" onClick={() => handleStatusChange('ABIERTA')} disabled={isSubmitting}>
-                                Reabrir Incidencia
+                                {textoBotonLiberarReabrir}
                             </Button>
                         )}
                     </Card.Body>
