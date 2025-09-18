@@ -230,6 +230,7 @@ class BitacoraEntry(BitacoraEntryBase):
     class Config:
         from_attributes = True
 
+# --- Schemas para Incidencias ---
 class ActualizacionIncidencia(ActualizacionIncidenciaBase):
     id: int
     fecha_actualizacion: datetime
@@ -281,6 +282,13 @@ class IncidenciaUpdate(BaseModel):
     tipo: Optional[TipoIncidencia] = None
     gravedad: Optional[GravedadIncidencia] = None
     campana_id: Optional[int] = None
+    asignado_a_id: Optional[int] = None
+
+class IncidenciaExportFilters(BaseModel):
+    fecha_inicio: Optional[date] = None
+    fecha_fin: Optional[date] = None
+    campana_id: Optional[int] = None
+    estado: Optional[EstadoIncidencia] = None
     asignado_a_id: Optional[int] = None
 
 # --- Actualización de relaciones en schemas existentes ---
@@ -427,8 +435,6 @@ class SolicitudHHEE(SolicitudHHEEBase):
     estado: EstadoSolicitudHHEE
     fecha_solicitud: datetime
     solicitante: AnalistaSimple # Muestra info básica del solicitante
-
-    # Campos de la decisión (pueden ser nulos)
     horas_aprobadas: Optional[float] = None
     comentario_supervisor: Optional[str] = None
     fecha_decision: Optional[datetime] = None
@@ -449,6 +455,8 @@ class SolicitudHHEELote(BaseModel):
     decisiones: List[SolicitudHHEEProcesarItem]
 
 
+
+
 # --- Forward References Update ---
 Campana.model_rebuild()
 Analista.model_rebuild()
@@ -460,3 +468,5 @@ class DashboardStatsAnalista(BaseModel):
 
 class DashboardStatsSupervisor(BaseModel):
     total_incidencias_activas: int
+    
+    

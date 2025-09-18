@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL } from '../api';
 import { formatDateTime } from '../utils/dateFormatter';
 
+
 function ControlIncidenciasPage() {
     const { authToken } = useAuth();
 
@@ -14,7 +15,8 @@ function ControlIncidenciasPage() {
     const [incidencias, setIncidencias] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [updatingStatusId, setUpdatingStatusId] = useState(null); // Para el spinner de cada fila
+    const [isExporting, setIsExporting] = useState(false);
+    const [updatingStatusId, setUpdatingStatusId] = useState(null);
     const [filtros, setFiltros] = useState({
         fecha_inicio: '',
         fecha_fin: '',
@@ -90,32 +92,51 @@ function ControlIncidenciasPage() {
         setIncidencias([]);
     };
 
-    // Función para cambiar el estado de una incidencia
-    const handleStatusChange = async (incidenciaId, nuevoEstado) => {
-        setUpdatingStatusId(incidenciaId);
-        setError(null);
-        try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${incidenciaId}/estado`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-                body: JSON.stringify({ estado: nuevoEstado, comentario_cierre: "Actualizado desde Portal de Control" })
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail);
-            }
-            
-            // Actualiza la fila modificada en la tabla sin recargar todo
-            const incidenciaActualizada = await response.json();
-            setIncidencias(prev => prev.map(inc => inc.id === incidenciaId ? incidenciaActualizada : inc));
+// --- FUNCIÓN PARA EXPORTAR ---
+    const handleExportar = async () => {
+            setIsExporting(true);
+            setError(null);
+            try {
+                // Creamos un objeto limpio solo con los campos que la API espera.
+                const payload = {
+                    fecha_inicio: filtros.fecha_inicio || null,
+                    fecha_fin: filtros.fecha_fin || null,
+                    campana_id: filtros.campana_id ? parseInt(filtros.campana_id) : null,
+                    estado: filtros.estado || null,
+                    asignado_a_id: filtros.asignado_a_id ? parseInt(filtros.asignado_a_id) : null,
+                };
 
-        } catch (err) {
-            setError(`Error al actualizar incidencia #${incidenciaId}: ${err.message}`);
-            setTimeout(() => setError(null), 5000); // Limpia el error después de 5 segundos
-        } finally {
-            setUpdatingStatusId(null);
-        }
-    };
+                const response = await fetch(`${GTR_API_URL}/incidencias/exportar/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(payload) // Enviamos el payload limpio
+                });
+
+                if (!response.ok) {
+                    // Leemos el error como JSON para obtener el mensaje de detalle.
+                    const errData = await response.json();
+                    throw new Error(errData.detail || "No se pudo generar el reporte.");
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Reporte_Incidencias_${new Date().toISOString().split('T')[0]}.xlsx`;
+                document.body.appendChild(a);
+    a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setIsExporting(false);
+            }
+        };
     
     const getStatusVariant = (estado) => {
         const map = { 'ABIERTA': 'danger', 'EN_PROGRESO': 'warning', 'CERRADA': 'success' };
@@ -142,6 +163,11 @@ function ControlIncidenciasPage() {
                                 <Col md={6} className="d-flex align-items-end gap-2">
                                     <Button variant="primary" onClick={fetchIncidencias} disabled={loading} className="w-100">{loading && !updatingStatusId ? <Spinner size="sm" /> : 'Filtrar'}</Button>
                                     <Button variant="outline-secondary" onClick={handleLimpiarFiltros} className="w-100">Limpiar</Button>
+                                </Col>
+                                <Col md={3} className="d-flex align-items-end">
+                                    <Button variant="success" onClick={handleExportar} disabled={loading || isExporting} className="w-100">
+                                        {isExporting ? <><Spinner size="sm" /> Exportando...</> : 'Exportar a Excel'}
+                                    </Button>
                                 </Col>
                             </Row>
                         </Form>

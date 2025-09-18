@@ -1,5 +1,7 @@
 # /backend/routers/gtr_router.py
 
+import pandas as pd
+import io
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,15 +12,12 @@ from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func
 from sqlalchemy import case
-
-
-
-# --- Imports de la aplicación ---
 from database import get_db
 from sql_app import models
 from enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
 from dependencies import get_current_analista, require_role
 from sql_app.crud import get_analista_by_email
+from fastapi.responses import StreamingResponse
 
 # --- IMPORTS COMPLETOS DE SCHEMAS PARA GTR ---
 from schemas.models import (
@@ -33,7 +32,7 @@ from schemas.models import (
 
     BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate,
     ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate,
-    Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate,
+    Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
     TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase
@@ -2711,7 +2710,7 @@ async def get_dashboard_stats(
         daily_incidents_query = select(models.Incidencia).options(
             selectinload(models.Incidencia.campana),
             selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.cerrado_por) # <-- ESTA ES LA LÍNEA QUE FALTABA
+            selectinload(models.Incidencia.cerrado_por)
         ).filter(
             models.Incidencia.campana_id.in_(assigned_campaign_ids),
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO]),
@@ -2728,3 +2727,75 @@ async def get_dashboard_stats(
         )
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard definido.")
+
+
+@router.post("/incidencias/exportar/", summary="Exporta incidencias filtradas a Excel")
+async def exportar_incidencias(
+    filtros: IncidenciaExportFilters,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Genera un archivo Excel con la lista de incidencias que coinciden con los filtros proporcionados.
+    """
+    query = select(models.Incidencia).options(
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.asignado_a),
+        selectinload(models.Incidencia.cerrado_por),
+        selectinload(models.Incidencia.actualizaciones)
+    ).order_by(models.Incidencia.fecha_apertura.desc())
+
+    if filtros.fecha_inicio:
+        query = query.filter(models.Incidencia.fecha_apertura >= datetime.combine(filtros.fecha_inicio, time.min))
+    if filtros.fecha_fin:
+        query = query.filter(models.Incidencia.fecha_apertura <= datetime.combine(filtros.fecha_fin, time.max))
+    if filtros.campana_id:
+        query = query.filter(models.Incidencia.campana_id == filtros.campana_id)
+    if filtros.estado:
+        query = query.filter(models.Incidencia.estado == filtros.estado)
+    if filtros.asignado_a_id is not None:
+        if filtros.asignado_a_id == 0:
+            query = query.filter(models.Incidencia.asignado_a_id.is_(None))
+        else:
+            query = query.filter(models.Incidencia.asignado_a_id == filtros.asignado_a_id)
+            
+    result = await db.execute(query)
+    incidencias = result.scalars().unique().all()
+
+    if not incidencias:
+        raise HTTPException(status_code=404, detail="No se encontraron incidencias con los filtros seleccionados.")
+
+    # Preparar datos para el DataFrame de Pandas
+    datos_para_excel = []
+    for inc in incidencias:
+        datos_para_excel.append({
+            "ID": inc.id,
+            "Titulo": inc.titulo,
+            "Campaña": inc.campana.nombre if inc.campana else "N/A",
+            "Gravedad": inc.gravedad.value if inc.gravedad else "N/A",
+            "Estado": inc.estado.value if inc.estado else "N/A",
+            "Creador": f"{inc.creador.nombre} {inc.creador.apellido}" if inc.creador else "N/A",
+            "Asignado a": f"{inc.asignado_a.nombre} {inc.asignado_a.apellido}" if inc.asignado_a else "Sin Asignar",
+            "Cerrado por": f"{inc.cerrado_por.nombre} {inc.cerrado_por.apellido}" if inc.cerrado_por else "N/A",
+            "Fecha Apertura": inc.fecha_apertura.strftime("%d-%m-%Y %H:%M"),
+            "Fecha Cierre": inc.fecha_cierre.strftime("%d-%m-%Y %H:%M") if inc.fecha_cierre else "N/A",
+            "Herramienta Afectada": inc.herramienta_afectada,
+            "Indicador Afectado": inc.indicador_afectado,
+            "Descripción": inc.descripcion_inicial,
+            "Comentario de Cierre": next((act.comentario.split("Comentario de cierre: ")[1] for act in sorted(inc.actualizaciones, key=lambda x: x.fecha_actualizacion, reverse=True) if "Comentario de cierre: " in act.comentario), "N/A") if inc.estado == 'CERRADA' else "N/A"
+        })
+    
+    df = pd.DataFrame(datos_para_excel)
+    
+    # Crear el archivo Excel en memoria
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Incidencias')
+    output.seek(0)
+    
+    headers = {
+        'Content-Disposition': f'attachment; filename="Reporte_Incidencias_{date.today().isoformat()}.xlsx"'
+    }
+    
+    return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
