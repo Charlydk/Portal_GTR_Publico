@@ -61,7 +61,7 @@ class Campana(Base):
     fecha_inicio = Column(DateTime(timezone=True), nullable=True)
     fecha_fin = Column(DateTime(timezone=True), nullable=True)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
+    lobs = relationship("LOB", back_populates="campana", cascade="all, delete-orphan")
     analistas_asignados = relationship("Analista", secondary=analistas_campanas, back_populates="campanas_asignadas")
     tareas = relationship("Tarea", back_populates="campana", cascade="all, delete-orphan")
     avisos = relationship("Aviso", back_populates="campana", cascade="all, delete-orphan")
@@ -69,6 +69,14 @@ class Campana(Base):
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="campana", cascade="all, delete-orphan")
 
+class LOB(Base):
+    __tablename__ = "lobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False)
+    
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
+    campana = relationship("Campana", back_populates="lobs")
 class Tarea(Base):
     __tablename__ = "tareas"
     id = Column(Integer, primary_key=True, index=True)

@@ -1,231 +1,168 @@
-// src/pages/FormularioCampanaPage.jsx
+// RUTA: src/pages/FormularioCampanaPage.jsx
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { GTR_API_URL } from '../api';
 import { useAuth } from '../hooks/useAuth';
-import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
+import { Container, Form, Button, Alert, Spinner, Card, Row, Col, InputGroup } from 'react-bootstrap';
 
 function FormularioCampanaPage() {
-  const { id } = useParams(); // Para el caso de edición
-  const navigate = useNavigate();
-  const { authToken, user } = useAuth();
-  const isEditing = !!id; // Determina si estamos editando o creando
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { authToken, user } = useAuth();
+    const isEditing = !!id;
 
-  const [nombre, setNombre] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-  const [fechaInicio, setFechaInicio] = useState('');
-  const [fechaFin, setFechaFin] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+    // --- ESTADO PRINCIPAL ---
+    const [formData, setFormData] = useState({
+        nombre: '',
+        descripcion: '',
+        fecha_inicio: '',
+        fecha_fin: '',
+    });
+    // --- NUEVO ESTADO PARA MANEJAR LOS LOBS ---
+    const [lobs, setLobs] = useState(['']); // Empezamos con un LOB vacío
 
-  // Función para formatear fechas a YYYY-MM-DD para input type="date"
-  const formatDateForInput = (isoString) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toISOString().split('T')[0];
-  };
+    const [loading, setLoading] = useState(isEditing);
+    const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
 
-  // Cargar datos de la campaña si estamos editando
-  const fetchCampana = useCallback(async () => {
-    if (!isEditing || !authToken) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${GTR_API_URL}/campanas/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
-      if (!response.ok) {
-        throw new Error(`Error al cargar la campaña: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setNombre(data.nombre);
-      setDescripcion(data.descripcion || '');
-      setFechaInicio(formatDateForInput(data.fecha_inicio));
-      setFechaFin(formatDateForInput(data.fecha_fin));
-    } catch (err) {
-      console.error("Error al obtener campaña:", err);
-      setError(err.message || "No se pudo cargar la campaña.");
-    } finally {
-      setLoading(false);
-    }
-  }, [id, isEditing, authToken]);
-
-  useEffect(() => {
-    fetchCampana();
-  }, [fetchCampana]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    setSuccess(null);
-
-    if (!user || !authToken) {
-      setError("Necesita iniciar sesión para realizar esta acción.");
-      setSubmitting(false);
-      return;
-    }
-
-    const campanaData = {
-      nombre,
-      descripcion: descripcion || null, // Asegura que sea null si está vacío
-      fecha_inicio: fechaInicio ? new Date(fechaInicio).toISOString() : null,
-      fecha_fin: fechaFin ? new Date(fechaFin).toISOString() : null,
+    // --- LÓGICA PARA MANEJAR LOS LOBS ---
+    
+    // Cambia el valor de un LOB específico por su índice
+    const handleLobChange = (index, event) => {
+        const nuevosLobs = [...lobs];
+        nuevosLobs[index] = event.target.value;
+        setLobs(nuevosLobs);
     };
 
-    const method = isEditing ? 'PUT' : 'POST';
-    const url = isEditing ? `${GTR_API_URL}/campanas/${id}` : `${GTR_API_URL}/campanas/`;
+    // Añade un nuevo campo de LOB vacío a la lista
+    const handleAddLob = () => {
+        setLobs([...lobs, '']);
+    };
 
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
-        body: JSON.stringify(campanaData),
-      });
+    // Quita un campo de LOB de la lista por su índice
+    const handleRemoveLob = (index) => {
+        const nuevosLobs = [...lobs];
+        nuevosLobs.splice(index, 1);
+        setLobs(nuevosLobs);
+    };
+    
+    // --- LÓGICA PRINCIPAL DEL FORMULARIO ---
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Error al ${isEditing ? 'actualizar' : 'crear'} la campaña: ${response.statusText}`);
-      }
+    // Cargar datos si estamos en modo edición (la dejaremos preparada para el futuro)
+    const fetchCampana = useCallback(async () => {
+        // ... (La lógica de edición la implementaremos más adelante) ...
+        setLoading(false);
+    }, [id, isEditing, authToken]);
 
-      const result = await response.json();
-      setSuccess(`Campaña ${isEditing ? 'actualizada' : 'creada'} con éxito!`);
+    useEffect(() => {
+        fetchCampana();
+    }, [fetchCampana]);
 
-      // ¡CORRECCIÓN CLAVE AQUÍ!
-      // Redirigir a la página de detalles de la campaña recién creada/actualizada
-      setTimeout(() => {
-        navigate(`/campanas/${result.id}`); // Usamos result.id para la redirección
-      }, 1500);
+    const handleChange = (e) => {
+        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
 
-    } catch (err) {
-      console.error(`Error al ${isEditing ? 'actualizar' : 'crear'} campaña:`, err);
-      setError(err.message || `Hubo un error al ${isEditing ? 'actualizar' : 'crear'} la campaña.`);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setSubmitting(true);
+        setError(null);
+        setSuccess(null);
 
-  if (loading) {
+        // Filtramos los LOBs para no enviar campos vacíos
+        const lobs_nombres_filtrados = lobs.filter(lob => lob.trim() !== '');
+
+        const payload = {
+            ...formData,
+            fecha_inicio: formData.fecha_inicio ? new Date(formData.fecha_inicio).toISOString() : null,
+            fecha_fin: formData.fecha_fin ? new Date(formData.fecha_fin).toISOString() : null,
+            lobs_nombres: lobs_nombres_filtrados
+        };
+
+        try {
+            const response = await fetch(`${GTR_API_URL}/campanas/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`,
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `Error al crear la campaña.`);
+            }
+
+            const result = await response.json();
+            setSuccess(`Campaña "${result.nombre}" creada con éxito!`);
+            setTimeout(() => navigate(`/campanas/${result.id}`), 2000);
+
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSubmitting(false);
+        }
+    };
+    
+    if (loading) return <Container className="text-center py-5"><Spinner /></Container>;
+
     return (
-      <Container className="d-flex justify-content-center align-items-center min-vh-100 bg-light">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">Cargando...</span>
-        </Spinner>
-        <p className="ms-3 text-muted">Cargando datos de la campaña...</p>
-      </Container>
+        <Container className="py-5">
+            <Card className="shadow-lg p-4">
+                <h2 className="text-center mb-4 text-primary">
+                    {isEditing ? 'Editar Campaña' : 'Crear Nueva Campaña'}
+                </h2>
+
+                {error && <Alert variant="danger">{error}</Alert>}
+                {success && <Alert variant="success">{success}</Alert>}
+
+                <Form onSubmit={handleSubmit}>
+                    <Row>
+                        <Col md={6}><Form.Group className="mb-3"><Form.Label>Nombre de la Campaña</Form.Label><Form.Control type="text" name="nombre" value={formData.nombre} onChange={handleChange} required /></Form.Group></Col>
+                        <Col md={6}><Form.Group className="mb-3"><Form.Label>Descripción</Form.Label><Form.Control type="text" name="descripcion" value={formData.descripcion} onChange={handleChange} /></Form.Group></Col>
+                    </Row>
+                    <Row>
+                        <Col md={6}><Form.Group className="mb-3"><Form.Label>Fecha de Inicio</Form.Label><Form.Control type="date" name="fecha_inicio" value={formData.fecha_inicio} onChange={handleChange} /></Form.Group></Col>
+                        <Col md={6}><Form.Group className="mb-3"><Form.Label>Fecha de Fin</Form.Label><Form.Control type="date" name="fecha_fin" value={formData.fecha_fin} onChange={handleChange} /></Form.Group></Col>
+                    </Row>
+
+                    <hr />
+
+                    {/* --- SECCIÓN DINÁMICA PARA LOBS --- */}
+                    <Form.Group className="mb-3">
+                        <Form.Label>Líneas de Negocio (LOBs)</Form.Label>
+                        {lobs.map((lob, index) => (
+                            <InputGroup className="mb-2" key={index}>
+                                <Form.Control
+                                    type="text"
+                                    placeholder={`Nombre del LOB #${index + 1}`}
+                                    value={lob}
+                                    onChange={(e) => handleLobChange(index, e)}
+                                />
+                                <Button variant="outline-danger" onClick={() => handleRemoveLob(index)} disabled={lobs.length <= 1}>
+                                    ✕
+                                </Button>
+                            </InputGroup>
+                        ))}
+                        <Button variant="outline-primary" size="sm" onClick={handleAddLob}>
+                            + Añadir LOB
+                        </Button>
+                    </Form.Group>
+                    
+                    <div className="d-grid gap-2 mt-4">
+                        <Button variant="primary" type="submit" disabled={submitting}>
+                            {submitting ? <Spinner as="span" size="sm" /> : 'Crear Campaña'}
+                        </Button>
+                        <Button variant="secondary" onClick={() => navigate('/campanas')} disabled={submitting}>
+                            Cancelar
+                        </Button>
+                    </div>
+                </Form>
+            </Card>
+        </Container>
     );
-  }
-
-  // Permisos de rol para crear/editar campañas
-  const canManageCampaigns = user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE');
-
-  if (!canManageCampaigns) {
-    return (
-      <Container className="mt-4">
-        <Alert variant="danger">
-          <Alert.Heading>Acceso Denegado</Alert.Heading>
-          <p>No tienes los permisos necesarios para {isEditing ? 'editar' : 'crear'} campañas.</p>
-          <Button onClick={() => navigate('/dashboard')}>Ir al Dashboard</Button>
-        </Alert>
-      </Container>
-    );
-  }
-
-  return (
-    <Container className="py-5">
-      <Card className="shadow-lg p-4">
-        <h2 className="text-center mb-4 text-primary">
-          {isEditing ? 'Editar Campaña' : 'Crear Nueva Campaña'}
-        </h2>
-
-        {error && <Alert variant="danger">{error}</Alert>}
-        {success && <Alert variant="success">{success}</Alert>}
-
-        <Form onSubmit={handleSubmit}>
-          <Form.Group className="mb-3">
-            <Form.Label htmlFor="nombre">Nombre de la Campaña:</Form.Label>
-            <Form.Control
-              type="text"
-              id="nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              required
-              disabled={submitting}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Label htmlFor="descripcion">Descripción:</Form.Label>
-            <Form.Control
-              as="textarea"
-              id="descripcion"
-              rows="3"
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              disabled={submitting}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Label htmlFor="fechaInicio">Fecha de Inicio:</Form.Label>
-            <Form.Control
-              type="date"
-              id="fechaInicio"
-              value={fechaInicio}
-              onChange={(e) => setFechaInicio(e.target.value)}
-              disabled={submitting}
-            />
-          </Form.Group>
-
-          <Form.Group className="mb-3">
-            <Form.Label htmlFor="fechaFin">Fecha de Fin:</Form.Label>
-            <Form.Control
-              type="date"
-              id="fechaFin"
-              value={fechaFin}
-              onChange={(e) => setFechaFin(e.target.value)}
-              disabled={submitting}
-            />
-          </Form.Group>
-
-          <div className="d-grid gap-2 mt-4">
-            <Button
-              variant="primary"
-              type="submit"
-              disabled={submitting}
-            >
-              {submitting ? (
-                <>
-                  <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" />
-                  {' '}
-                  {isEditing ? 'Actualizando...' : 'Creando...'}
-                </>
-              ) : (
-                isEditing ? 'Actualizar Campaña' : 'Crear Campaña'
-              )}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => navigate('/campanas')}
-              disabled={submitting}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </Form>
-      </Card>
-    </Container>
-  );
 }
 
 export default FormularioCampanaPage;

@@ -544,43 +544,59 @@ async def desasignar_campana_de_analista(
 
 @router.post("/campanas/", response_model=Campana, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Campaña (Protegido por Supervisor/Responsable)")
 async def crear_campana(
-    campana: CampanaBase,
+    campana_data: CampanaBase,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    # --- Lógica de Seguridad ---
-    datos_limpios = campana.model_dump()
-    campos_a_sanitizar = ['nombre', 'descripcion']
-    for campo in campos_a_sanitizar:
-        if datos_limpios.get(campo):
-            datos_limpios[campo] = bleach.clean(datos_limpios[campo])
-    # -------------------------
-
-    db_campana = models.Campana(**datos_limpios)
+    # (La primera parte de la función se mantiene igual)
+    lobs_nombres = campana_data.lobs_nombres
+    datos_campana_dict = campana_data.model_dump(exclude={"lobs_nombres"})
+    for campo in ['nombre', 'descripcion']:
+        if datos_campana_dict.get(campo):
+            datos_campana_dict[campo] = bleach.clean(datos_campana_dict[campo])
+    
+    db_campana = models.Campana(**datos_campana_dict)
     db.add(db_campana)
+    
     try:
         await db.commit()
         await db.refresh(db_campana)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al crear campaña: {e}"
-        )
-    
-    # El resto de la función para recargar y devolver la campaña sigue igual...
+        raise HTTPException(status_code=500, detail=f"Error al crear la campaña: {e}")
+
+    if lobs_nombres:
+        for nombre_lob in lobs_nombres:
+            if nombre_lob:
+                nombre_lob_limpio = bleach.clean(nombre_lob)
+                db_lob = models.LOB(nombre=nombre_lob_limpio, campana_id=db_campana.id)
+                db.add(db_lob)
+        try:
+            await db.commit()
+            await db.refresh(db_campana)
+        except Exception as e:
+            await db.rollback()
+            raise HTTPException(status_code=500, detail=f"Error al crear los LOBs: {e}")
+
+
+    # Recargamos la campaña con TODAS las relaciones que el schema 'Campana' espera
     result = await db.execute(
         select(models.Campana)
-        .filter(models.Campana.id == db_campana.id)
         .options(
-            selectinload(models.Campana.analistas_asignados)
+            selectinload(models.Campana.lobs),
+            selectinload(models.Campana.analistas_asignados),
+            selectinload(models.Campana.comentarios_generales) # <-- Añadido para que coincida con el schema
         )
+        .filter(models.Campana.id == db_campana.id)
     )
+  
+    
     campana_to_return = result.scalars().first()
     if not campana_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar la campaña después de la creación.")
-    
+         raise HTTPException(status_code=500, detail="Error al recargar la campaña después de la creación.")
+
     return campana_to_return
+
 
 
 @router.get("/campanas/", response_model=List[Campana], summary="Obtener todas las Campañas (Protegido)")

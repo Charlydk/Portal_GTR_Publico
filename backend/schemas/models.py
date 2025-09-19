@@ -26,6 +26,7 @@ class CampanaBase(BaseModel):
     descripcion: Optional[str] = None
     fecha_inicio: Optional[datetime] = None
     fecha_fin: Optional[datetime] = None
+    lobs_nombres: Optional[List[str]] = None
 
 class TareaBase(BaseModel):
     titulo: str
@@ -291,6 +292,19 @@ class IncidenciaExportFilters(BaseModel):
     estado: Optional[EstadoIncidencia] = None
     asignado_a_id: Optional[int] = None
 
+class LOBBase(BaseModel):
+    nombre: str
+
+class LOBCreate(LOBBase):
+    pass
+
+class LOB(LOBBase):
+    id: int
+    campana_id: int
+
+    class Config:
+        from_attributes = True
+
 # --- Actualización de relaciones en schemas existentes ---
 
 class Campana(CampanaBase):
@@ -453,8 +467,6 @@ class SolicitudHHEEProcesarItem(BaseModel):
 # Esquema para el lote completo que enviará el frontend
 class SolicitudHHEELote(BaseModel):
     decisiones: List[SolicitudHHEEProcesarItem]
-
-
 class BitacoraExportFilters(BaseModel):
     fecha_inicio: Optional[date] = None
     fecha_fin: Optional[date] = None
