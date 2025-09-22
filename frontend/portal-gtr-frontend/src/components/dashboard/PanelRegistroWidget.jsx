@@ -1,6 +1,6 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab } from 'react-bootstrap';
+import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
 import { GTR_API_URL } from '../../api';
 import FormularioIncidencia from '../incidencias/FormularioIncidencia';
@@ -15,6 +15,13 @@ function PanelRegistroWidget({ onUpdate }) {
     const [loadingBitacora, setLoadingBitacora] = useState(false);
     const [selectedCampana, setSelectedCampana] = useState('');
     const [bitacoraData, setBitacoraData] = useState({ hora: '', comentario: '' });
+    
+    // --- ESTADOS PARA LOB ---
+    const [lobs, setLobs] = useState([]);
+    const [selectedLob, setSelectedLob] = useState('');
+    const [loadingLobs, setLoadingLobs] = useState(false);
+    // ------------------------
+
     const [editingEntry, setEditingEntry] = useState(null);
     const [logDiario, setLogDiario] = useState([]);
     const [loadingLog, setLoadingLog] = useState(false);
@@ -32,7 +39,7 @@ function PanelRegistroWidget({ onUpdate }) {
             setCampanas(data);
             
         } catch (err) { setError(err.message); }
-    }, [authToken, selectedCampana]);
+    }, [authToken]);
 
     const fetchLogDiario = useCallback(async (campanaId) => {
         if (!campanaId) { setLogDiario([]); return; }
@@ -46,19 +53,53 @@ function PanelRegistroWidget({ onUpdate }) {
         finally { setLoadingLog(false); }
     }, [authToken]);
 
+    // --- FUNCIÓN PARA CARGAR LOBS ---
+    const fetchLobs = useCallback(async (campanaId) => {
+        if (!campanaId) {
+            setLobs([]);
+            setSelectedLob('');
+            return;
+        }
+        setLoadingLobs(true);
+        try {
+            const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/lobs`, {
+                headers: { 'Authorization': `Bearer ${authToken}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setLobs(data);
+            } else {
+                setLobs([]);
+            }
+        } catch (err) {
+            console.error("Error al cargar LOBs:", err);
+        } finally {
+            setLoadingLobs(false);
+        }
+    }, [authToken]);
+    // ----------------------------------
+
     useEffect(() => { fetchCampanas(); }, [fetchCampanas]);
-    useEffect(() => { if (key === 'bitacora') fetchLogDiario(selectedCampana); }, [key, selectedCampana, fetchLogDiario]);
+
+    useEffect(() => {
+        if (key === 'bitacora') {
+            fetchLogDiario(selectedCampana);
+            fetchLobs(selectedCampana); // <-- Llamamos a fetchLobs aquí
+        }
+    }, [key, selectedCampana, fetchLogDiario, fetchLobs]); // <-- Añadimos fetchLobs como dependencia
 
     const handleIncidenciaChange = (e) => setIncidenciaData({ ...incidenciaData, [e.target.name]: e.target.value });
     const handleBitacoraFormChange = (e) => setBitacoraData({ ...bitacoraData, [e.target.name]: e.target.value });
     
     const handleEditClick = (entry) => {
         setEditingEntry(entry);
+        setSelectedLob(entry.lob ? entry.lob.id : ''); // <-- Rellenamos el LOB
         setBitacoraData({ hora: entry.hora.substring(0, 5), comentario: entry.comentario || '' });
     };
 
     const handleCancelEdit = () => {
         setEditingEntry(null);
+        setSelectedLob(''); // <-- Limpiamos el LOB
         setBitacoraData({ hora: '', comentario: '' });
     };
 
@@ -68,7 +109,13 @@ function PanelRegistroWidget({ onUpdate }) {
         const isEditing = !!editingEntry;
         const url = isEditing ? `${GTR_API_URL}/bitacora_entries/${editingEntry.id}` : `${GTR_API_URL}/bitacora_entries/`;
         const method = isEditing ? 'PUT' : 'POST';
-        const payload = isEditing ? { hora: bitacoraData.hora, comentario: bitacoraData.comentario } : { ...bitacoraData, campana_id: selectedCampana, fecha: new Date().toISOString().split('T')[0] };
+
+        // --- PAYLOAD CON LOB_ID ---
+        const payload = isEditing 
+            ? { hora: bitacoraData.hora, comentario: bitacoraData.comentario, lob_id: selectedLob ? parseInt(selectedLob) : null }
+            : { ...bitacoraData, campana_id: selectedCampana, fecha: new Date().toISOString().split('T')[0], lob_id: selectedLob ? parseInt(selectedLob) : null };
+        // --------------------------
+
         try {
             const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify(payload) });
             if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail); }
@@ -130,7 +177,24 @@ function PanelRegistroWidget({ onUpdate }) {
                                 <Form.Label column sm={3}>Campaña</Form.Label>
                                 <Col sm={9}><Form.Select required value={selectedCampana} onChange={e => setSelectedCampana(e.target.value)} disabled={!!editingEntry}><option value="">Selecciona...</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</Form.Select></Col>
                             </Form.Group>
+                            
                             {selectedCampana && (<>
+                                {/* --- INPUT DEL LOB --- */}
+                                <Form.Group as={Row} className="mb-3">
+                                    <Form.Label column sm={3}>LOB (Opcional)</Form.Label>
+                                    <Col sm={9}>
+                                        <Form.Select 
+                                            value={selectedLob} 
+                                            onChange={e => setSelectedLob(e.target.value)}
+                                            disabled={loadingLobs || !!editingEntry}
+                                        >
+                                            <option value="">{loadingLobs ? 'Cargando...' : 'Seleccionar...'}</option>
+                                            {lobs.map(lob => <option key={lob.id} value={lob.id}>{lob.nombre}</option>)}
+                                        </Form.Select>
+                                    </Col>
+                                </Form.Group>
+                                {/* --------------------- */}
+
                                 <Form.Group as={Row} className="mb-3"><Form.Label column sm={3}>Horario</Form.Label><Col sm={9}><Form.Select required name="hora" value={bitacoraData.hora} onChange={handleBitacoraFormChange}><option value="">Selecciona...</option>{generarOpcionesHorario().map(h => <option key={h} value={h}>{h}</option>)}</Form.Select></Col></Form.Group>
                                 <Form.Group as={Row} className="mb-3"><Form.Label column sm={3}>Comentario</Form.Label><Col sm={9}><Form.Control as="textarea" rows={2} name="comentario" value={bitacoraData.comentario} onChange={handleBitacoraFormChange} /></Col></Form.Group>
                                 <div className="d-flex justify-content-end">{editingEntry && (<Button variant="secondary" onClick={handleCancelEdit} className="me-2">Cancelar</Button>)}<Button variant={editingEntry ? 'warning' : 'primary'} type="submit" disabled={loadingBitacora}>{loadingBitacora ? <Spinner size="sm" /> : (editingEntry ? 'Actualizar' : 'Registrar')}</Button></div>
@@ -138,7 +202,13 @@ function PanelRegistroWidget({ onUpdate }) {
                         </Form>
                         <hr />
                         <h6>Log de Hoy</h6>
-                        {loadingLog ? <div className="text-center"><Spinner size="sm"/></div> : (<ListGroup variant="flush" style={{maxHeight: '200px', overflowY: 'auto'}}>{logDiario.length > 0 ? logDiario.map(entry => (<ListGroup.Item key={entry.id} className="d-flex justify-content-between align-items-center"><div><strong>{entry.hora.substring(0, 5)}:</strong> {entry.comentario}<br /><small className="text-muted">Por: {entry.autor.nombre}</small></div><Button variant="outline-secondary" size="sm" onClick={() => handleEditClick(entry)}>Editar</Button></ListGroup.Item>)) : <p className="text-muted small mt-2">No hay entradas.</p>}</ListGroup>)}
+                        {loadingLog ? <div className="text-center"><Spinner size="sm"/></div> : (<ListGroup variant="flush" style={{maxHeight: '200px', overflowY: 'auto'}}>{logDiario.length > 0 ? logDiario.map(entry => (<ListGroup.Item key={entry.id} className="d-flex justify-content-between align-items-center"><div><strong>{entry.hora.substring(0, 5)}:</strong>
+                        
+                        {/* --- MOSTRAR EL LOB --- */}
+                        {entry.lob && <Badge bg="info" text="dark" className="ms-2">{entry.lob.nombre}</Badge>}
+                        {/* ---------------------- */}
+                        
+                        <span className="ms-2">{entry.comentario}</span><br /><small className="text-muted">Por: {entry.autor.nombre}</small></div><Button variant="outline-secondary" size="sm" onClick={() => handleEditClick(entry)}>Editar</Button></ListGroup.Item>)) : <p className="text-muted small mt-2">No hay entradas.</p>}</ListGroup>)}
                     </Tab.Pane>
                     <Tab.Pane eventKey="incidencia" active={key === 'incidencia'}>
                         <FormularioIncidencia

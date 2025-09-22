@@ -62,6 +62,7 @@ function ControlEventosPage() {
                 fecha_inicio: filtros.fecha_inicio || null,
                 fecha_fin: filtros.fecha_fin || null,
                 campana_id: filtros.campana_id ? parseInt(filtros.campana_id) : null,
+                lob: filtros.lob || null,
                 autor_id: filtros.autor_id ? parseInt(filtros.autor_id) : null,
             };
             const response = await fetch(`${GTR_API_URL}/bitacora/exportar/`, {
@@ -107,7 +108,7 @@ function ControlEventosPage() {
                     <div className="table-responsive">
                         <Table striped bordered hover>
                             <thead>
-                                <tr><th>Fecha</th><th>Hora</th><th>Campaña</th><th>Autor</th><th>Comentario</th></tr>
+                                <tr><th>Fecha</th><th>Hora</th><th>Campaña</th><th>Lob</th><th>Autor</th><th>Comentario</th></tr>
                             </thead>
                             <tbody>
                                 {loading ? (
@@ -118,6 +119,7 @@ function ControlEventosPage() {
                                             <td>{evt.fecha}</td>
                                             <td>{evt.hora}</td>
                                             <td>{evt.campana.nombre}</td>
+                                            <td>{evt.lob ? evt.lob.nombre : 'N/A'}</td>
                                             <td>{`${evt.autor.nombre} ${evt.autor.apellido}`}</td>
                                             <td>{evt.comentario}</td>
                                         </tr>

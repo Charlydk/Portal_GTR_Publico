@@ -156,12 +156,13 @@ class BitacoraEntry(Base):
     hora = Column(Time, nullable=False)
     comentario = Column(String, nullable=True)
     autor_id = Column(Integer, ForeignKey('analistas.id'), nullable=False)
+    lob_id = Column(Integer, ForeignKey("lobs.id"), nullable=True)
     autor = relationship("Analista")
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     fecha_ultima_actualizacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
-    
     campana = relationship("Campana", back_populates="bitacora_entries")
+    lob = relationship("LOB")
 
 class TareaGeneradaPorAviso(Base):
     __tablename__ = "tareas_generadas_por_avisos"

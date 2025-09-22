@@ -32,7 +32,7 @@ from ..schemas.models import (
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
     AcuseReciboAviso, AcuseReciboCreate, AcuseReciboAvisoSimple,
-    BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate,
+    BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate, Lob,
     ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate, BitacoraExportFilters,
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
@@ -1783,18 +1783,37 @@ async def get_campana_bitacora_by_date(
     campana_existente = campana_existente_result.scalars().first()
     if not campana_existente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
-   
-
+    
     result = await db.execute(
         select(models.BitacoraEntry)
         .options(
             selectinload(models.BitacoraEntry.campana)),
-            selectinload(models.BitacoraEntry.autor)
+            selectinload(models.BitacoraEntry.autor),
+            selectinload(models.BitacoraEntry.lob)
         .filter(models.BitacoraEntry.campana_id == campana_id, models.BitacoraEntry.fecha == fecha)
         .order_by(models.BitacoraEntry.hora)
     )
     entries = result.scalars().all()
     return entries
+
+@router.get("/campanas/{campana_id}/lobs", response_model=List[Lob], summary="Obtener LOBs de una Campaña específica")
+async def obtener_lobs_por_campana(
+    campana_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Devuelve una lista de todos los LOBs asociados a una campaña específica.
+    """
+    query = select(models.LOB).where(models.LOB.campana_id == campana_id)
+    result = await db.execute(query)
+    lobs = result.scalars().all()
+    
+    if not lobs:
+        # No es un error si una campaña no tiene LOBs, simplemente se devuelve una lista vacía.
+        return []
+        
+    return lobs
 
 @router.post("/bitacora_entries/", response_model=BitacoraEntry, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Entrada de Bitácora")
 async def create_bitacora_entry(
@@ -1832,7 +1851,11 @@ async def create_bitacora_entry(
     
     result = await db.execute(
         select(models.BitacoraEntry)
-        .options(selectinload(models.BitacoraEntry.campana), selectinload(models.BitacoraEntry.autor))
+        .options(
+            selectinload(models.BitacoraEntry.campana), 
+            selectinload(models.BitacoraEntry.autor),
+            selectinload(models.BitacoraEntry.lob)
+        )
         .filter(models.BitacoraEntry.id == db_entry.id)
     )
     entry_to_return = result.scalars().first()
@@ -1853,7 +1876,8 @@ async def update_bitacora_entry(
         .filter(models.BitacoraEntry.id == entry_id)
         .options(
             selectinload(models.BitacoraEntry.campana),
-            selectinload(models.BitacoraEntry.autor) # <-- AÑADIDO AQUÍ
+            selectinload(models.BitacoraEntry.autor),
+            selectinload(models.BitacoraEntry.lob)
         )
     )
     db_entry = db_entry_result.scalars().first()
@@ -1932,7 +1956,8 @@ async def get_bitacora_hoy_por_campana(
     
     query = select(models.BitacoraEntry).options(
         selectinload(models.BitacoraEntry.autor),
-        selectinload(models.BitacoraEntry.campana)
+        selectinload(models.BitacoraEntry.campana),
+        selectinload(models.BitacoraEntry.lob)
     ).filter(
         models.BitacoraEntry.campana_id == campana_id,
         models.BitacoraEntry.fecha == fecha_hoy
@@ -2856,7 +2881,8 @@ async def filtrar_bitacora(
 ):
     query = select(models.BitacoraEntry).options(
         selectinload(models.BitacoraEntry.campana),
-        selectinload(models.BitacoraEntry.autor)
+        selectinload(models.BitacoraEntry.autor),
+        selectinload(models.BitacoraEntry.lob)
     ).order_by(models.BitacoraEntry.fecha.desc(), models.BitacoraEntry.hora.desc())
 
     if fecha_inicio:
@@ -2880,9 +2906,11 @@ async def exportar_bitacora(
 ):
     query = select(models.BitacoraEntry).options(
         selectinload(models.BitacoraEntry.campana),
-        selectinload(models.BitacoraEntry.autor)
+        selectinload(models.BitacoraEntry.autor),
+        selectinload(models.BitacoraEntry.lob)
     ).order_by(models.BitacoraEntry.fecha.desc(), models.BitacoraEntry.hora.desc())
 
+    # Lógica de filtros...
     if filtros.fecha_inicio:
         query = query.filter(models.BitacoraEntry.fecha >= filtros.fecha_inicio)
     if filtros.fecha_fin:
@@ -2891,18 +2919,23 @@ async def exportar_bitacora(
         query = query.filter(models.BitacoraEntry.campana_id == filtros.campana_id)
     if filtros.autor_id:
         query = query.filter(models.BitacoraEntry.autor_id == filtros.autor_id)
+    if filtros.lob_id:
+        query = query.filter(models.BitacoraEntry.lob_id == filtros.lob_id)
             
     result = await db.execute(query)
-    entradas = result.scalars().unique().all()
+    # --- ¡AQUÍ ESTÁ EL CAMBIO! ---
+    entradas = result.scalars().all()
 
     if not entradas:
         raise HTTPException(status_code=404, detail="No se encontraron eventos con los filtros seleccionados.")
 
+    # El resto de la función para crear el Excel no cambia
     datos_para_excel = [{
         "ID": entry.id,
         "Fecha": entry.fecha.strftime("%d-%m-%Y"),
         "Hora": entry.hora.strftime("%H:%M"),
         "Campaña": entry.campana.nombre if entry.campana else "N/A",
+        "LOB": entry.lob.nombre if entry.lob else "N/A",
         "Autor": f"{entry.autor.nombre} {entry.autor.apellido}" if entry.autor else "N/A",
         "Comentario": entry.comentario
     } for entry in entradas]

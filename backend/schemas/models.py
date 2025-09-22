@@ -71,11 +71,13 @@ class BitacoraEntryBase(BaseModel):
     fecha: date
     hora: time
     comentario: Optional[str] = None
+    lob_id: Optional[int] = None
 
 class BitacoraEntryUpdate(BaseModel):
     fecha: Optional[date] = None
     hora: Optional[time] = None
     comentario: Optional[str] = None
+    lob_id: Optional[int] = None
 
 class ComentarioGeneralBitacoraCreate(BaseModel):
     comentario: str
@@ -222,12 +224,26 @@ class TareaGeneradaPorAvisoSimple(BaseModel):
     class Config:
         from_attributes = True
 
+class LobBase(BaseModel):
+    nombre: str
+
+class LobCreate(LobBase):
+    pass
+
+class Lob(LobBase):
+    id: int
+    campana_id: int
+
+    class Config:
+        from_attributes = True
+
 class BitacoraEntry(BitacoraEntryBase):
     id: int
     fecha_creacion: datetime
     fecha_ultima_actualizacion: datetime
     autor: AnalistaSimple
     campana: "CampanaSimple"
+    lob: Optional[Lob] = None
     class Config:
         from_attributes = True
 
@@ -292,18 +308,6 @@ class IncidenciaExportFilters(BaseModel):
     estado: Optional[EstadoIncidencia] = None
     asignado_a_id: Optional[int] = None
 
-class LobBase(BaseModel):
-    nombre: str
-
-class LobCreate(LobBase):
-    pass
-
-class Lob(LobBase):
-    id: int
-    campana_id: int
-
-    class Config:
-        from_attributes = True
 
 # --- Actualización de relaciones en schemas existentes ---
 
@@ -473,6 +477,7 @@ class BitacoraExportFilters(BaseModel):
     fecha_fin: Optional[date] = None
     campana_id: Optional[int] = None
     autor_id: Optional[int] = None
+    lob_id: Optional[int] = None
 
 # --- Forward References Update ---
 Campana.model_rebuild()
