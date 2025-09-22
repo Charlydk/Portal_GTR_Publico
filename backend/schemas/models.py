@@ -2,7 +2,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date, time
 from typing import List, Optional
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
+from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
 
 # --- Schemas Base (para creación y actualización) ---
 
@@ -292,13 +292,13 @@ class IncidenciaExportFilters(BaseModel):
     estado: Optional[EstadoIncidencia] = None
     asignado_a_id: Optional[int] = None
 
-class LOBBase(BaseModel):
+class LobBase(BaseModel):
     nombre: str
 
-class LOBCreate(LOBBase):
+class LobCreate(LobBase):
     pass
 
-class LOB(LOBBase):
+class Lob(LobBase):
     id: int
     campana_id: int
 
@@ -310,8 +310,9 @@ class LOB(LOBBase):
 class Campana(CampanaBase):
     id: int
     fecha_creacion: datetime
+    lobs: List[Lob] = []
     analistas_asignados: List[AnalistaSimple] = []
-    comentarios_generales: List["ComentarioGeneralBitacora"] = []
+    
     class Config:
         from_attributes = True
 
@@ -485,4 +486,22 @@ class DashboardStatsAnalista(BaseModel):
 class DashboardStatsSupervisor(BaseModel):
     total_incidencias_activas: int
     
-    
+
+# --- Esquema para LOB ---
+# Define qué campos de un LOB quieres mostrar en la respuesta.
+
+class Lob(LobBase):
+    id: int
+
+    class Config:
+        from_attributes = True # Permite que Pydantic lea los datos desde el modelo ORM
+
+
+# --- Esquema para Campana ---
+# Define qué campos de una Campana quieres mostrar.
+# ¡Lo más importante es que incluimos una lista de Lobs!
+class CampanaBase(BaseModel):
+    nombre: str
+    descripcion: Optional[str] = None
+    fecha_inicio: Optional[datetime] = None
+    fecha_fin: Optional[datetime] = None

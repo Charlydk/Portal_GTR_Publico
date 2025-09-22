@@ -1,14 +1,14 @@
 # backend/create_db_tables.py
 
 import asyncio
-from database import engine, Base, DATABASE_URL
+from .database import engine, Base, DATABASE_URL
 
 # --- LÍNEA DE VERIFICACIÓN ---
 print(f"--- [Script create_db] Modificando DB en: {DATABASE_URL} ---")
 # -----------------------------
 
 # --- IMPORTACIÓN COMPLETA Y CORREGIDA DE TODOS LOS MODELOS ---
-from sql_app.models import (
+from .sql_app.models import (
     Analista, Campana, Tarea, ChecklistItem, ComentarioGeneralBitacora,
     Aviso, AcuseReciboAviso, BitacoraEntry, TareaGeneradaPorAviso,
     HistorialEstadoTarea, Incidencia, ActualizacionIncidencia,

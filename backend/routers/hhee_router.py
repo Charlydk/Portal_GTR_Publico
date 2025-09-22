@@ -6,22 +6,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, update
 from sqlalchemy.orm import selectinload
-from services import geovictoria_service
+from ..services import geovictoria_service
 from datetime import datetime, date
 from typing import List, Optional
 
-from database import get_db
-from dependencies import get_current_analista
-from sql_app import models
+from ..database import get_db
+from ..dependencies import get_current_analista
+from ..sql_app import models
 from pydantic import BaseModel
 
-from dependencies import require_role
-from enums import UserRole, TipoSolicitudHHEE, EstadoSolicitudHHEE
+from ..dependencies import require_role
+from ..enums import UserRole, TipoSolicitudHHEE, EstadoSolicitudHHEE
 from enum import Enum
 
-from schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision, SolicitudHHEELote
+from ..schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision, SolicitudHHEELote
 
-from utils import decimal_to_hhmm, formatear_rut
+from ..utils import decimal_to_hhmm, formatear_rut
 
 import bleach
 import pandas as pd
@@ -402,6 +402,7 @@ async def get_hhee_metricas(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
+    print(f"--- 1. INICIANDO MÉTRICAS a las {datetime.now()} ---")
     fecha_inicio = request.fecha_inicio
     fecha_fin = request.fecha_fin
 
@@ -415,18 +416,26 @@ async def get_hhee_metricas(
     else:
         query = base_query
     
+    print("--- 2. REALIZANDO CONSULTA A LA BASE DE DATOS... ---")
     result = await db.execute(query)
     validaciones_periodo = result.scalars().all()
+    print(f"--- 3. CONSULTA A BD TERMINADA a las {datetime.now()}. Se encontraron {len(validaciones_periodo)} registros. ---")
 
     ruts_unicos = {v.rut.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
+    print(f"--- 4. Se encontraron {len(ruts_unicos)} RUTs únicos. ---")
+
     mapa_datos_gv = {}
     if ruts_unicos:
         token = await geovictoria_service.obtener_token_geovictoria()
         if token:
             fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
             fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+            
+            print("--- 5. REALIZANDO CONSULTA A GEOVICTORIA... ---")
             datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt)
+            print(f"--- 6. CONSULTA A GEOVICTORIA TERMINADA a las {datetime.now()}. ---")
             mapa_datos_gv = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_lista}
+
 
     total_declaradas = 0
     total_rrhh = 0
@@ -452,11 +461,6 @@ async def get_hhee_metricas(
         desglose_campana[v.campaña]["declaradas"] += v.cantidad_hhee_aprobadas
         desglose_campana[v.campaña]["rrhh"] += horas_rrhh_dia
 
-    # --- AÑADE ESTA LÍNEA DE DEPURACIÓN AQUÍ ---
-    print("--- Contenido de desglose_campana antes del error ---")
-    print(desglose_campana)
-    print("-------------------------------------------------")
-    # ---------------------------------------------
 
     desglose_por_empleado_lista = sorted(
         [MetricasPorEmpleado(nombre_empleado=val["nombre"], rut=rut, total_horas_declaradas=val["declaradas"], total_horas_rrhh=val["rrhh"]) for rut, val in desglose_empleado.items()],
@@ -467,6 +471,7 @@ async def get_hhee_metricas(
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
     
+    print("--- 7. PROCESAMIENTO TERMINADO, DEVOLVIENDO RESPUESTA. ---")
     return DashboardHHEEMetricas(
         total_hhee_declaradas=total_declaradas,
         total_hhee_aprobadas_rrhh=total_rrhh,

@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path=dotenv_path)
 import redis.asyncio as redis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
@@ -9,22 +12,22 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List, Optional
-from enums import UserRole
+from .enums import UserRole
 from datetime import timedelta
 from sqlalchemy.orm import selectinload
 from contextlib import asynccontextmanager
 
 # --- IMPORTS CENTRALIZADOS ---
-from database import get_db, engine
-from sql_app import models
-from schemas.models import Analista, AnalistaCreate, CampanaSimple
-from schemas.auth_schemas import Token, TokenData
-from security import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
-from sql_app.crud import get_analista_by_email
+from .database import get_db, engine
+from .sql_app import models
+from .schemas.models import Analista, AnalistaCreate, CampanaSimple
+from .schemas.auth_schemas import Token, TokenData
+from .security import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
-from routers import gtr_router, hhee_router
-from dependencies import get_current_analista, require_role
+from .routers import gtr_router, hhee_router
+from .dependencies import get_current_analista, require_role
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
 @asynccontextmanager
@@ -51,6 +54,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# --- ENDPOINT DE PRUEBA AQUÍ ---
+@app.get("/ping")
+async def ping_pong():
+    return {"ping": "pong"}
+# -----------------------------------------
+
 # En producción (Render), esto redirigirá automáticamente todo el tráfico HTTP a HTTPS.
 if os.getenv("RENDER"): # Solo se activa en el entorno de Render
     app.add_middleware(HTTPSRedirectMiddleware)
@@ -65,8 +74,10 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=origins,       # Permite los orígenes en la lista
+    allow_credentials=True,      # Permite cookies y encabezados de autorización
+    allow_methods=["*"],         # Permite todos los métodos (GET, POST, PUT, etc.)
+    allow_headers=["*"],         # Permite todos los encabezados
 )
 
 app.include_router(gtr_router.router, prefix="/gtr")

@@ -7,11 +7,11 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from typing import List
 
-from database import get_db
-from sql_app import models
-from enums import UserRole
-from schemas.auth_schemas import TokenData
-from security import decode_access_token
+from .database import get_db
+from .sql_app import models
+from .enums import UserRole
+from .schemas.auth_schemas import TokenData
+from .security import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 

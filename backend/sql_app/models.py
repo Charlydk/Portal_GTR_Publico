@@ -6,7 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
-from enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
+from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
 
 import sqlalchemy as sa
 
@@ -61,7 +61,11 @@ class Campana(Base):
     fecha_inicio = Column(DateTime(timezone=True), nullable=True)
     fecha_fin = Column(DateTime(timezone=True), nullable=True)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    # --- RELACIÓN CORREGIDA ---
     lobs = relationship("LOB", back_populates="campana", cascade="all, delete-orphan")
+
+    # --- El resto de tus relaciones ---
     analistas_asignados = relationship("Analista", secondary=analistas_campanas, back_populates="campanas_asignadas")
     tareas = relationship("Tarea", back_populates="campana", cascade="all, delete-orphan")
     avisos = relationship("Aviso", back_populates="campana", cascade="all, delete-orphan")
@@ -76,6 +80,8 @@ class LOB(Base):
     nombre = Column(String, nullable=False)
     
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
+    
+    # --- RELACIÓN CORREGIDA ---
     campana = relationship("Campana", back_populates="lobs")
 class Tarea(Base):
     __tablename__ = "tareas"

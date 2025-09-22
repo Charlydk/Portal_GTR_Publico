@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from enums import UserRole
+from ..enums import UserRole
 
 class Token(BaseModel):
     access_token: str

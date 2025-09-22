@@ -5,6 +5,7 @@ import io
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from ..schemas.models import Campana
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
@@ -13,15 +14,16 @@ from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func
 from sqlalchemy import case
-from database import get_db
-from sql_app import models
-from enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
-from dependencies import get_current_analista, require_role
-from sql_app.crud import get_analista_by_email
+from ..database import get_db
+from ..sql_app import models
+from ..enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
+from ..dependencies import get_current_analista, require_role
+from ..sql_app.crud import get_analista_by_email
 from fastapi.responses import StreamingResponse
+from ..sql_app import crud
 
 # --- IMPORTS COMPLETOS DE SCHEMAS PARA GTR ---
-from schemas.models import (
+from ..schemas.models import (
     Analista, AnalistaCreate, AnalistaSimple, AnalistaBase, PasswordUpdate, AnalistaListado,
     Campana, CampanaBase, CampanaSimple,
     Tarea, TareaBase, TareaSimple, TareaListOutput, TareaUpdate,
@@ -37,7 +39,7 @@ from schemas.models import (
     DashboardStatsAnalista, DashboardStatsSupervisor,
     TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase
 )
-from security import get_password_hash # El endpoint crear_analista la necesita
+from ..security import get_password_hash # El endpoint crear_analista la necesita
 
 
 # --- Creación del Router ---
@@ -603,21 +605,13 @@ async def crear_campana(
 async def obtener_campanas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
+    # Añadimos skip y limit si quieres paginación
+    # skip: int = 0,
+    # limit: int = 100
 ):
-    result = await db.execute(
-        select(models.Campana)
-        .options(
-            selectinload(models.Campana.analistas_asignados),
-            selectinload(models.Campana.tareas),
-            selectinload(models.Campana.avisos),
-            selectinload(models.Campana.bitacora_entries),
-            selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias).selectinload(models.Incidencia.asignado_a)
-        )
-    )
-    campanas = result.scalars().all()
-    unique_campanas = {c.id: c for c in campanas}.values()
-    return list(unique_campanas)
+    # ¡Mucho más limpio! Solo llamamos a la función del CRUD
+    campanas = await crud.get_campanas(db=db) # Pasamos skip y limit si los añadimos arriba
+    return campanas
 
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
@@ -634,9 +628,10 @@ async def obtener_campana_por_id(
             selectinload(models.Campana.tareas),
             selectinload(models.Campana.avisos),
             selectinload(models.Campana.bitacora_entries),
-            # CORRECCIÓN: Usar el nuevo nombre de la relación
             selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias).selectinload(models.Incidencia.creador)
+            selectinload(models.Campana.incidencias).selectinload(models.Incidencia.creador),
+            # --- ESTA ES LA LÍNEA CLAVE Y CORREGIDA ---
+            selectinload(models.Campana.lobs)
         )
     )
     campana = result.scalars().first()
