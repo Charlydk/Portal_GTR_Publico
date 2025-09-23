@@ -183,6 +183,7 @@ function ControlIncidenciasPage() {
                                     <th>ID</th>
                                     <th>Título</th>
                                     <th>Campaña</th>
+                                    <th>LOBs Afectados</th>
                                     <th>Gravedad</th>
                                     <th style={{minWidth: '170px'}}>Estado</th>
                                     <th>Responsable</th>
@@ -200,6 +201,19 @@ function ControlIncidenciasPage() {
                                             <td>{inc.id}</td>
                                             <td>{inc.titulo}</td>
                                             <td>{inc.campana.nombre}</td>
+                                            <td>
+                                                {/* --- LÓGICA PARA MOSTRAR MÚLTIPLES LOBS --- */}
+                                                {inc.lobs && inc.lobs.length > 0 ? (
+                                                    inc.lobs.map(lob => (
+                                                        <Badge key={lob.id} bg="secondary" className="me-1 mb-1">
+                                                            {lob.nombre}
+                                                        </Badge>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-muted">N/A</span>
+                                                )}
+                                                {/* ------------------------------------------- */}
+                                            </td>
                                             <td>
                                                 <Badge bg={inc.gravedad === 'ALTA' ? 'danger' : inc.gravedad === 'MEDIA' ? 'warning' : 'info'}>
                                                     {inc.gravedad}

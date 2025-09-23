@@ -12,6 +12,11 @@ import sqlalchemy as sa
 
 Base = declarative_base()
 
+incidencias_lobs = Table('incidencias_lobs', Base.metadata,
+    Column('incidencia_id', Integer, ForeignKey('incidencias.id'), primary_key=True),
+    Column('lob_id', Integer, ForeignKey('lobs.id'), primary_key=True)
+)
+
 # --- Tabla de Asociación ---
 analistas_campanas = Table(
     'analistas_campanas',
@@ -83,6 +88,9 @@ class LOB(Base):
     
     # --- RELACIÓN CORREGIDA ---
     campana = relationship("Campana", back_populates="lobs")
+    
+    incidencias = relationship("Incidencia", secondary=incidencias_lobs, back_populates="lobs")
+
 class Tarea(Base):
     __tablename__ = "tareas"
     id = Column(Integer, primary_key=True, index=True)
@@ -215,6 +223,8 @@ class Incidencia(Base):
     asignado_a = relationship("Analista", back_populates="incidencias_asignadas", foreign_keys=[asignado_a_id])
     campana = relationship("Campana", back_populates="incidencias")
     actualizaciones = relationship("ActualizacionIncidencia", back_populates="incidencia", cascade="all, delete-orphan")
+    lobs = relationship("LOB", secondary=incidencias_lobs, back_populates="incidencias")
+
 
 class ActualizacionIncidencia(Base):
     __tablename__ = "actualizaciones_incidencia"

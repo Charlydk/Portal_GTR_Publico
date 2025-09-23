@@ -2048,47 +2048,24 @@ async def create_incidencia(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    campana_result = await db.execute(select(models.Campana).filter(models.Campana.id == incidencia_data.campana_id))
-    if not campana_result.scalars().first():
-        raise HTTPException(status_code=404, detail="Campaña no encontrada")
-
-    # --- INICIO DE LA LÓGICA DE SEGURIDAD ---
-
-    # 2. Convertimos los datos que llegan de la API en un diccionario editable
     datos_limpios = incidencia_data.model_dump()
+    # ... (tu código para limpiar con bleach)
 
-    # 3. Definimos una lista con los campos de texto que queremos "limpiar"
-    campos_a_sanitizar = ['titulo', 'descripcion_inicial', 'herramienta_afectada', 'indicador_afectado']
-    
-    # 4. Recorremos la lista y aplicamos bleach.clean() a cada campo
-    for campo in campos_a_sanitizar:
-        valor_actual = datos_limpios.get(campo)
-        if valor_actual: # Solo si el campo tiene algún texto
-            datos_limpios[campo] = bleach.clean(valor_actual)
+    lob_ids = datos_limpios.pop("lob_ids", [])
+    db_incidencia = models.Incidencia(**datos_limpios,
+                                    creador_id=current_analista.id,
+                                    asignado_a_id=current_analista.id,
+                                    estado=EstadoIncidencia.EN_PROGRESO)
 
-    # --- FIN DE LA LÓGICA DE SEGURIDAD ---
+    if lob_ids:
+        lobs_result = await db.execute(select(models.LOB).filter(models.LOB.id.in_(lob_ids)))
+        db_incidencia.lobs = lobs_result.scalars().all()
 
-    # 5. Creamos la incidencia usando el diccionario con los datos ya limpios
-    db_incidencia = models.Incidencia(
-        **datos_limpios,
-        creador_id=current_analista.id,
-        asignado_a_id=current_analista.id,
-        estado=EstadoIncidencia.EN_PROGRESO
-    )
     db.add(db_incidencia)
     await db.commit()
     await db.refresh(db_incidencia)
-    
-    result = await db.execute(
-        select(models.Incidencia)
-        .options(
-            selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.campana),
-            selectinload(models.Incidencia.actualizaciones)
-        )
-        .filter(models.Incidencia.id == db_incidencia.id)
-    )
-    return result.scalars().first()
+
+    return await get_incidencia_by_id(db_incidencia.id, db, current_analista)
 
 @router.get("/incidencias/", response_model=List[IncidenciaSimple], summary="Obtener lista de Incidencias")
 async def get_incidencias(
@@ -2110,14 +2087,11 @@ async def update_incidencia(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    result = await db.execute(
-        select(models.Incidencia)
-        .options(selectinload(models.Incidencia.asignado_a))
-        .filter(models.Incidencia.id == incidencia_id)
-    )
+    result = await db.execute(select(models.Incidencia).options(selectinload(models.Incidencia.lobs)).filter(models.Incidencia.id == incidencia_id))
     db_incidencia = result.scalars().first()
     if not db_incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+
 
     # --- INICIO DE LA LÓGICA DE SEGURIDAD ---
     update_dict = update_data.model_dump(exclude_unset=True)
@@ -2127,6 +2101,16 @@ async def update_incidencia(
         if campo in update_dict and update_dict[campo]:
             update_dict[campo] = bleach.clean(update_dict[campo])
     # --- FIN DE LA LÓGICA DE SEGURIDAD ---
+
+    # --- LÓGICA PARA ACTUALIZAR LOS LOBS ---
+    if "lob_ids" in update_dict:
+        lob_ids = update_dict.pop("lob_ids")
+        if lob_ids:
+            lobs_result = await db.execute(select(models.LOB).filter(models.LOB.id.in_(lob_ids)))
+            db_incidencia.lobs = lobs_result.scalars().all()
+        else:
+            db_incidencia.lobs = []
+    # ------------------------------------
 
     historial_comentarios = []
 
@@ -2168,7 +2152,8 @@ async def get_incidencia_by_id(
             selectinload(models.Incidencia.creador),
             selectinload(models.Incidencia.campana),
             selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
-            selectinload(models.Incidencia.asignado_a) #AGREGUE ESTO POR AQUI
+            selectinload(models.Incidencia.asignado_a),
+            selectinload(models.Incidencia.lobs)
         )
         .filter(models.Incidencia.id == incidencia_id)
     )
@@ -2196,7 +2181,8 @@ async def get_incidencias_filtradas(
         selectinload(models.Incidencia.campana),
         selectinload(models.Incidencia.creador),
         selectinload(models.Incidencia.asignado_a),
-        selectinload(models.Incidencia.cerrado_por)
+        selectinload(models.Incidencia.cerrado_por),
+        selectinload(models.Incidencia.lobs)
     ).order_by(models.Incidencia.fecha_apertura.desc())
 
     if fecha_inicio:
@@ -2676,7 +2662,8 @@ async def get_recientes_incidencias_activas(
         selectinload(models.Incidencia.asignado_a),
         selectinload(models.Incidencia.creador),
         selectinload(models.Incidencia.cerrado_por),
-        selectinload(models.Incidencia.actualizaciones) # Cargamos las actualizaciones para encontrar la última
+        selectinload(models.Incidencia.actualizaciones),
+        selectinload(models.Incidencia.lobs)
     ).filter(
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
     ).order_by(
@@ -2810,6 +2797,7 @@ async def exportar_incidencias(
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.lobs),
         selectinload(models.Incidencia.creador),
         selectinload(models.Incidencia.asignado_a),
         selectinload(models.Incidencia.cerrado_por),
@@ -2843,6 +2831,7 @@ async def exportar_incidencias(
             "ID": inc.id,
             "Titulo": inc.titulo,
             "Campaña": inc.campana.nombre if inc.campana else "N/A",
+            "LOBs": ", ".join([lob.nombre for lob in inc.lobs]) if inc.lobs else "N/A",
             "Gravedad": inc.gravedad.value if inc.gravedad else "N/A",
             "Estado": inc.estado.value if inc.estado else "N/A",
             "Creador": f"{inc.creador.nombre} {inc.creador.apellido}" if inc.creador else "N/A",

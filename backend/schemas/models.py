@@ -115,6 +115,7 @@ class IncidenciaCreate(BaseModel):
     tipo: TipoIncidencia
     gravedad: GravedadIncidencia
     campana_id: int
+    lob_ids: Optional[List[int]] = []
     fecha_apertura: Optional[datetime] = None
 
 class IncidenciaEstadoUpdate(BaseModel):
@@ -267,6 +268,7 @@ class IncidenciaSimple(BaseModel):
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
+    lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None
     class Config:
         from_attributes = True
@@ -286,6 +288,7 @@ class Incidencia(BaseModel):
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
     campana: "CampanaSimple"
+    lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None 
     actualizaciones: List[ActualizacionIncidencia] = []
     class Config:
@@ -300,6 +303,7 @@ class IncidenciaUpdate(BaseModel):
     gravedad: Optional[GravedadIncidencia] = None
     campana_id: Optional[int] = None
     asignado_a_id: Optional[int] = None
+    lob_ids: Optional[List[int]] = []
 
 class IncidenciaExportFilters(BaseModel):
     fecha_inicio: Optional[date] = None
