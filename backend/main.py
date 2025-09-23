@@ -6,7 +6,7 @@ import redis.asyncio as redis
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
+from fastapi import FastAPI, Depends, HTTPException, status, APIRouter, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,7 @@ from .database import get_db, engine
 from .sql_app import models
 from .schemas.models import Analista, AnalistaCreate, CampanaSimple
 from .schemas.auth_schemas import Token, TokenData
-from .security import verify_password, get_password_hash, create_access_token, decode_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from .security import verify_password, get_password_hash, create_access_token, decode_access_token, create_refresh_token, ACCESS_TOKEN_EXPIRE_MINUTES
 from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
@@ -99,9 +99,14 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     """
     Permite a un analista iniciar sesión y obtener un token JWT.
     """
+    print("--- 1. Endpoint /token recibido. Buscando analista en la BD... ---")
+
  
     analista = await get_analista_by_email(form_data.username, db)
 
+    print("--- 2. Analista encontrado. Verificando contraseña... ---")
+
+    
     if not analista:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -123,13 +128,46 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Usuario inactivo. Contacte al administrador."
         )
+    token_data = {"sub": analista.email, "role": analista.role.value}
+    
+    access_token = create_access_token(data=token_data)
+    refresh_token = create_refresh_token(data=token_data) # <-- Creamos el refresh token
+    
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token, # <-- Lo devolvemos
+        "token_type": "bearer"
+    }
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": analista.email, "role": analista.role.value},
-        expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+@app.post("/refresh", response_model=Token, summary="Refrescar el Token de Acceso")
+async def refresh_access_token(
+    refresh_token: str = Header(..., alias="Authorization"), 
+    db: AsyncSession = Depends(get_db)
+):
+    if not refresh_token.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Formato de token inválido")
+
+    token = refresh_token.split(" ")[1]
+    
+    payload = decode_access_token(token) # Usamos la misma función de decodificación
+    if not payload:
+        raise HTTPException(status_code=401, detail="Refresh token inválido o expirado")
+        
+    email = payload.get("sub")
+    analista = await get_analista_by_email(email, db)
+    if not analista or not analista.esta_activo:
+        raise HTTPException(status_code=401, detail="Usuario no encontrado o inactivo")
+        
+    # Si todo es correcto, creamos un NUEVO access token y un NUEVO refresh token
+    new_token_data = {"sub": analista.email, "role": analista.role.value}
+    new_access_token = create_access_token(data=new_token_data)
+    new_refresh_token = create_refresh_token(data=new_token_data)
+    
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
+    }
 
 @app.get("/users/me/", response_model=Analista, summary="Obtener información del Analista actual")
 async def read_users_me(current_analista: models.Analista = Depends(get_current_analista)):

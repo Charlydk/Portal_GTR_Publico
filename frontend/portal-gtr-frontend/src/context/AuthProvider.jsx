@@ -1,15 +1,51 @@
-/// src/context/AuthProvider.jsx
+// RUTA: src/context/AuthProvider.jsx
+
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../api';
-import { AuthContext } from './AuthContext'; // <-- Importamos el contexto desde su nuevo archivo
+import { AuthContext } from './AuthContext';
+import { Modal, Button } from 'react-bootstrap';
 
 export const AuthProvider = ({ children }) => {
+    // --- 1. DEFINICIÓN DE TODOS LOS ESTADOS ---
     const [user, setUser] = useState(null);
     const [authToken, setAuthToken] = useState(localStorage.getItem('authToken'));
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [showInactivityModal, setShowInactivityModal] = useState(false);
 
-    // Función para obtener el perfil del usuario
+    const navigate = useNavigate();
+
+    // --- 2. DEFINICIÓN DE TODAS LAS FUNCIONES ---
+    const INACTIVITY_TIMEOUT = 2 * 60 * 1000;
+    const WARNING_TIME = 1 * 60 * 1000;
+
+    const logout = useCallback(() => {
+        localStorage.removeItem('authToken');
+        setAuthToken(null);
+        setUser(null);
+        setShowInactivityModal(false);
+        clearTimeout(window.warningTimeout);
+        clearTimeout(window.logoutTimeout);
+        navigate('/login');
+    }, [navigate]);
+
+    const resetInactivityTimer = useCallback(() => {
+        if (window.warningTimeout) clearTimeout(window.warningTimeout);
+        if (window.logoutTimeout) clearTimeout(window.logoutTimeout);
+
+        window.warningTimeout = setTimeout(() => {
+            setShowInactivityModal(true);
+        }, WARNING_TIME);
+
+        window.logoutTimeout = setTimeout(logout, INACTIVITY_TIMEOUT);
+    }, [logout, WARNING_TIME, INACTIVITY_TIMEOUT]);
+
+    const handleContinueSession = () => {
+        setShowInactivityModal(false);
+        resetInactivityTimer();
+    };
+
     const fetchUserProfile = useCallback(async (token) => {
         if (!token) {
             setUser(null);
@@ -18,48 +54,29 @@ export const AuthProvider = ({ children }) => {
         }
         try {
             const response = await fetch(`${API_BASE_URL}/users/me/`, {
-                // --- LA LÍNEA CLAVE QUE FALTABA O ESTABA INCORRECTA ---
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                // ----------------------------------------------------
+                headers: { 'Authorization': `Bearer ${token}` },
             });
             if (response.ok) {
                 const userData = await response.json();
                 setUser(userData);
             } else {
                 console.error("Token no válido o sesión expirada. Limpiando sesión.");
-                localStorage.removeItem('authToken');
-                setAuthToken(null);
-                setUser(null);
+                logout();
             }
         } catch (error) {
             console.error("Error de red al obtener el perfil del usuario:", error);
-            localStorage.removeItem('authToken');
-            setAuthToken(null);
-            setUser(null);
+            logout();
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [logout]);
 
-    // Función para refrescar el perfil del usuario (útil después de ciertas operaciones)
     const refreshUser = useCallback(async () => {
         if (authToken) {
             await fetchUserProfile(authToken);
         }
     }, [authToken, fetchUserProfile]);
 
-    useEffect(() => {
-        // Al cargar la aplicación, intentar obtener el perfil si hay un token
-        if (authToken) {
-            fetchUserProfile(authToken);
-        } else {
-            setLoading(false); // No hay token, no hay usuario, terminar carga
-        }
-    }, [authToken, fetchUserProfile]);
-
-    // Función de login
     const login = async (email, password) => {
         setLoading(true);
         setError(null);
@@ -69,40 +86,80 @@ export const AuthProvider = ({ children }) => {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ username: email, password: password }).toString(),
             });
-    
             if (!response.ok) {
-                if (response.status === 429) {
-                    throw new Error("Demasiados intentos. Por favor, espera un minuto.");
-                }
+                if (response.status === 429) throw new Error("Demasiados intentos. Por favor, espera un minuto.");
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Email o contraseña incorrectos.');
             }
-    
             const data = await response.json();
             localStorage.setItem('authToken', data.access_token);
+            localStorage.setItem('refreshToken', data.refresh_token);
             setAuthToken(data.access_token);
-            // El useEffect se encargará de cargar el perfil
-            return true; // <--- CAMBIO CLAVE: Devolvemos true si fue exitoso
-    
+            return true;
         } catch (error) {
             console.error("Error de login:", error);
             setError(error.message);
-            return false; // <--- CAMBIO CLAVE: Devolvemos false si hubo un error
+            return false;
         } finally {
             setLoading(false);
         }
     };
-    // Función de logout
-    const logout = () => {
-        localStorage.removeItem('authToken');
-        setAuthToken(null);
-        setUser(null);
-    };
+
+    // --- 3. EFECTOS SECUNDARIOS (useEffect) ---
+    useEffect(() => {
+        // Este efecto carga el perfil del usuario cuando el token cambia
+        if (authToken) {
+            fetchUserProfile(authToken);
+        } else {
+            setLoading(false);
+        }
+    }, [authToken, fetchUserProfile]);
+
+    useEffect(() => {
+        // Este efecto maneja la lógica de inactividad
+        if (!authToken) return;
+
+        const activityEvents = ['mousemove', 'keydown', 'click', 'scroll'];
+        
+        const activityTracker = () => {
+            // No reseteamos el timer si el modal ya está visible
+            if (!showInactivityModal) {
+                resetInactivityTimer();
+            }
+        };
+
+        activityEvents.forEach(event => {
+            window.addEventListener(event, activityTracker);
+        });
+
+        resetInactivityTimer(); // Inicia el temporizador la primera vez
+
+        // Función de limpieza para quitar los listeners
+        return () => {
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, activityTracker);
+            });
+            clearTimeout(window.warningTimeout);
+            clearTimeout(window.logoutTimeout);
+        };
+    }, [authToken, resetInactivityTimer, showInactivityModal]);
+
+
+    const InactivityModal = () => (
+        <Modal show={showInactivityModal} backdrop="static" centered>
+            <Modal.Header><Modal.Title>¿Sigues ahí?</Modal.Title></Modal.Header>
+            <Modal.Body>Tu sesión se cerrará pronto por inactividad. ¿Deseas continuar trabajando?</Modal.Body>
+            <Modal.Footer>
+                <Button variant="secondary" onClick={logout}>Cerrar Sesión</Button>
+                <Button variant="primary" onClick={handleContinueSession}>Seguir Conectado</Button>
+            </Modal.Footer>
+        </Modal>
+    );
 
     return (
         <AuthContext.Provider value={{ user, authToken, loading, error, login, logout, refreshUser }}>
             {children}
+            <InactivityModal />
         </AuthContext.Provider>
     );
 };
-
