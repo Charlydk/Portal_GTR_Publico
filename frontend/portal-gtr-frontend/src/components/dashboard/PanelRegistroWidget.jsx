@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { GTR_API_URL } from '../../api';
+import { GTR_API_URL, fetchWithAuth } from '../../api';
 import FormularioIncidencia from '../incidencias/FormularioIncidencia';
 
 function PanelRegistroWidget({ onUpdate }) {
@@ -37,7 +37,7 @@ function PanelRegistroWidget({ onUpdate }) {
     const fetchCampanas = useCallback(async () => {
         if (!authToken) return;
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
             if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
             const data = await response.json();
             setCampanas(data);
@@ -48,7 +48,7 @@ function PanelRegistroWidget({ onUpdate }) {
         if (!campanaId) { setLogDiario([]); return; }
         setLoadingLog(true);
         try {
-            const response = await fetch(`${GTR_API_URL}/bitacora/hoy/${campanaId}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(`${GTR_API_URL}/bitacora/hoy/${campanaId}`, { headers: { 'Authorization': `Bearer ${authToken}` } });
             if (!response.ok) { setLogDiario([]); return; }
             const data = await response.json();
             setLogDiario(data);
@@ -65,7 +65,7 @@ function PanelRegistroWidget({ onUpdate }) {
         }
         setLoadingLobs(true);
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/lobs`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/lobs`, { headers: { 'Authorization': `Bearer ${authToken}` } });
             if (response.ok) {
                 const data = await response.json();
                 setLobs(data);
@@ -114,7 +114,7 @@ function PanelRegistroWidget({ onUpdate }) {
             ? { hora: bitacoraData.hora, comentario: bitacoraData.comentario, lob_id: selectedLob ? parseInt(selectedLob) : null }
             : { ...bitacoraData, campana_id: selectedCampana, fecha: new Date().toISOString().split('T')[0], lob_id: selectedLob ? parseInt(selectedLob) : null };
         try {
-            const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify(payload) });
+            const response = await fetchWithAuth(url, { method, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` }, body: JSON.stringify(payload) });
             if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail); }
             setSuccess(`Entrada ${isEditing ? 'actualizada' : 'registrada'}!`);
             handleCancelEdit(); 
@@ -146,7 +146,7 @@ function PanelRegistroWidget({ onUpdate }) {
             ...formDataDesdeHijo, 
             campana_id: parseInt(formDataDesdeHijo.campana_id, 10)
         };
-        const response = await fetch(`${GTR_API_URL}/incidencias/`, {
+        const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
             body: JSON.stringify(payload)

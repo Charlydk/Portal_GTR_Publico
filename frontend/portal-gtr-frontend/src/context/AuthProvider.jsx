@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../api';
+import { API_BASE_URL, fetchWithAuth } from '../api';
 import { AuthContext } from './AuthContext';
 import { Modal, Button } from 'react-bootstrap';
 
@@ -17,8 +17,8 @@ export const AuthProvider = ({ children }) => {
     const navigate = useNavigate();
 
     // --- 2. DEFINICIÓN DE TODAS LAS FUNCIONES ---
-    const INACTIVITY_TIMEOUT = 2 * 60 * 1000;
-    const WARNING_TIME = 1 * 60 * 1000;
+    const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
+    const WARNING_TIME = 28 * 60 * 1000;
 
     const logout = useCallback(() => {
         localStorage.removeItem('authToken');
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }) => {
             return;
         }
         try {
-            const response = await fetch(`${API_BASE_URL}/users/me/`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/users/me/`, {
                 headers: { 'Authorization': `Bearer ${token}` },
             });
             if (response.ok) {
@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${API_BASE_URL}/token`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ username: email, password: password }).toString(),

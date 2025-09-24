@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth  } from '../api';
 import { Link } from 'react-router-dom';
 
 // Importamos todos los widgets que usaremos
@@ -28,13 +28,13 @@ function DashboardPage() {
         setError(null);
         try {
             const requests = [
-                fetch(`${GTR_API_URL}/incidencias/activas/recientes`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${GTR_API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetchWithAuth(`${GTR_API_URL}/incidencias/activas/recientes`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+                fetchWithAuth(`${GTR_API_URL}/dashboard/stats`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
             ];
 
             if (user.role === 'ANALISTA') {
-                requests.push(fetch(`${GTR_API_URL}/analistas/me/incidencias_asignadas`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
-                requests.push(fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
+                requests.push(fetchWithAuth(`${GTR_API_URL}/analistas/me/incidencias_asignadas`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
+                requests.push(fetchWithAuth(`${GTR_API_URL}/campanas/tareas_disponibles/`, { headers: { 'Authorization': `Bearer ${authToken}` } }));
             }
 
             const responses = await Promise.all(requests);
