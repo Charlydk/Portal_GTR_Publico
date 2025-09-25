@@ -1831,6 +1831,31 @@ async def create_bitacora_entry(
     if not campana_existente_result.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
+    # --- INICIO DEL BLOQUE DE VALIDACIÓN ANTI-DUPLICADOS ---
+    # 1. Creamos la base de la consulta para buscar duplicados
+    query_existente = select(models.BitacoraEntry).filter(
+        models.BitacoraEntry.fecha == entry.fecha,
+        models.BitacoraEntry.hora == entry.hora,
+        models.BitacoraEntry.campana_id == entry.campana_id
+    )
+
+    # 2. Ajustamos la consulta dependiendo de si se proporcionó un LOB o no
+    if entry.lob_id:
+        # Si hay LOB, buscamos una coincidencia exacta con ese LOB
+        query_existente = query_existente.filter(models.BitacoraEntry.lob_id == entry.lob_id)
+    else:
+        # Si NO hay LOB, buscamos un registro que tampoco tenga LOB
+        query_existente = query_existente.filter(models.BitacoraEntry.lob_id.is_(None))
+
+    # 3. Ejecutamos la consulta y, si encontramos algo, lanzamos un error
+    result_existente = await db.execute(query_existente)
+    if result_existente.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe un evento registrado en la misma franja horaria para esta campaña y LOB."
+        )
+
+    
     # --- Lógica de Seguridad ---
     datos_limpios = entry.model_dump()
     if datos_limpios.get("comentario"):
