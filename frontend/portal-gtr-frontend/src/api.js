@@ -1,6 +1,8 @@
 // RUTA: src/api.js
 
-export const API_BASE_URL = "http://127.0.0.1:8001"; // O el puerto que estés usando
+export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
+
+// El resto de tu archivo no cambia
 export const GTR_API_URL = `${API_BASE_URL}/gtr`;
 export const HHEE_API_URL = `${API_BASE_URL}/hhee`;
 
