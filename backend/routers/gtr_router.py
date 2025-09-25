@@ -1785,14 +1785,19 @@ async def get_campana_bitacora_by_date(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
     result = await db.execute(
-        select(models.BitacoraEntry)
-        .options(
-            selectinload(models.BitacoraEntry.campana)),
-            selectinload(models.BitacoraEntry.autor),
-            selectinload(models.BitacoraEntry.lob)
-        .filter(models.BitacoraEntry.campana_id == campana_id, models.BitacoraEntry.fecha == fecha)
-        .order_by(models.BitacoraEntry.hora)
+    select(models.BitacoraEntry)
+    .options(
+        # Todos los selectinload van dentro de un solo .options()
+        selectinload(models.BitacoraEntry.campana),
+        selectinload(models.BitacoraEntry.autor),
+        selectinload(models.BitacoraEntry.lob)
     )
+    .filter(
+        models.BitacoraEntry.campana_id == campana_id, 
+        models.BitacoraEntry.fecha == fecha
+    )
+    .order_by(models.BitacoraEntry.hora)
+)
     entries = result.scalars().all()
     return entries
 
