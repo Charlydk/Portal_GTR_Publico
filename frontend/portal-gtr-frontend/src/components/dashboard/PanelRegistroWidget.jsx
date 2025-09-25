@@ -143,7 +143,6 @@ function PanelRegistroWidget({ onUpdate }) {
             setSuccess(`Entrada ${isEditing ? 'actualizada' : 'registrada'}!`);
             handleCancelEdit(); 
             await fetchLogDiario(selectedCampana);
-            if (onUpdate) onUpdate();
         } catch (err) { setError(err.message); } 
         finally { 
             setLoading(prev => ({...prev, submitBitacora: false}));
