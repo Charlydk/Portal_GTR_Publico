@@ -1,10 +1,13 @@
 // RUTA: src/components/dashboard/EstadisticasGTRWidget.jsx
+
 import React from 'react';
 import { Row, Col, Card } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+// Ya no necesitamos 'Link' porque las tarjetas no serán clickeables
+// import { Link } from 'react-router-dom';
 
-const StatCard = ({ title, value, variant = 'primary', linkTo = null }) => {
-    const cardContent = (
+const StatCard = ({ title, value, variant = 'primary' }) => {
+    // Hemos eliminado la prop 'linkTo' y el componente Link
+    return (
         <Card className={`text-center shadow-sm bg-${variant} text-white h-100`}>
             <Card.Body className="d-flex flex-column justify-content-center">
                 <Card.Title as="h2" className="mb-0">{value}</Card.Title>
@@ -12,36 +15,32 @@ const StatCard = ({ title, value, variant = 'primary', linkTo = null }) => {
             </Card.Body>
         </Card>
     );
-
-    if (linkTo) {
-        return <Link to={linkTo} className="text-decoration-none h-100">{cardContent}</Link>;
-    }
-    return cardContent;
 };
 
-function EstadisticasGTRWidget({ stats, user, tareasDisponibles = 0 }) {
+function EstadisticasGTRWidget({ stats, user }) {
     if (!stats) return null;
 
+    // Vista para Supervisor y Responsable
     if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
         return (
             <Row className="g-3">
                 <Col>
-                   <StatCard title="Total Incidencias Activas" value={stats.total_incidencias_activas} variant="danger" linkTo="/control-incidencias" />
+                   {/* Tarjeta sin enlace */}
+                   <StatCard title="Total Incidencias Activas" value={stats.total_incidencias_activas} variant="danger" />
                 </Col>
-                {/* Aquí puedes añadir más tarjetas de estadísticas en el futuro */}
             </Row>
         );
     }
 
+    // Vista para Analista
     if (user.role === 'ANALISTA') {
         return (
              <Row className="g-3">
                 <Col>
-                   <StatCard title="Incidencias sin Asignar" value={stats.incidencias_sin_asignar} variant="info" linkTo="/control-incidencias" />
+                   {/* Tarjeta sin enlace */}
+                   <StatCard title="Incidencias sin Asignar" value={stats.incidencias_sin_asignar} variant="info" />
                 </Col>
-                 <Col>
-                   <StatCard title="Tareas Disponibles" value={tareasDisponibles} variant="primary" linkTo="/tareas/disponibles" />
-                </Col>
+                {/* Hemos eliminado la tarjeta de "Tareas Disponibles" */}
             </Row>
         );
     }
