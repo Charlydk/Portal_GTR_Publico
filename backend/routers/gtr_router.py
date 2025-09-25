@@ -2705,7 +2705,8 @@ async def get_mis_incidencias_asignadas(
     que realiza la petición.
     """
     query = select(models.Incidencia).options(
-        selectinload(models.Incidencia.campana)
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.lobs)
     ).filter(
         models.Incidencia.asignado_a_id == current_analista.id,
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
