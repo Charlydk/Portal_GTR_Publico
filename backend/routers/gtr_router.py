@@ -2798,7 +2798,8 @@ async def get_dashboard_stats(
         daily_incidents_query = select(models.Incidencia).options(
             selectinload(models.Incidencia.campana),
             selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.cerrado_por)
+            selectinload(models.Incidencia.cerrado_por),
+            selectinload(models.Incidencia.lobs)
         ).filter(
             models.Incidencia.campana_id.in_(assigned_campaign_ids),
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO]),
