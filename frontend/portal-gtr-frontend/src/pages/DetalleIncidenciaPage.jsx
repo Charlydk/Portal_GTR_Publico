@@ -171,6 +171,19 @@ function DetalleIncidenciaPage() {
                     <Row>
                         <Col md={6}>
                         <p><strong>Campaña:</strong> <Link to={`/campanas/${incidencia.campana.id}`}>{incidencia.campana.nombre}</Link></p>
+
+                        <p>
+                            <strong>LOBs Afectados:</strong>
+                            {incidencia.lobs && incidencia.lobs.length > 0 ? (
+                                incidencia.lobs.map(lob => (
+                                    <Badge key={lob.id} bg="secondary" className="ms-1">
+                                        {lob.nombre}
+                                    </Badge>
+                                ))
+                            ) : (
+                                <span className="text-muted fst-italic"> N/A</span>
+                            )}
+                        </p>
                             <p><strong>Creador:</strong> {incidencia.creador.nombre} {incidencia.creador.apellido}</p>
                             <p><strong>Asignado a:</strong> {incidencia.asignado_a ? `${incidencia.asignado_a.nombre} ${incidencia.asignado_a.apellido}` : <span className="text-muted fst-italic">Nadie (Abierta)</span>}</p>
                         </Col>
