@@ -16,6 +16,7 @@ class ProgresoTarea(str, Enum):
 class TipoIncidencia(str, Enum):
     TECNICA = "TECNICA"
     OPERATIVA = "OPERATIVA"
+    HUMANA = "HUMANA"
     OTRO = "OTRO"
 
 class EstadoIncidencia(str, Enum):
