@@ -8,8 +8,13 @@ export const HHEE_API_URL = `${API_BASE_URL}/hhee`;
 
 // --- NUESTRA NUEVA FUNCIÓN "INTELIGENTE" ---
 export const fetchWithAuth = async (url, options = {}) => {
-    // 1. Obtenemos el token de acceso actual
-    let token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+        // Si no hay token, no intentes hacer la llamada.
+        // Dispara el evento de logout para asegurar que toda la app reaccione.
+        window.dispatchEvent(new Event('logout'));
+        throw new Error('No estás autenticado.');
+    }
 
     // 2. Preparamos los encabezados (headers)
     const headers = {

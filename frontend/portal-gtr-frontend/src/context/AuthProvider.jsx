@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/token`, {
+            const response = await fetch(`${API_BASE_URL}/token`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ username: email, password: password }).toString(),
@@ -92,13 +92,26 @@ export const AuthProvider = ({ children }) => {
                 throw new Error(errorData.detail || 'Email o contraseña incorrectos.');
             }
             const data = await response.json();
+            
+            // 1. Guardamos los tokens primero.
             localStorage.setItem('authToken', data.access_token);
             localStorage.setItem('refreshToken', data.refresh_token);
+            
+            // 2. Le pasamos el nuevo token directamente a fetchUserProfile.
+            await fetchUserProfile(data.access_token);
+            
+            // 3. Finalmente, actualizamos el estado del token.
             setAuthToken(data.access_token);
+
             return true;
         } catch (error) {
             console.error("Error de login:", error);
             setError(error.message);
+            // Nos aseguramos de limpiar todo si el login falla
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            setAuthToken(null);
+            setUser(null);
             return false;
         } finally {
             setLoading(false);
