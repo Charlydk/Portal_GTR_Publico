@@ -61,7 +61,7 @@ function DashboardPage() {
         } finally {
             setLoading(false);
         }
-    }, [authToken, user]);
+    }, [authToken]);
 
     useEffect(() => {
         if (!authLoading && user) {
