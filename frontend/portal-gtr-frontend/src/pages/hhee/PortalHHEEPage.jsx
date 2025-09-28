@@ -247,8 +247,7 @@ function PortalHHEEPage() {
     const handleGuardar = async () => {
         setLoading(true);
         setError(null);
-        setSuccess(null);
-        setGuardadoResumen(null); // Limpiamos resumen previo
+        setGuardadoResumen(null);
 
         const validacionesParaEnviar = resultados.map(dia => {
             const validacion = validaciones[dia.fecha];
@@ -284,11 +283,12 @@ function PortalHHEEPage() {
             });
             const data = await response.json();
             if (!response.ok) throw new Error(data.detail);
-            //setSuccess(data.mensaje); // Muestra el mensaje de éxito de la API (reemplazamos por el resumen)
-            setResultados([]); // Limpia la tabla de resultados
-            setNombreAgente(''); // Limpia el nombre del agente
-            setGuardadoResumen(validacionesParaEnviar); // Guarda los datos enviados para mostrarlos en el resumen
-            
+    
+            // 1. CAMBIO: Usamos el nuevo resumen detallado del backend
+            setGuardadoResumen(data.resumen_detallado || []);
+            setResultados([]);
+            setNombreAgente('');
+    
         } catch (err) {
             setError(err.message);
         } finally {
@@ -333,28 +333,19 @@ function PortalHHEEPage() {
             {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
             {success && <Alert variant="success" onClose={() => setSuccess(null)} dismissible>{success}</Alert>}
 
-                    {/* --- INICIO DEL NUEVO BLOQUE DE CÓDIGO --- */}
-            {guardadoResumen ? (
-                // Si hay un resumen guardado, muestra esta tarjeta
+            {guardadoResumen && guardadoResumen.length > 0 ? (
                 <Card className="shadow-sm mt-4">
                     <Card.Header as="h4" className="bg-success text-white">Resumen de la Carga</Card.Header>
                     <Card.Body>
                         <Alert variant="success">¡Los datos se han guardado correctamente!</Alert>
                         <ListGroup variant="flush">
+                            {/* 2. CAMBIO: Simplificamos la lógica de renderizado */}
                             {guardadoResumen.map((item, index) => (
                                 <ListGroup.Item key={index}>
-                                    <strong>Fecha: {item.fecha}</strong>
-                                    {isPendientesView && <span> | <strong>RUT: {item.rut_con_formato}</strong></span>}
+                                    <strong>Fecha: {new Date(item.fecha + 'T00:00:00Z').toLocaleDateString('es-AR', { timeZone: 'UTC' })}</strong>
+                                    {isPendientesView && <span> | <strong>RUT: {item.rut}</strong></span>}
                                     <ul>
-                                        {item.turno_es_incorrecto ? (
-                                            <li className="text-warning">Marcado como Pendiente: {item.nota}</li>
-                                        ) : (
-                                            <>
-                                                {item.hhee_aprobadas_inicio > 0 && <li>HHEE Antes: {decimalToHHMM(item.hhee_aprobadas_inicio)}</li>}
-                                                {item.hhee_aprobadas_fin > 0 && <li>HHEE Después: {decimalToHHMM(item.hhee_aprobadas_fin)}</li>}
-                                                {item.hhee_aprobadas_descanso > 0 && <li>HHEE Descanso: {decimalToHHMM(item.hhee_aprobadas_descanso)}</li>}
-                                            </>
-                                        )}
+                                        <li>{item.accion}</li>
                                     </ul>
                                 </ListGroup.Item>
                             ))}

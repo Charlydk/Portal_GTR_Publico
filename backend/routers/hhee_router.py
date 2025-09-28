@@ -156,12 +156,12 @@ async def cargar_horas_extras(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
-    mensajes_respuesta = []
-    
+    # 1. CAMBIO: Renombramos la lista para mayor claridad
+    resumen_operaciones = []
+
     for validacion in request_body.validaciones:
         rut_formateado = formatear_rut(validacion.rut_con_formato)
-        
-        # Primero, obtenemos todos los registros existentes para ese día y RUT
+
         query_existentes = select(models.ValidacionHHEE).filter_by(
             rut=rut_formateado,
             fecha_hhee=validacion.fecha
@@ -169,51 +169,47 @@ async def cargar_horas_extras(
         result_existentes = await db.execute(query_existentes)
         registros_del_dia = result_existentes.scalars().all()
 
-        # Separamos los registros validados de los pendientes para un manejo más fácil
         registros_validados = {r.tipo_hhee: r for r in registros_del_dia if r.estado == 'Validado'}
         pendiente_record = next((r for r in registros_del_dia if r.estado == 'Pendiente por Corrección'), None)
 
-        # Calculamos si el supervisor está enviando alguna hora extra para este día.
+        # --- Lógica para corregir un 'Pendiente' mal marcado ---
         total_horas_enviadas = (
             validacion.hhee_aprobadas_inicio +
             validacion.hhee_aprobadas_fin +
             validacion.hhee_aprobadas_descanso
         )
-
-        # Si en la BD existe un registro "Pendiente", pero en el formulario no se marcó como pendiente
-        # Y TAMPOCO se están enviando horas, significa que queremos borrar la marca de pendiente.
         if pendiente_record and not validacion.turno_es_incorrecto and total_horas_enviadas == 0:
             await db.delete(pendiente_record)
-            mensajes_respuesta.append(f"Día {validacion.fecha}: Se eliminó la marca 'Pendiente'.")
-            continue # Saltamos al siguiente día del formulario, ya que no hay más que hacer aquí.
+            # 2. CAMBIO: Usamos la nueva estructura de objeto
+            resumen_operaciones.append({
+                "fecha": validacion.fecha.isoformat(),
+                "rut": validacion.rut_con_formato,
+                "accion": "Marca 'Pendiente' eliminada."
+            })
+            continue
 
-    
-        # Escenario 2: Marcar como pendiente por corrección de turno
         if validacion.turno_es_incorrecto:
             if pendiente_record:
-                # Si ya existe un pendiente, solo actualizamos la nota si es necesario
                 if pendiente_record.notas != validacion.nota:
                     pendiente_record.notas = bleach.clean(validacion.nota) if validacion.nota else None
-                    mensajes_respuesta.append(f"Día {validacion.fecha}: Nota de pendiente actualizada.")
+                    resumen_operaciones.append({"fecha": validacion.fecha.isoformat(), "rut": validacion.rut_con_formato, "accion": "Nota de pendiente actualizada."})
             else:
-                # Si no existe, lo creamos y borramos cualquier validado que hubiera para ese día
                 for reg in registros_validados.values():
                     await db.delete(reg)
-                
+
                 db.add(models.ValidacionHHEE(
                     rut=rut_formateado, nombre_apellido=validacion.nombre_apellido, campaña=validacion.campaña,
                     fecha_hhee=validacion.fecha, estado="Pendiente por Corrección", notas=validacion.nota,
                     supervisor_carga=current_user.email, tipo_hhee="General"
                 ))
-                mensajes_respuesta.append(f"Día {validacion.fecha}: marcado como 'Pendiente'.")
-            continue # Pasamos al siguiente día del formulario
+                resumen_operaciones.append({"fecha": validacion.fecha.isoformat(), "rut": validacion.rut_con_formato, "accion": f"Marcado como 'Pendiente': {validacion.nota}"})
+            continue
 
-        # Objeto base para crear nuevos registros
         base_datos_bd = {
             "rut": rut_formateado, "nombre_apellido": validacion.nombre_apellido, "campaña": validacion.campaña,
             "fecha_hhee": validacion.fecha, "supervisor_carga": current_user.email, "estado": "Validado"
         }
-        
+
         hhee_a_procesar = {
             "Antes de Turno": validacion.hhee_aprobadas_inicio,
             "Después de Turno": validacion.hhee_aprobadas_fin,
@@ -224,33 +220,32 @@ async def cargar_horas_extras(
         for tipo, aprobadas in hhee_a_procesar.items():
             registro_existente = registros_validados.get(tipo)
 
-            # REGLA 1: BLOQUEO. Si ya existe un registro VALIDADO con horas, no se puede modificar.
-            # Esto cumple con tu requisito para el día 03/10.
             if registro_existente and registro_existente.cantidad_hhee_aprobadas > 0:
-                mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Ya validado, no se puede modificar.")
+                resumen_operaciones.append({"fecha": validacion.fecha.isoformat(), "rut": validacion.rut_con_formato, "accion": f"({tipo}): Ya validado, sin cambios."})
                 continue
 
-            # REGLA 2: PROCESAMIENTO. Solo actuamos si se están ingresando horas.
             if aprobadas > 0:
-                # REGLA 2.1: Si hay un registro PENDIENTE, se actualiza.
-                # Esto cumple con tu requisito para el día 04/10.
                 if pendiente_record and not pendiente_actualizado_en_este_ciclo:
                     pendiente_record.estado = "Validado"
                     pendiente_record.tipo_hhee = tipo
                     pendiente_record.cantidad_hhee_aprobadas = aprobadas
                     pendiente_record.notas = None
-                    mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Re-validado desde pendiente.")
+                    resumen_operaciones.append({
+                        "fecha": validacion.fecha.isoformat(),
+                        "rut": validacion.rut_con_formato,
+                        # --- CAMBIO AQUÍ ---
+                        "accion": f"Re-validado desde pendiente ({tipo}): {decimal_to_hhmm(aprobadas)} hs."
+                    })
                     pendiente_actualizado_en_este_ciclo = True
                 else:
-                    # REGLA 2.2: Si no hay nada, se crea un registro nuevo.
-                    # Esto cumple con tu requisito para el día 01/10.
-                    nueva_validacion = models.ValidacionHHEE(
-                        **base_datos_bd,
-                        tipo_hhee=tipo,
-                        cantidad_hhee_aprobadas=aprobadas
-                    )
+                    nueva_validacion = models.ValidacionHHEE(**base_datos_bd, tipo_hhee=tipo, cantidad_hhee_aprobadas=aprobadas)
                     db.add(nueva_validacion)
-                    mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Nuevo registro guardado.")
+                    resumen_operaciones.append({
+                        "fecha": validacion.fecha.isoformat(),
+                        "rut": validacion.rut_con_formato,
+                        # --- Y CAMBIO AQUÍ ---
+                        "accion": f"Nuevo registro ({tipo}): {decimal_to_hhmm(aprobadas)} hs."
+                    })
 
     try:
         await db.commit()
@@ -258,7 +253,11 @@ async def cargar_horas_extras(
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al guardar en la base de datos: {e}")
 
-    return {"mensaje": f"Proceso finalizado. Resumen: {' | '.join(mensajes_respuesta) if mensajes_respuesta else 'No se realizaron cambios.'}"}
+    # 3. CAMBIO: Devolvemos un objeto con el resumen detallado
+    return {
+        "mensaje": "Proceso finalizado con éxito.",
+        "resumen_detallado": resumen_operaciones
+    }
 
 @router.get("/pendientes", summary="Consulta todos los registros pendientes de HHEE")
 async def consultar_pendientes(
