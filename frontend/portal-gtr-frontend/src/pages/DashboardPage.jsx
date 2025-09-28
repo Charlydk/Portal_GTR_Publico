@@ -75,14 +75,26 @@ function DashboardPage() {
 
     // --- 3. CREAMOS UNA FUNCIÓN DE ACTUALIZACIÓN ESPECÍFICA ---
     const handleIncidenciaCreada = useCallback(() => {
-        // Cuando se crea una incidencia, solo refrescamos la lista de activas y las estadísticas.
-        // ¡Ya no recargamos todo lo demás!
         setError(null);
-        Promise.all([
+    
+        // Inicia con las promesas que se ejecutan para todos los roles
+        const promisesToRun = [
             fetchIncidenciasActivas(),
             fetchDashboardStats()
-        ]).catch(err => setError(err.message));
-    }, [fetchIncidenciasActivas, fetchDashboardStats]);
+        ];
+    
+        // SI EL USUARIO ES UN ANALISTA, añade la promesa para refrescar sus incidencias
+        if (user && user.role === 'ANALISTA') {
+            promisesToRun.push(fetchMisIncidencias());
+        }
+    
+        Promise.all(promisesToRun).catch(err => {
+            console.error("Error al actualizar widgets del dashboard:", err);
+            setError(err.message);
+        });
+    
+    }, [user, fetchIncidenciasActivas, fetchDashboardStats, fetchMisIncidencias]);
+    
 
     // --- RENDERIZADO (sin cambios en la estructura visual) ---
     if (authLoading || loading) {
