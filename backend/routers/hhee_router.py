@@ -150,67 +150,115 @@ async def consultar_empleado(
 
     return {"datos_periodo": resultados_finales, "nombre_agente": nombre_agente}
     
-@router.post("/cargar-hhee", summary="Guarda las validaciones de HHEE")
+@router.post("/cargar-hhee", summary="Guarda o actualiza las validaciones de HHEE")
 async def cargar_horas_extras(
     request_body: CargarHHEERequest,
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
-    nuevas_validaciones = []
+    mensajes_respuesta = []
     
     for validacion in request_body.validaciones:
-        # Primera línea: asigna el resultado de la función a la variable
         rut_formateado = formatear_rut(validacion.rut_con_formato)
+        
+        # Primero, obtenemos todos los registros existentes para ese día y RUT
+        query_existentes = select(models.ValidacionHHEE).filter_by(
+            rut=rut_formateado,
+            fecha_hhee=validacion.fecha
+        )
+        result_existentes = await db.execute(query_existentes)
+        registros_del_dia = result_existentes.scalars().all()
 
-        # Segunda línea: define el diccionario
+        # Separamos los registros validados de los pendientes para un manejo más fácil
+        registros_validados = {r.tipo_hhee: r for r in registros_del_dia if r.estado == 'Validado'}
+        pendiente_record = next((r for r in registros_del_dia if r.estado == 'Pendiente por Corrección'), None)
+
+        # Calculamos si el supervisor está enviando alguna hora extra para este día.
+        total_horas_enviadas = (
+            validacion.hhee_aprobadas_inicio +
+            validacion.hhee_aprobadas_fin +
+            validacion.hhee_aprobadas_descanso
+        )
+
+        # Si en la BD existe un registro "Pendiente", pero en el formulario no se marcó como pendiente
+        # Y TAMPOCO se están enviando horas, significa que queremos borrar la marca de pendiente.
+        if pendiente_record and not validacion.turno_es_incorrecto and total_horas_enviadas == 0:
+            await db.delete(pendiente_record)
+            mensajes_respuesta.append(f"Día {validacion.fecha}: Se eliminó la marca 'Pendiente'.")
+            continue # Saltamos al siguiente día del formulario, ya que no hay más que hacer aquí.
+
+    
+        # Escenario 2: Marcar como pendiente por corrección de turno
+        if validacion.turno_es_incorrecto:
+            if pendiente_record:
+                # Si ya existe un pendiente, solo actualizamos la nota si es necesario
+                if pendiente_record.notas != validacion.nota:
+                    pendiente_record.notas = bleach.clean(validacion.nota) if validacion.nota else None
+                    mensajes_respuesta.append(f"Día {validacion.fecha}: Nota de pendiente actualizada.")
+            else:
+                # Si no existe, lo creamos y borramos cualquier validado que hubiera para ese día
+                for reg in registros_validados.values():
+                    await db.delete(reg)
+                
+                db.add(models.ValidacionHHEE(
+                    rut=rut_formateado, nombre_apellido=validacion.nombre_apellido, campaña=validacion.campaña,
+                    fecha_hhee=validacion.fecha, estado="Pendiente por Corrección", notas=validacion.nota,
+                    supervisor_carga=current_user.email, tipo_hhee="General"
+                ))
+                mensajes_respuesta.append(f"Día {validacion.fecha}: marcado como 'Pendiente'.")
+            continue # Pasamos al siguiente día del formulario
+
+        # Objeto base para crear nuevos registros
+        base_datos_bd = {
+            "rut": rut_formateado, "nombre_apellido": validacion.nombre_apellido, "campaña": validacion.campaña,
+            "fecha_hhee": validacion.fecha, "supervisor_carga": current_user.email, "estado": "Validado"
+        }
+        
         hhee_a_procesar = {
             "Antes de Turno": validacion.hhee_aprobadas_inicio,
             "Después de Turno": validacion.hhee_aprobadas_fin,
             "Día de Descanso": validacion.hhee_aprobadas_descanso
         }
 
+        pendiente_actualizado_en_este_ciclo = False
         for tipo, aprobadas in hhee_a_procesar.items():
+            registro_existente = registros_validados.get(tipo)
+
+            # REGLA 1: BLOQUEO. Si ya existe un registro VALIDADO con horas, no se puede modificar.
+            # Esto cumple con tu requisito para el día 03/10.
+            if registro_existente and registro_existente.cantidad_hhee_aprobadas > 0:
+                mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Ya validado, no se puede modificar.")
+                continue
+
+            # REGLA 2: PROCESAMIENTO. Solo actuamos si se están ingresando horas.
             if aprobadas > 0:
-                # --- INICIO DE LA VERIFICACIÓN ÚNICA Y DEFINITIVA ---
-                query_existente = select(models.ValidacionHHEE).filter_by(
-                    rut=rut_formateado,
-                    fecha_hhee=validacion.fecha,
-                    tipo_hhee=tipo
-                )
-                result_existente = await db.execute(query_existente)
-                if result_existente.scalars().first():
-                    # Si ya existe un registro, lanzamos un error claro.
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Ya existe una validación para {validacion.nombre_apellido} el día {validacion.fecha} del tipo '{tipo}'. No se puede duplicar."
+                # REGLA 2.1: Si hay un registro PENDIENTE, se actualiza.
+                # Esto cumple con tu requisito para el día 04/10.
+                if pendiente_record and not pendiente_actualizado_en_este_ciclo:
+                    pendiente_record.estado = "Validado"
+                    pendiente_record.tipo_hhee = tipo
+                    pendiente_record.cantidad_hhee_aprobadas = aprobadas
+                    pendiente_record.notas = None
+                    mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Re-validado desde pendiente.")
+                    pendiente_actualizado_en_este_ciclo = True
+                else:
+                    # REGLA 2.2: Si no hay nada, se crea un registro nuevo.
+                    # Esto cumple con tu requisito para el día 01/10.
+                    nueva_validacion = models.ValidacionHHEE(
+                        **base_datos_bd,
+                        tipo_hhee=tipo,
+                        cantidad_hhee_aprobadas=aprobadas
                     )
-                # --- FIN DE LA VERIFICACIÓN ---
-
-                # Si pasa la verificación, preparamos el nuevo registro para guardarlo
-                base_datos_bd = {
-                    "rut": rut_formateado,
-                    "nombre_apellido": bleach.clean(validacion.nombre_apellido),
-                    "campaña": bleach.clean(validacion.campaña) if validacion.campaña else None,
-                    "fecha_hhee": validacion.fecha,
-                    "supervisor_carga": current_user.email,
-                    "estado": "Validado",
-                    "tipo_hhee": tipo, 
-                    "cantidad_hhee_aprobadas": aprobadas
-                }
-                nuevas_validaciones.append(models.ValidacionHHEE(**base_datos_bd))
-
-    if not nuevas_validaciones:
-        return {"mensaje": "No se realizaron cambios nuevos."}
+                    db.add(nueva_validacion)
+                    mensajes_respuesta.append(f"Día {validacion.fecha} ({tipo}): Nuevo registro guardado.")
 
     try:
-        db.add_all(nuevas_validaciones)
         await db.commit()
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al guardar en la base de datos: {e}")
 
-    return {"mensaje": f"{len(nuevas_validaciones)} nuevos registros de HHEE guardados con éxito."}
-
+    return {"mensaje": f"Proceso finalizado. Resumen: {' | '.join(mensajes_respuesta) if mensajes_respuesta else 'No se realizaron cambios.'}"}
 
 @router.get("/pendientes", summary="Consulta todos los registros pendientes de HHEE")
 async def consultar_pendientes(
