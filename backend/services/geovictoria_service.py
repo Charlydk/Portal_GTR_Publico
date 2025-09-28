@@ -4,6 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import List
+import asyncio
 
 GEOVICTORIA_USER = os.getenv("GEOVICTORIA_USER")
 GEOVICTORIA_PASSWORD = os.getenv("GEOVICTORIA_PASSWORD")
@@ -39,73 +40,95 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     
     CHUNK_SIZE = 20
-    todos_los_usuarios_gv = []
+    RETRY_COUNT = 3
+    RETRY_DELAY = 2
+    
+    # --- FUNCIÓN AUXILIAR INTERNA PARA REALIZAR CONSULTAS EN LOTES ---
+    async def ejecutar_consulta_lotes(lista_ruts):
+        resultados_lote = []
+        for i in range(0, len(lista_ruts), CHUNK_SIZE):
+            lote_actual = lista_ruts[i:i + CHUNK_SIZE]
+            payload = {
+                "StartDate": fecha_inicio_dt.strftime("%Y%m%d%H%M%S"),
+                "EndDate": fecha_fin_dt.strftime("%Y%m%d%H%M%S"),
+                "UserIds": ",".join(lote_actual)
+            }
+            
+            for attempt in range(RETRY_COUNT):
+                try:
+                    async with httpx.AsyncClient(timeout=45.0) as client:
+                        response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
+                        response.raise_for_status()
+                        respuesta_lote = response.json()
+                        if respuesta_lote.get("Users"):
+                            resultados_lote.extend(respuesta_lote["Users"])
+                        print(f"Lote de {len(lote_actual)} RUTs procesado con éxito en el intento {attempt + 1}.")
+                        break 
+                except Exception as e:
+                    print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
+                    if attempt < RETRY_COUNT - 1:
+                        await asyncio.sleep(RETRY_DELAY)
+                    else:
+                        print(f"FALLO FINAL para el lote de {len(lote_actual)} RUTs después de {RETRY_COUNT} intentos.")
+        return resultados_lote
 
-    for i in range(0, len(ruts_limpios), CHUNK_SIZE):
-        lote_ruts = ruts_limpios[i:i + CHUNK_SIZE]
-        payload = {
-            "StartDate": fecha_inicio_dt.strftime("%Y%m%d%H%M%S"),
-            "EndDate": fecha_fin_dt.strftime("%Y%m%d%H%M%S"),
-            "UserIds": ",".join(lote_ruts)
-        }
-        
-        try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
-                response.raise_for_status()
-                respuesta_lote = response.json()
-                
-                if respuesta_lote.get("Users"):
-                    todos_los_usuarios_gv.extend(respuesta_lote["Users"])
-        except Exception as e:
-            print(f"Error en el servicio de GeoVictoria para el lote {i // CHUNK_SIZE + 1}: {e}")
-            continue
+    # --- 1. PRIMERA CONSULTA MASIVA ---
+    todos_los_usuarios_gv = await ejecutar_consulta_lotes(ruts_limpios)
 
+    # --- 2. BLOQUE DE VERIFICACIÓN Y RECUPERACIÓN ---
+    ruts_recibidos = {str(usuario.get('Identifier')).strip().replace('.', '').replace('-', '').upper() for usuario in todos_los_usuarios_gv if usuario.get('Identifier')}
+    ruts_solicitados = set(ruts_limpios)
+    ruts_faltantes = list(ruts_solicitados - ruts_recibidos)
+
+    if ruts_faltantes:
+        print(f"ADVERTENCIA: Faltaron {len(ruts_faltantes)} RUTs. Iniciando recuperación.")
+        print(f"RUTs faltantes para recuperar: {ruts_faltantes}")
+        usuarios_recuperados = await ejecutar_consulta_lotes(ruts_faltantes)
+        if usuarios_recuperados:
+            todos_los_usuarios_gv.extend(usuarios_recuperados)
+            print(f"Se recuperaron datos para {len(usuarios_recuperados)} empleados.")
+
+    # --- 3. PROCESAMIENTO FINAL CON LÓGICA DE LIMPIEZA DEFENSIVA ---
     if not todos_los_usuarios_gv:
         return []
     
     dias_procesados_total = []
     
     for usuario in todos_los_usuarios_gv:
-        rut_usuario = usuario.get('Identifier')
-        intervalos = usuario.get("PlannedInterval", []) or []
+        rut_usuario_raw = usuario.get('Identifier')
+
+        # --- INICIO DEL CÓDIGO DEFENSIVO ---
+        if not rut_usuario_raw or not isinstance(rut_usuario_raw, str):
+            print(f"ADVERTENCIA: Se recibió un registro de GeoVictoria sin un 'Identifier' válido. Omitiendo. Datos: {usuario}")
+            continue
         
+        rut_usuario = str(rut_usuario_raw).strip().replace('.', '').replace('-', '').upper()
+        # --- FIN DEL CÓDIGO DEFENSIVO ---
+
+        intervalos = usuario.get("PlannedInterval", []) or []
         for intervalo_diario in intervalos:
             fecha_str = intervalo_diario.get("Date", "")
             if not fecha_str: continue
-
+            
             fecha_dt = datetime.strptime(fecha_str, '%Y%m%d%H%M%S')
             fecha_actual_str = fecha_dt.strftime('%Y-%m-%d')
-
             marcas = sorted([p for p in intervalo_diario.get("Punches", []) or [] if p.get("Date")], key=lambda x: x['Date'])
-            
-            entradas = []
-            salidas = []
+            entradas, salidas = [], []
             if marcas:
-                # Convertimos todas las marcas a objetos datetime para poder compararlas
                 marcas_dt = [pd.to_datetime(p['Date'], format='%Y%m%d%H%M%S') for p in marcas]
-                # La primera marca del día (la más temprana) es siempre la entrada
                 entradas.append(min(marcas_dt))
-                # Si hay más de una marca, la última (la más tardía) es la salida
-                if len(marcas_dt) > 1:
-                    salidas.append(max(marcas_dt))
+                if len(marcas_dt) > 1: salidas.append(max(marcas_dt))
             
             turno = (intervalo_diario.get("Shifts", []) or [{}])[0]
+            permisos_del_dia = [p.get("TimeOffTypeDescription") for p in intervalo_diario.get("TimeOffs", []) or [] if p.get("TimeOffTypeDescription")]
             
-            permisos_del_dia = [
-                p.get("TimeOffTypeDescription") 
-                for p in intervalo_diario.get("TimeOffs", []) or [] 
-                if p.get("TimeOffTypeDescription")
-            ]
-
             datos_dia = {
                 "fecha": fecha_actual_str,
                 "nombre_apellido": f"{usuario.get('Name', '')} {usuario.get('LastName', '')}".strip(),
                 "rut_limpio": rut_usuario,
                 "rut": rut_usuario,
                 "campaña": usuario.get('GroupDescription'),
-                "inicio_turno_teorico": turno.get('StartTime'),
-                "fin_turno_teorico": turno.get('ExitTime'),
+                "inicio_turno_teorico": turno.get('StartTime'), "fin_turno_teorico": turno.get('ExitTime'),
                 "marca_real_inicio": min(entradas).strftime('%H:%M') if entradas else None,
                 "marca_real_fin": max(salidas).strftime('%H:%M') if salidas else None,
                 "hhee_autorizadas_antes_gv": hhmm_to_decimal(intervalo_diario.get("AuthorizedOvertimeBefore")),
@@ -115,6 +138,7 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
             dias_procesados_total.append(datos_dia)
             
     return dias_procesados_total
+
     
 def aplicar_logica_de_negocio(datos_procesados):
     """
