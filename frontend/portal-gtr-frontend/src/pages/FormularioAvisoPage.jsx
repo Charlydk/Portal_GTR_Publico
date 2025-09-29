@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
-import { GTR_API_URL } from '../api'
+import { GTR_API_URL, fetchWithAuth } from '../api'
 import { useAuth } from '../hooks/useAuth';
 
 function FormularioAvisoPage() {
@@ -32,8 +32,8 @@ function FormularioAvisoPage() {
     if (!authToken) return;
     try {
       const [analistasRes, campanasRes] = await Promise.all([
-        fetch(`${GTR_API_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-        fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
+        fetchWithAuth(`${GTR_API_URL}/analistas/`),
+        fetchWithAuth(`${GTR_API_URL}/campanas/`)
       ]);
 
       if (!analistasRes.ok) {
@@ -61,11 +61,8 @@ function FormularioAvisoPage() {
   const fetchAvisoData = useCallback(async () => {
     if (!id || !authToken) return;
     try {
-      const response = await fetch(`${GTR_API_URL}/avisos/${id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
+      const response = await fetchWithAuth(`${GTR_API_URL}/avisos/${id}`, {
+        method: 'GET'
       });
       if (!response.ok) {
         const errorData = await response.json();
@@ -157,12 +154,8 @@ function FormularioAvisoPage() {
     const url = isEditing ? `${GTR_API_URL}/avisos/${id}` : `${GTR_API_URL}/avisos/`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify(payload),
       });
 

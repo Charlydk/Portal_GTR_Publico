@@ -1,7 +1,7 @@
 // src/pages/CampanasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth'; // Importa useAuth
 
 function CampanasPage() {
@@ -15,11 +15,7 @@ function CampanasPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/campanas/`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`);
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error("No autorizado. Por favor, inicie sesión.");
@@ -55,12 +51,7 @@ function CampanasPage() {
       return;
     }
     try {
-      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}`);
 
       if (!response.ok) {
         if (response.status === 401) {

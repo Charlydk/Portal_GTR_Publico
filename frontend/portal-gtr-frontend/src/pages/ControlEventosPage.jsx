@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 
 function ControlEventosPage() {
     const { authToken } = useAuth();
@@ -21,8 +21,8 @@ function ControlEventosPage() {
         if (!authToken) return;
         try {
             const [campanasRes, analistasRes] = await Promise.all([
-                fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${GTR_API_URL}/analistas/listado-simple/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+                fetchWithAuth(`${GTR_API_URL}/campanas/`),
+                fetchWithAuth(`${GTR_API_URL}/analistas/listado-simple/`)
             ]);
             if (!campanasRes.ok || !analistasRes.ok) throw new Error("No se pudieron cargar los datos para los filtros.");
             setListaCampanas(await campanasRes.json());
@@ -39,9 +39,7 @@ function ControlEventosPage() {
         Object.entries(filtros).forEach(([key, value]) => { if (value) params.append(key, value); });
 
         try {
-            const response = await fetch(`${GTR_API_URL}/bitacora/filtrar/?${params.toString()}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/bitacora/filtrar/?${params.toString()}`);
             if (!response.ok) { const d = await response.json(); throw new Error(d.detail); }
             setEventos(await response.json());
         } catch (err) { setError(err.message); } 
@@ -65,9 +63,8 @@ function ControlEventosPage() {
                 lob: filtros.lob || null,
                 autor_id: filtros.autor_id ? parseInt(filtros.autor_id) : null,
             };
-            const response = await fetch(`${GTR_API_URL}/bitacora/exportar/`, {
+            const response = await fetchWithAuth(`${GTR_API_URL}/bitacora/exportar/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}`},
                 body: JSON.stringify(payload)
             });
             if (!response.ok) { const errData = await response.json(); throw new Error(errData.detail); }

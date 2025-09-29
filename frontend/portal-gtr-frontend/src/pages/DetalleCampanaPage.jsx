@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Row, Col } from 'react-bootstrap';
 
@@ -24,9 +24,7 @@ function DetalleCampanaPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/${id}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${id}`);
             if (!response.ok) {
                 throw new Error(`Error al cargar la campana: ${response.statusText}`);
             }
@@ -50,9 +48,8 @@ function DetalleCampanaPage() {
         const endpoint = `${GTR_API_URL}/analistas/${user.id}/campanas/${campana.id}`;
         const method = action === 'assign' ? 'POST' : 'DELETE';
         try {
-            const response = await fetch(endpoint, {
-                method: method,
-                headers: { 'Authorization': `Bearer ${authToken}` },
+            const response = await fetchWithAuth(endpoint, {
+                method: method
             });
             if (!response.ok) {
                 const errorData = await response.json();

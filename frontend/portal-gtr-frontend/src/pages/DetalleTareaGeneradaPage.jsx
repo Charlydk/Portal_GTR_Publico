@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Card, Button, Alert, Spinner, Badge } from 'react-bootstrap';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import HistorialTarea from '../components/HistorialTarea';
 import { formatDateTime } from '../utils/dateFormatter';
@@ -31,11 +31,7 @@ function DetalleTareaGeneradaPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || `Error al cargar la tarea: ${response.statusText}`);
@@ -65,9 +61,7 @@ function DetalleTareaGeneradaPage() {
     setLoadingHistorial(true);
     setErrorHistorial(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}/historial_estados`, {
-        headers: { 'Authorization': `Bearer ${authToken}` },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas_generadas_por_avisos/${id}/historial_estados`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.detail || "No se pudo cargar el historial.");
@@ -90,12 +84,8 @@ function DetalleTareaGeneradaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas_generadas_por_avisos/${tarea.id}`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas_generadas_por_avisos/${tarea.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify({ progreso: 'COMPLETADA' }), // Solo actualizamos el progreso
       });
 

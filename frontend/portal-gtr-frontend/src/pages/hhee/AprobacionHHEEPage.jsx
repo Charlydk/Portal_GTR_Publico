@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Spinner, Alert, Table, Button, Form, Badge } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
 import { Link } from 'react-router-dom';
 
@@ -34,7 +34,7 @@ function AprobacionHHEEPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(url,{});
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'No se pudieron cargar las solicitudes pendientes.');
@@ -112,9 +112,8 @@ function AprobacionHHEEPage() {
         }
     
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/solicitudes/procesar-lote/`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/solicitudes/procesar-lote/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify({ decisiones }),
             });
             if (!response.ok) {

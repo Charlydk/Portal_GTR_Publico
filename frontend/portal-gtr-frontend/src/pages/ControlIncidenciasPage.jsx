@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table, Badge } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { formatDateTime } from '../utils/dateFormatter';
 
 
@@ -16,7 +16,7 @@ function ControlIncidenciasPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
-    const [updatingStatusId, setUpdatingStatusId] = useState(null);
+    const [updatingStatusId] = useState(null);
     const [filtros, setFiltros] = useState({
         fecha_inicio: '',
         fecha_fin: '',
@@ -34,8 +34,8 @@ function ControlIncidenciasPage() {
         if (!authToken) return;
         try {
             const [campanasRes, analistasRes] = await Promise.all([
-                fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(`${GTR_API_URL}/analistas/listado-simple/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+                fetchWithAuth(`${GTR_API_URL}/campanas/`),
+                fetchWithAuth(`${GTR_API_URL}/analistas/listado-simple/`)
             ]);
             if (!campanasRes.ok || !analistasRes.ok) throw new Error("No se pudieron cargar los datos para los filtros.");
             
@@ -63,9 +63,7 @@ function ControlIncidenciasPage() {
         });
 
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/filtradas/?${params.toString()}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/filtradas/?${params.toString()}`);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || "Error al buscar incidencias.");
@@ -106,12 +104,8 @@ function ControlIncidenciasPage() {
                     asignado_a_id: filtros.asignado_a_id ? parseInt(filtros.asignado_a_id) : null,
                 };
 
-                const response = await fetch(`${GTR_API_URL}/incidencias/exportar/`, {
+                const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/exportar/`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
-                    },
                     body: JSON.stringify(payload) // Enviamos el payload limpio
                 });
 

@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Form, Button, Alert, Spinner, Card, Row, Col, InputGroup } from 'react-bootstrap';
 
 function FormularioCampanaPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { authToken, user } = useAuth();
+    const { authToken } = useAuth();
     const isEditing = !!id;
 
     // --- ESTADO PRINCIPAL ---
@@ -81,12 +81,11 @@ function FormularioCampanaPage() {
         };
 
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/`, {
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
+                'Content-Type': 'application/json'
+            },
                 body: JSON.stringify(payload),
             });
 

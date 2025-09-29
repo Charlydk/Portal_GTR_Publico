@@ -411,7 +411,19 @@ class AvisoListOutput(BaseModel):
     campana: Optional[CampanaSimple] = None
     class Config:
         from_attributes = True   
-        
+
+class AnalistaConCampanas(BaseModel):
+    id: int
+    nombre: str
+    apellido: str
+    email: EmailStr
+    bms_id: int
+    role: UserRole
+    campanas_asignadas: List[CampanaSimple] = []
+
+    class Config:
+        from_attributes = True
+
 # --- SCHEMAS PARA EL DASHBOARD DE MÉTRICAS HHEE ---
 
 class MetricasPorEmpleado(BaseModel):

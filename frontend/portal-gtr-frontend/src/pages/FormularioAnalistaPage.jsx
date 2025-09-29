@@ -1,7 +1,7 @@
 // src/pages/FormularioAnalistaPage.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth'; // ¡NUEVO! Importa useAuth
 
 function FormularioAnalistaPage() {
@@ -31,11 +31,7 @@ function FormularioAnalistaPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`${GTR_API_URL}/analistas/${id}`, {
-          headers: {
-            'Authorization': `Bearer ${authToken}`, // Envía el token para la carga
-          },
-        });
+        const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${id}`);
         if (!response.ok) {
           throw new Error(`Error al cargar el analista: ${response.statusText}`);
         }
@@ -108,15 +104,13 @@ function FormularioAnalistaPage() {
         };
       }
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method: method,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
+            'Content-Type': 'application/json'
         },
         body: JSON.stringify(dataToSend),
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         if (response.status === 422 && errorData.detail) {

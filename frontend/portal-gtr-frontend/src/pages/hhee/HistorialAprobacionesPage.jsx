@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 import { decimalToHHMM } from '../../utils/timeUtils';
 import { formatDateTime } from '../../utils/dateFormatter';
 
@@ -47,7 +47,7 @@ function HistorialAprobacionesPage() {
         setError(null);
         const url = `${API_BASE_URL}/hhee/solicitudes/historial/?fecha_inicio=${fechas.inicio}&fecha_fin=${fechas.fin}`;
         try {
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(url,{});
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'No se pudo cargar el historial.');

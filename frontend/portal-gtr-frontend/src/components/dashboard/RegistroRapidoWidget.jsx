@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Tabs, Tab, Spinner, Alert, Col, Row } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { GTR_API_URL } from '../../api';
+import { GTR_API_URL, fetchWithAuth } from '../../api';
 
 function RegistroRapidoWidget({ onUpdate }) {
     const { authToken } = useAuth();
@@ -25,9 +25,7 @@ function RegistroRapidoWidget({ onUpdate }) {
     const fetchCampanas = useCallback(async () => {
         if (!authToken) return;
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'No se pudieron cargar las campañas.');
@@ -59,9 +57,8 @@ function RegistroRapidoWidget({ onUpdate }) {
                 payload.fecha_apertura = new Date(fechaManual).toISOString();
             }
 
-            const response = await fetch(`${GTR_API_URL}/incidencias/`, {
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {

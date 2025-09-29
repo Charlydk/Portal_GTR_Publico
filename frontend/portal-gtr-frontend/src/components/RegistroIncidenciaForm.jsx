@@ -1,6 +1,6 @@
 // src/components/RegistroIncidenciaForm.jsx
 import React, { useState } from 'react';
-import { API_BASE_URL } from '../api';
+import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';import { Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
 
 const RegistroIncidenciaForm = ({ campanaId, onSuccess, onError }) => {
@@ -56,12 +56,8 @@ const RegistroIncidenciaForm = ({ campanaId, onSuccess, onError }) => {
     };
 
     try {
-      const response = await fetch(`${API_BASE_URL}/bitacora_entries/`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/bitacora_entries/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify(newBitacoraEntry),
       });
 

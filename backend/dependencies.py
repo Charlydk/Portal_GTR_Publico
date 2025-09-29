@@ -37,15 +37,29 @@ async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSes
     result = await db.execute(
         select(models.Analista).filter(models.Analista.email == token_data.email)
         .options(
+            # Cargamos las relaciones directas del Analista
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos),
-            selectinload(models.Analista.incidencias_creadas),
-            selectinload(models.Analista.incidencias_asignadas),
-            selectinload(models.Analista.solicitudes_realizadas),
-            selectinload(models.Analista.solicitudes_gestionadas)
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            
+            # Para estas relaciones, también cargamos sus relaciones anidadas
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            
+            # --- AQUÍ ESTÁ LA CORRECCIÓN CLAVE ---
+            # Le decimos que al cargar las incidencias, también cargue la campana Y los lobs de CADA incidencia.
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs)
+            ),
+            # --- FIN DE LA CORRECCIÓN CLAVE ---
+
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
         )
     )
     

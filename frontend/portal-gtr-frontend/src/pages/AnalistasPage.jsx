@@ -1,7 +1,7 @@
 // src/pages/AnalistasPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 function AnalistasPage() {
   const [analistas, setAnalistas] = useState([]);
@@ -14,11 +14,7 @@ function AnalistasPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/analistas/`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/analistas/`, {});
       if (!response.ok) {
         // Manejo de errores más específico para 401/403
         if (response.status === 401) {
@@ -37,7 +33,7 @@ function AnalistasPage() {
     } finally {
       setLoading(false);
     }
-  }, [authToken]); // Vuelve a ejecutar cuando el token cambie
+  }, []);
 
   // Efecto para cargar los analistas al montar el componente o cuando el token cambia
   useEffect(() => {
@@ -57,11 +53,8 @@ function AnalistasPage() {
       return;
     }
     try {
-      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${analistaId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
-        },
       });
 
       if (!response.ok) {

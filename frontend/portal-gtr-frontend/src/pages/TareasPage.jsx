@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge, Form } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { API_BASE_URL, GTR_API_URL } from '../api';
+import { API_BASE_URL, GTR_API_URL, fetchWithAuth } from '../api';
 import { useNavigate } from 'react-router-dom';
 import { formatDateTime } from '../utils/dateFormatter';
 
@@ -33,15 +33,15 @@ function TareasPage() {
             // Supervisores obtienen todo
             if (user.role !== 'ANALISTA') {
                 const [analistasRes, campanasRes] = await Promise.all([
-                    fetch(`${GTR_API_URL}/analistas/`, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                    fetch(`${GTR_API_URL}/campanas/`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+                    fetchWithAuth(`${GTR_API_URL}/analistas/` ),
+                    fetchWithAuth(`${GTR_API_URL}/campanas/` )
                 ]);
                 if (!analistasRes.ok) throw new Error('No se pudo cargar la lista de analistas.');
                 if (!campanasRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
                 setAnalistas(await analistasRes.json());
                 setCampanas(await campanasRes.json());
             } else { // Analistas obtienen solo sus campañas
-                const userRes = await fetch(`${API_BASE_URL}/users/me/`, { headers: { 'Authorization': `Bearer ${authToken}` } });
+                const userRes = await fetchWithAuth(`${API_BASE_URL}/users/me/`);
                 if (!userRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
                 const userData = await userRes.json();
                 setCampanas(userData.campanas_asignadas || []);
@@ -74,8 +74,8 @@ function TareasPage() {
             const generatedTasksUrl = `${GTR_API_URL}/tareas_generadas_por_avisos/?${queryString}`;
 
             const [campaignTasksResponse, generatedTasksResponse] = await Promise.all([
-                fetch(campaignTasksUrl, { headers: { 'Authorization': `Bearer ${authToken}` } }),
-                fetch(generatedTasksUrl, { headers: { 'Authorization': `Bearer ${authToken}` } })
+                fetchWithAuth(campaignTasksUrl),
+                fetchWithAuth(generatedTasksUrl)
             ]);
 
             if (!campaignTasksResponse.ok) throw new Error('Error al cargar tareas de campaña.');

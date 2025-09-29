@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime } from '../utils/dateFormatter';
 
@@ -32,9 +32,7 @@ function TareasDisponiblesPage() {
             return;
         }
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/tareas_disponibles/`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/tareas_disponibles/`);
             if (!response.ok) {
                 throw new Error('No se pudieron cargar las tareas disponibles.');
             }

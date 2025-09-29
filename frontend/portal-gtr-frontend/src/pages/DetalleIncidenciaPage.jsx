@@ -1,7 +1,7 @@
 // src/pages/DetalleIncidenciaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime } from '../utils/dateFormatter';
 // CORRECCIÓN: Añadimos 'Modal' a la lista de importaciones
@@ -9,7 +9,7 @@ import { Container, Card, Spinner, Alert, ListGroup, Badge, Form, Button, Row, C
 
 function DetalleIncidenciaPage() {
     const { id } = useParams();
-    const { authToken, user } = useAuth();
+    const { user } = useAuth();
     const [incidencia, setIncidencia] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -37,11 +37,8 @@ function DetalleIncidenciaPage() {
 
 
     const fetchIncidencia = useCallback(async () => {
-        //setLoading(true);
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${id}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}`, {});
             if (!response.ok) throw new Error('No se pudo cargar la incidencia.');
             const data = await response.json();
             setIncidencia(data);
@@ -50,13 +47,11 @@ function DetalleIncidenciaPage() {
         } finally {
             setLoading(false);
         }
-    }, [id, authToken]);
-
+    }, [id]);
+    
     useEffect(() => {
-        if (authToken) {
-            fetchIncidencia();
-        }
-    }, [authToken, fetchIncidencia]);
+        fetchIncidencia();
+    }, [fetchIncidencia]);
     
     const handleAddUpdate = async (e) => {
         e.preventDefault();
@@ -64,12 +59,10 @@ function DetalleIncidenciaPage() {
         setIsSubmitting(true);
         setError(null);
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/actualizaciones`, {
+            // CORRECCIÓN: Añadimos el header Content-Type
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}/actualizaciones`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ comentario: nuevoComentario }),
             });
             if (!response.ok) {
@@ -84,34 +77,34 @@ function DetalleIncidenciaPage() {
             setIsSubmitting(false);
         }
     };
-
+    
     const handleAssignToMe = async () => {
         setIsSubmitting(true);
         setError(null);
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/asignar`, {
+            // CORRECCIÓN: Añadimos el header y un body vacío (aunque PUT no lo necesite, es buena práctica)
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}/asignar`, {
                 method: 'PUT',
-                headers: { 'Authorization': `Bearer ${authToken}` },
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
             });
             if (!response.ok) {
                 const errData = await response.json();
                 throw new Error(errData.detail || 'No se pudo asignar la incidencia.');
             }
-            fetchIncidencia(); // Recargar datos para mostrar el nuevo asignado
+            fetchIncidencia();
         } catch (err) {
             setError(err.message);
         } finally {
             setIsSubmitting(false);
         }
     };
-
+    
     const handleStatusChange = async (nuevoEstado, fechaCierre = null, comentario = null) => {
         setIsSubmitting(true);
         setError(null);
-        
-        const payload = {
-            estado: nuevoEstado,
-        };
+    
+        const payload = { estado: nuevoEstado };
     
         if (nuevoEstado === 'CERRADA') {
             if (fechaCierre) payload.fecha_cierre = fechaCierre;
@@ -119,19 +112,17 @@ function DetalleIncidenciaPage() {
         }
     
         try {
-            const response = await fetch(`${GTR_API_URL}/incidencias/${id}/estado`, { // Corregido para usar GTR_API_URL
+            // CORRECCIÓN: Añadimos el header Content-Type
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}/estado`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {
                 const errData = await response.json();
                 throw new Error(errData.detail || 'No se pudo cambiar el estado.');
             }
-            setComentarioCierre(''); // Limpiamos el comentario después de enviar
+            setComentarioCierre('');
             fetchIncidencia();
         } catch (err) {
             setError(err.message);

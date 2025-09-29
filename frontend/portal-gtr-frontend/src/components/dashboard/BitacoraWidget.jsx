@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { GTR_API_URL } from '../../api';
+import { GTR_API_URL, fetchWithAuth } from '../../api';
 
 function BitacoraWidget() {
     const { authToken } = useAuth();
@@ -23,9 +23,7 @@ function BitacoraWidget() {
     const fetchCampanas = useCallback(async () => {
         if (!authToken) return;
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`);
             const data = await response.json();
             setCampanas(data);
             if (data.length > 0) {
@@ -42,9 +40,7 @@ function BitacoraWidget() {
         setLoadingEntries(true);
         try {
             const today = new Date().toISOString().split('T')[0];
-            const response = await fetch(`${GTR_API_URL}/campanas/${selectedCampana}/bitacora?fecha=${today}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${selectedCampana}/bitacora?fecha=${today}`);
             if (!response.ok) {
                 setBitacoraEntries([]); // Limpia las entradas si no hay
                 throw new Error('No hay entradas para hoy o error al cargar.');
@@ -104,9 +100,8 @@ function BitacoraWidget() {
         };
         
         try {
-            const response = await fetch(url, {
+            const response = await fetchWithAuth(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}`},
                 body: JSON.stringify(payload)
             });
             if (!response.ok) {

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react'; // Agregamos useCallback
 import { Link } from 'react-router-dom';
-import { API_BASE_URL } from '../api'; // <-- Importamos la URL base
+import { API_BASE_URL, fetchWithAuth } from '../api'; // <-- Importamos la URL base
 
 function ListaTareas() {
   // allTareas ahora será para almacenar las tareas cargadas de la API
@@ -11,13 +11,13 @@ function ListaTareas() {
   const [error, setError] = useState(null);     // Estado para manejar errores de la API
 
   // Datos de prueba para los selects de filtros (por ahora, los mantenemos aquí. Más adelante, también vendrían de la API)
-  const [analistas, setAnalistas] = useState([
+  const [analistas] = useState([
     { id: 1, nombre: 'Juan Pérez' },
     { id: 2, nombre: 'María González' },
     { id: 3, nombre: 'Laura Martínez' },
   ]);
 
-  const [campanas, setCampanas] = useState([
+  const [campanas] = useState([
     { id: 1, nombre: 'Campaña General' },
     { id: 2, nombre: 'Campaña Leads' },
     { id: 3, nombre: 'Campaña Verano' },
@@ -38,7 +38,7 @@ function ListaTareas() {
     setLoading(true); // Ponemos loading a true antes de la petición
     setError(null);   // Limpiamos cualquier error previo
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/`); // Asumiendo que tu API tiene este endpoint
+      const response = await fetchWithAuth(`${API_BASE_URL}/tareas/`); // Asumiendo que tu API tiene este endpoint
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -72,7 +72,7 @@ function ListaTareas() {
       return; // Si el usuario cancela, no hacemos nada
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/tareas/${id}`, {
+      const response = await fetchWithAuth(`${API_BASE_URL}/tareas/${id}`, {
         method: 'DELETE',
       });
       if (!response.ok) {

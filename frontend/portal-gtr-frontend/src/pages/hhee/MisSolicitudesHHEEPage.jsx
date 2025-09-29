@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Badge } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 import FormularioSolicitudHHEE from '../../components/hhee/FormularioSolicitudHHEE';
 import HistorialSolicitudesHHEE from '../../components/hhee/HistorialSolicitudesHHEE';
 import { decimalToHHMM } from '../../utils/timeUtils';
@@ -45,7 +45,7 @@ function MisSolicitudesHHEEPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${authToken}` } });
+            const response = await fetchWithAuth(url,{});
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'No se pudo cargar el historial de solicitudes.');
@@ -95,9 +95,8 @@ function MisSolicitudesHHEEPage() {
     const handleCreateSolicitud = async (formData) => {
         setSubmitStatus({ loading: true, error: null, success: null });
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/solicitudes/`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/solicitudes/`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(formData),
             });
             if (!response.ok) {

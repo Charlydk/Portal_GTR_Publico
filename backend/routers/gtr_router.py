@@ -5,7 +5,7 @@ import io
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..schemas.models import Campana
+from ..schemas.models import Campana, AnalistaConCampanas
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
@@ -183,20 +183,34 @@ async def obtener_analista_por_id(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
+    # SOLUCIÓN 1: Evitamos la doble consulta si se pide el perfil propio
+    if analista_id == current_analista.id:
+        return current_analista
+
+    # SOLUCIÓN 2: Consulta ultra-completa para cargar todas las relaciones anidadas necesarias
     result = await db.execute(
         select(models.Analista)
         .filter(models.Analista.id == analista_id, models.Analista.esta_activo == True)
         .options(
-            # CORRECCIÓN: Añadimos la carga ansiosa completa aquí también
             selectinload(models.Analista.campanas_asignadas),
             selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
             selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
             selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
-            selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-            selectinload(models.Analista.incidencias_asignadas),
-            selectinload(models.Analista.solicitudes_realizadas),
-            selectinload(models.Analista.solicitudes_gestionadas)
+            
+            # --- Corrección Definitiva para Incidencias ---
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana), 
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs)
+            ),
+            # --- Fin de la Corrección ---
+
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
         )
     )
     analista = result.scalars().first()
@@ -204,7 +218,7 @@ async def obtener_analista_por_id(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado o inactivo.")
     
     if current_analista.role == UserRole.ANALISTA.value and current_analista.id != analista_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver este perfil de analista.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver este perfil.")
 
     return analista
 
@@ -240,16 +254,12 @@ async def actualizar_analista(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    """
-    Actualiza la información de un analista existente.
-    Requiere autenticación y rol de SUPERVISOR o RESPONSABLE.
-    Los analistas solo pueden actualizar su propio perfil.
-    """
     db_analista_result = await db.execute(select(models.Analista).where(models.Analista.id == analista_id))
     analista_existente = db_analista_result.scalars().first()
 
     if analista_existente is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado")
+
 
     if current_analista.role == UserRole.RESPONSABLE.value and analista_existente.role != UserRole.ANALISTA.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede editar perfiles de Analistas normales.")
@@ -278,14 +288,22 @@ async def actualizar_analista(
             .filter(models.Analista.id == analista_existente.id)
             .options(
                 selectinload(models.Analista.campanas_asignadas),
-                selectinload(models.Analista.tareas),
-                selectinload(models.Analista.avisos_creados),
-                selectinload(models.Analista.acuses_recibo_avisos),
-                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-                selectinload(models.Analista.incidencias_asignadas),
-                selectinload(models.Analista.solicitudes_realizadas),
-                selectinload(models.Analista.solicitudes_gestionadas)
+                selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+                selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+                selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+                
+                selectinload(models.Analista.incidencias_creadas).options(
+                    selectinload(models.Incidencia.campana), 
+                    selectinload(models.Incidencia.lobs)
+                ),
+                selectinload(models.Analista.incidencias_asignadas).options(
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs)
+                ),
+
+                selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
             )
         )
         analista_to_return = result.scalars().first()
@@ -460,15 +478,25 @@ async def asignar_campana_a_analista(
         .filter(models.Analista.id == analista.id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos) # NUEVO
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana), 
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
         )
     )
     analista_to_return = result.scalars().first()
     if not analista_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el analista después de la desasignación.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el analista después de la asignación.")
     return analista_to_return
 
 @router.delete("/analistas/{analista_id}/campanas/{campana_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Desasignar Campana de Analista (Protegido)")
@@ -531,10 +559,20 @@ async def desasignar_campana_de_analista(
         .filter(models.Analista.id == analista.id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos) # NUEVO
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana), 
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
         )
     )
     analista_to_return = result.scalars().first()
@@ -1768,6 +1806,24 @@ async def obtener_acuses_recibo_por_analista(
 
     acuses = await db.execute(query)
     return acuses.scalars().unique().all()
+
+@router.get("/analistas/con-campanas/", response_model=List[AnalistaConCampanas], summary="Obtener todos los Analistas con sus campañas para la página de asignación")
+async def obtener_analistas_con_campanas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    """
+    Devuelve una lista de analistas activos, incluyendo solo la relación 
+    con las campañas que ya tienen asignadas. Es una consulta ligera y eficiente.
+    """
+    query = select(models.Analista).options(
+        selectinload(models.Analista.campanas_asignadas)
+    ).where(models.Analista.esta_activo == True).order_by(models.Analista.nombre)
+    
+    result = await db.execute(query)
+    analistas = result.scalars().unique().all()
+    
+    return analistas
 
 
 # --- ENDPOINTS DE BITÁCORA (MODIFICADOS PARA FECHA Y TIPO DE INCIDENCIA) ---

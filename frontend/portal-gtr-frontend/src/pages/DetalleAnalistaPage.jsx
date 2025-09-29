@@ -1,7 +1,7 @@
 // src/pages/DetalleAnalistaPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime } from '../utils/dateFormatter';
 
@@ -25,37 +25,27 @@ function DetalleAnalistaPage() {
     setLoading(true);
     setError(null);
     try {
-      const analistaId = parseInt(id); // Asegura que el ID sea numérico
-      if (isNaN(analistaId)) {
-        throw new Error("ID de analista inválido.");
-      }
+        const analistaId = parseInt(id);
+        if (isNaN(analistaId)) {
+            throw new Error("ID de analista inválido.");
+        }
 
-      const response = await fetch(`${GTR_API_URL}/analistas/${analistaId}`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // ¡IMPORTANTE! Envía el token de autenticación
-        },
-      });
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("Analista no encontrado.");
+        // CORRECCIÓN: Usamos fetchWithAuth y añadimos el objeto de opciones vacío
+        const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${analistaId}`, {});
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Error al cargar el analista.`);
         }
-        if (response.status === 401) {
-          throw new Error("No autorizado. Por favor, inicie sesión.");
-        }
-        if (response.status === 403) {
-          throw new Error("Acceso denegado. No tiene los permisos necesarios para ver este analista.");
-        }
-        throw new Error(`Error al cargar el analista: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setAnalista(data);
+        const data = await response.json();
+        setAnalista(data);
     } catch (err) {
-      console.error("Error al obtener analista:", err);
-      setError(err.message || "No se pudo cargar la información del analista.");
+        console.error("Error al obtener analista:", err);
+        setError(err.message);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  }, [id, authToken]); // Vuelve a ejecutar cuando el ID o el token cambien
+}, [id]);
 
   // Efecto para cargar los datos al montar el componente o cuando el ID/token cambia
   useEffect(() => {
@@ -70,34 +60,6 @@ function DetalleAnalistaPage() {
     }
   }, [id, authToken, fetchAnalista]);
 
-  /*const formatDateTime = (apiDateString) => {
-    // Si no hay fecha, devuelve N/A
-    if (!apiDateString) {
-        return 'N/A';
-    }
-
-    // --- LA CORRECCIÓN DEFINITIVA ---
-    // Le añadimos la 'Z' al final para forzar a que JavaScript
-    // interprete el string como una fecha en formato UTC universal.
-    const date = new Date(apiDateString + 'Z');
-    // --------------------------------
-
-    // Verificamos si la fecha parseada es válida
-    if (isNaN(date.getTime())) {
-        return 'Fecha inválida';
-    }
-
-    // A partir de aquí, el resto del código funciona como se espera
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0'); // Los meses son de 0 a 11
-    const year = date.getFullYear();
-    
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-
-    return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
-};*/
 
   // Función para manejar la desactivación de un analista
   const handleDesactivarAnalista = async () => {
@@ -105,11 +67,8 @@ function DetalleAnalistaPage() {
       return;
     }
     try {
-      const response = await fetch(`${GTR_API_URL}/analistas/${analista.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authToken}`, // Envía el token
-        },
+      const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${analista.id}`, {
+        method: 'DELETE'
       });
 
       if (!response.ok) {
@@ -150,12 +109,11 @@ function DetalleAnalistaPage() {
     }
 
     try {
-      const response = await fetch(`${GTR_API_URL}/analistas/${analista.id}/password`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${analista.id}/password`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
+                'Content-Type': 'application/json'
+            },
         body: JSON.stringify({ 
           new_password: newPassword,
         }),

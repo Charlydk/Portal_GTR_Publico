@@ -11,7 +11,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "una-clave-secreta-por-defecto-muy-larga-y-
 ALGORITHM = "HS256"
 
 # --- NUEVOS TIEMPOS DE EXPIRACIÓN ---
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # El token de acceso sigue durando 30 minutos
+ACCESS_TOKEN_EXPIRE_MINUTES = 1  # El token de acceso sigue durando 30 minutos
 REFRESH_TOKEN_EXPIRE_DAYS = 7     # El token de refresco durará 7 días
 # -----------------------------------
 

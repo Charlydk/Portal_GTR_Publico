@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Form, Button, Alert, Spinner, Card } from 'react-bootstrap';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
 function FormularioChecklistItemPage() {
@@ -30,18 +30,14 @@ function FormularioChecklistItemPage() {
     setError(null);
     try {
       if (tareaId) {
-        const specificTaskResponse = await fetch(`${GTR_API_URL}/tareas/${tareaId}`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
+        const specificTaskResponse = await fetchWithAuth(`${GTR_API_URL}/tareas/${tareaId}`);
         if (!specificTaskResponse.ok) {
           throw new Error('No tienes permiso para crear items en esta tarea.');
         }
       }
 
       if (isEditing) {
-        const itemResponse = await fetch(`${GTR_API_URL}/checklist_items/${id}`, {
-          headers: { 'Authorization': `Bearer ${authToken}` }
-        });
+        const itemResponse = await fetchWithAuth(`${GTR_API_URL}/checklist_items/${id}`);
         if (!itemResponse.ok) throw new Error('Error al cargar el checklist item.');
         const itemData = await itemResponse.json();
         setFormData({
@@ -87,12 +83,8 @@ function FormularioChecklistItemPage() {
       const url = isEditing ? `${GTR_API_URL}/checklist_items/${id}` : `${GTR_API_URL}/checklist_items/`;
       const method = isEditing ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const response = await fetchWithAuth(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
         body: JSON.stringify(payload)
       });
 

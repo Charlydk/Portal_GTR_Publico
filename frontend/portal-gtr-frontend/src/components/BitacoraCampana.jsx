@@ -1,6 +1,6 @@
 // src/components/BitacoraCampana.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';import { Card, Form, Button, Alert, Spinner, Table, Badge, Row, Col } from 'react-bootstrap';
 import HistorialComentarios from './HistorialComentarios';
 
@@ -41,11 +41,7 @@ const BitacoraCampana = ({ campanaId, campanaNombre }) => {
       return;
     }
     try {
-      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/bitacora?fecha=${currentDate}`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/bitacora?fecha=${currentDate}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || `Error al cargar entradas de bitácora: ${response.statusText}`);
@@ -82,9 +78,8 @@ const BitacoraCampana = ({ campanaId, campanaNombre }) => {
       es_incidencia: false,
     };
     try {
-      const response = await fetch(`${GTR_API_URL}/bitacora_entries/`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/bitacora_entries/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify(newEntry),
       });
       if (!response.ok) {

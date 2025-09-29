@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, Col, Badge  } from 'react-bootstrap';
-import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 import ResultadoFila from '../../components/hhee/ResultadoFila';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
 
@@ -16,7 +15,6 @@ function PortalHHEEPage() {
     const [success, setSuccess] = useState(null);
     const [validaciones, setValidaciones] = useState({});
     const [guardadoResumen, setGuardadoResumen] = useState(null);
-    const { authToken } = useAuth();
     const [isPendientesView, setIsPendientesView] = useState(false);
 
 
@@ -146,17 +144,25 @@ function PortalHHEEPage() {
         setResultados([]);
         setNombreAgente('');
         setGuardadoResumen(null);
-        setIsPendientesView(false); // Vista Individual
-
+        setIsPendientesView(false);
+    
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/consultar-empleado`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/consultar-empleado`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                // 1. Añadimos el encabezado para indicar que enviamos JSON
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ rut, fecha_inicio: fechaInicio, fecha_fin: fechaFin })
             });
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.detail);
 
+            if (!response.ok) {
+                // Ahora esta línea funcionará correctamente
+                const data = await response.json();
+                throw new Error(data.detail);
+            }
+    
+            const data = await response.json();
             setNombreAgente(data.nombre_agente);
             setResultados(data.datos_periodo);
             initializeValidaciones(data.datos_periodo);
@@ -174,20 +180,23 @@ function PortalHHEEPage() {
         setResultados([]);
         setNombreAgente('');
         setGuardadoResumen(null);
-        setIsPendientesView(true); // Vista de Pendientes
-
+        setIsPendientesView(true);
+    
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/pendientes`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/pendientes`, {});
+    
+            if (!response.ok) {
+                 const data = await response.json();
+                 throw new Error(data.detail);
+            }
+    
             const data = await response.json();
-            if (!response.ok) throw new Error(data.detail);
-
+    
             if (!data.datos_periodo || data.datos_periodo.length === 0) {
                 setSuccess('¡Excelente! No hay registros pendientes por corregir.');
                 return;
             }
-
+    
             setNombreAgente(data.nombre_agente);
             setResultados(data.datos_periodo);
             initializeValidaciones(data.datos_periodo);
@@ -276,9 +285,8 @@ function PortalHHEEPage() {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/cargar-hhee`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/cargar-hhee`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify({ validaciones: validacionesParaEnviar })
             });
             const data = await response.json();
@@ -417,7 +425,6 @@ function PortalHHEEPage() {
                     </Card.Body>
                 </Card>
             )}
-            {/* --- FIN DEL NUEVO BLOQUE DE CÓDIGO --- */}
         </Container>
     );
 }

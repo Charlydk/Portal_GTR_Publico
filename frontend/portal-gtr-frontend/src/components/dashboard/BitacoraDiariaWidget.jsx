@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { GTR_API_URL } from '../../api';
+import { GTR_API_URL, fetchWithAuth } from '../../api';
 
 function BitacoraDiariaWidget({ onUpdate }) {
     const { authToken } = useAuth();
@@ -33,9 +33,7 @@ function BitacoraDiariaWidget({ onUpdate }) {
     const fetchCampanas = useCallback(async () => {
         if (!authToken) return;
         try {
-            const response = await fetch(`${GTR_API_URL}/campanas/`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`);
             if (!response.ok) {
                  const errorData = await response.json();
                  throw new Error(errorData.detail || 'No se pudieron cargar las campañas.');
@@ -54,9 +52,7 @@ function BitacoraDiariaWidget({ onUpdate }) {
         }
         setLoadingLog(true);
         try {
-            const response = await fetch(`${GTR_API_URL}/bitacora/hoy/${campanaId}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/bitacora/hoy/${campanaId}`);
             if (!response.ok) {
                  setLogDiario([]);
                  throw new Error("No se pudieron cargar las entradas de la bitácora.");
@@ -110,9 +106,8 @@ function BitacoraDiariaWidget({ onUpdate }) {
             : { ...bitacoraData, campana_id: selectedCampana, fecha: new Date().toISOString().split('T')[0] };
 
         try {
-            const response = await fetch(url, {
+            const response = await fetchWithAuth(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
                 body: JSON.stringify(payload),
             });
             if (!response.ok) {

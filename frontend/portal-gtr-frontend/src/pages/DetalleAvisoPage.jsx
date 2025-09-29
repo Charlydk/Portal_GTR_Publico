@@ -1,7 +1,7 @@
 // src/pages/DetalleAvisoPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime } from '../utils/dateFormatter';
 
@@ -17,11 +17,7 @@ function DetalleAvisoPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}`, {
-                headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                },
-            });
+            const response = await fetchWithAuth(`${GTR_API_URL}/avisos/${avisoId}`);
             if (!response.ok) {
                 if (response.status === 401) {
                     throw new Error("No autorizado. Por favor, inicie sesión.");
@@ -57,13 +53,8 @@ function DetalleAvisoPage() {
         }
 
         try {
-            const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}/acuse_recibo`, {
-
+            const response = await fetchWithAuth(`${GTR_API_URL}/avisos/${avisoId}/acuse_recibo`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
                 body: JSON.stringify({ analista_id: user.id }),
             });
 

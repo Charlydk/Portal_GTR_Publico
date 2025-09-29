@@ -3,12 +3,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container, Card, Form, Button, Alert, Spinner, Row, Col } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 
 
 
 function CambiarPasswordPage() {
-    const { user, authToken } = useAuth();
+    const { user } = useAuth();
     const navigate = useNavigate();
 
     const [newPassword, setNewPassword] = useState('');
@@ -33,12 +33,8 @@ function CambiarPasswordPage() {
 
         setLoading(true);
         try {
-            const response = await fetch(`${GTR_API_URL}/analistas/${user.id}/password`, {
+            const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${user.id}/password`, {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`,
-                },
                 body: JSON.stringify({ new_password: newPassword }),
             });
 

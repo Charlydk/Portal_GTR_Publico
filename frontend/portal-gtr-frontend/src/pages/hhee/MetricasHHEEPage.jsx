@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Container, Form, Button, Card, Spinner, Alert, Row, Col, Table, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 import { decimalToHHMM } from '../../utils/timeUtils';
 
 const KpiCard = ({ title, value, variant = 'primary', linkTo = null }) => {
@@ -21,7 +21,7 @@ const KpiCard = ({ title, value, variant = 'primary', linkTo = null }) => {
 };
 
 function MetricasHHEEPage() {
-    const { authToken } = useAuth();
+
     const [fechaInicio, setFechaInicio] = useState('');
     const [fechaFin, setFechaFin] = useState('');
     const [metricas, setMetricas] = useState(null);
@@ -73,14 +73,15 @@ function MetricasHHEEPage() {
         setLoading(true); setError(null); setMetricas(null); setMetricasPendientes(null);
         try {
             const [metricasRes, pendientesRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/hhee/metricas`, {
+                fetchWithAuth(`${API_BASE_URL}/hhee/metricas`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                    // AÑADE ESTE BLOQUE DE HEADERS
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
                 }),
-                fetch(`${API_BASE_URL}/hhee/metricas-pendientes`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` },
-                })
+                fetchWithAuth(`${API_BASE_URL}/hhee/metricas-pendientes`, {})
             ]);
             if (!metricasRes.ok) { const errorData = await metricasRes.json(); throw new Error(errorData.detail); }
             if (!pendientesRes.ok) { const errorData = await pendientesRes.json(); throw new Error(errorData.detail); }

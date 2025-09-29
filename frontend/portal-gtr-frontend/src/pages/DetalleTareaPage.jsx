@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, Modal, Form } from 'react-bootstrap';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import HistorialTarea from '../components/HistorialTarea';
 import { formatDateTime } from '../utils/dateFormatter';
@@ -35,11 +35,7 @@ function DetalleTareaPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || `Error al cargar la tarea: ${response.statusText}`);
@@ -67,12 +63,8 @@ function DetalleTareaPage() {
     setSubmittingComentario(true);
     setError(null);
     try {
-        const response = await fetch(`${GTR_API_URL}/tareas/${id}/comentarios`, {
+        const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}/comentarios`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`,
-            },
             body: JSON.stringify({ texto: nuevoComentario }),
         });
 
@@ -99,9 +91,7 @@ function DetalleTareaPage() {
     setLoadingHistorial(true);
     setErrorHistorial(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas/${id}/historial_estados`, {
-        headers: { 'Authorization': `Bearer ${authToken}` },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}/historial_estados`);
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(errData.detail || "No se pudo cargar el historial.");
@@ -124,12 +114,8 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify({ progreso: newProgress }),
       });
 
@@ -159,12 +145,8 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${GTR_API_URL}/checklist_items/${checklistItemId}`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/checklist_items/${checklistItemId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify({ completado: !currentCompletado }),
       });
 
@@ -199,13 +181,8 @@ function DetalleTareaPage() {
     setSuccess(null);
 
     try {
-        const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
+        const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${authToken}`,
-            },
-            // Nos asignamos la tarea a nosotros mismos
             body: JSON.stringify({ analista_id: user.id }),
         });
 
@@ -241,13 +218,8 @@ const handleDejarTarea = async () => {
   setSuccess(null);
 
   try {
-      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
           method: 'PUT',
-          headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`,
-          },
-          // Enviamos null para desasignar
           body: JSON.stringify({ analista_id: null }),
       });
 
@@ -279,11 +251,8 @@ const handleDejarTarea = async () => {
     setSuccess(null);
 
     try {
-      const response = await fetch(`${GTR_API_URL}/tareas/${tarea.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
+      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
+        method: 'DELETE'
       });
 
       if (!response.ok) {

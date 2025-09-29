@@ -1,7 +1,7 @@
 // src/pages/AvisosPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { GTR_API_URL } from '../api'; // <-- CAMBIO
+import { GTR_API_URL, fetchWithAuth } from '../api'; // <-- CAMBIO
 import { useAuth } from '../hooks/useAuth';
 import { Button, Spinner, Alert, Table } from 'react-bootstrap';
 import { formatDateTime } from '../utils/dateFormatter';
@@ -17,11 +17,7 @@ function AvisosPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${GTR_API_URL}/avisos/`, { // <-- CAMBIO
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/avisos/`);
       if (!response.ok) {
         if (response.status === 401) {
           throw new Error("No autorizado. Por favor, inicie sesión.");
@@ -55,11 +51,8 @@ function AvisosPage() {
       return;
     }
     try {
-      const response = await fetch(`${GTR_API_URL}/avisos/${avisoId}`, { // <-- CAMBIO
+      const response = await fetchWithAuth(`${GTR_API_URL}/avisos/${avisoId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
       });
 
       if (!response.ok) {

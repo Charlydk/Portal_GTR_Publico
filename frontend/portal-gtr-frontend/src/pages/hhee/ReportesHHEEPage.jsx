@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Container, Form, Button, Card, Spinner, Alert, Row, Col, Modal } from 'react-bootstrap';
 import { useAuth } from '../../hooks/useAuth';
-import { API_BASE_URL } from '../../api';
+import { API_BASE_URL, fetchWithAuth } from '../../api';
 
 function ReportesHHEEPage() {
     const [fechaInicio, setFechaInicio] = useState('');
@@ -10,7 +10,7 @@ function ReportesHHEEPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
-    const { authToken, user } = useAuth();
+    const { user } = useAuth();
     
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [idsParaConfirmar, setIdsParaConfirmar] = useState([]);
@@ -43,32 +43,30 @@ function ReportesHHEEPage() {
         setLoading(true);
         setError(null);
         setSuccess(null);
-        setIdsParaConfirmar([]); // Limpiamos los IDs previos
-
+        setIdsParaConfirmar([]);
+    
         try {
-            // Si es para RRHH, primero obtenemos los IDs que se incluirán
             if (formato === 'RRHH') {
-                const idsResponse = await fetch(`${API_BASE_URL}/hhee/ids-pendientes-rrhh?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const idsResponse = await fetchWithAuth(`${API_BASE_URL}/hhee/ids-pendientes-rrhh?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`, {});
                 if (!idsResponse.ok) throw new Error('No se pudo obtener la lista de registros para el reporte.');
                 const idsData = await idsResponse.json();
                 if (idsData.length === 0) throw new Error('No hay HHEE nuevas para reportar a RRHH en este período.');
-                setIdsParaConfirmar(idsData); // Guardamos los IDs
+                setIdsParaConfirmar(idsData);
             }
-
-            // Procedemos con la descarga del archivo
-            const response = await fetch(`${API_BASE_URL}/hhee/exportar`, {
+    
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/exportar`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin, formato: formato }),
             });
-
+    
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || "No se pudo generar el reporte.");
             }
-
+    
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -78,7 +76,7 @@ function ReportesHHEEPage() {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
-
+    
         } catch (err) {
             setError(err.message);
         } finally {
@@ -96,20 +94,23 @@ function ReportesHHEEPage() {
         setError(null);
         setSuccess(null);
         setShowConfirmModal(false);
-        
+    
         try {
-            const response = await fetch(`${API_BASE_URL}/hhee/marcar-como-reportado`, {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/marcar-como-reportado`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify({ ids_a_marcar: idsParaConfirmar }),
             });
+    
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Error al confirmar el envío.');
             }
             const result = await response.json();
             setSuccess(result.detail);
-            setIdsParaConfirmar([]); // Limpiamos los IDs después de confirmar
+            setIdsParaConfirmar([]);
         } catch (err) {
             setError(err.message);
         } finally {

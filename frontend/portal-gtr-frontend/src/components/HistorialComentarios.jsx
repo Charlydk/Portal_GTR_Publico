@@ -1,6 +1,6 @@
 // src/components/HistorialComentarios.jsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { GTR_API_URL } from '../api';
+import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';import { Card, Form, Button, Alert, Spinner, ListGroup, Badge } from 'react-bootstrap';
 
 const HistorialComentarios = ({ campanaId }) => {
@@ -47,11 +47,7 @@ const HistorialComentarios = ({ campanaId }) => {
     
     setLoading(true);
     try {
-      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
+      const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'No se pudieron cargar los comentarios.');
@@ -82,12 +78,8 @@ const HistorialComentarios = ({ campanaId }) => {
     setError(null);
 
     try {
-      const response = await fetch(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
+      const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
         body: JSON.stringify({ comentario: nuevoComentario }),
       });
 
