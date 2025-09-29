@@ -3,6 +3,7 @@
 import pandas as pd
 import io
 import bleach
+import pytz
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.models import Campana, AnalistaConCampanas
@@ -2027,28 +2028,26 @@ async def delete_bitacora_entry(
         )
     return
 
-@router.get("/bitacora/hoy/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene las entradas de bitácora del día actual para una campaña")
-async def get_bitacora_hoy_por_campana(
+@router.get("/bitacora/por-fecha/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene las entradas de bitácora para una fecha y campaña específicas")
+async def get_bitacora_por_fecha(
     campana_id: int,
+    fecha: date = Query(..., description="Fecha en formato YYYY-MM-DD"), # <-- La fecha es un parámetro requerido
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Devuelve las entradas de la bitácora (no incidencias) para la campaña especificada
-    en la fecha actual.
+    Devuelve las entradas de la bitácora para una campaña y fecha específicas
+    proporcionadas por el cliente. No hace cálculos de zona horaria.
     """
-    # Usamos la fecha actual del servidor
-    fecha_hoy = date.today()
-    
     query = select(models.BitacoraEntry).options(
         selectinload(models.BitacoraEntry.autor),
         selectinload(models.BitacoraEntry.campana),
         selectinload(models.BitacoraEntry.lob)
     ).filter(
         models.BitacoraEntry.campana_id == campana_id,
-        models.BitacoraEntry.fecha == fecha_hoy
+        models.BitacoraEntry.fecha == fecha # Simplemente usa la fecha que nos llega
     ).order_by(
-        models.BitacoraEntry.hora.desc() # La más reciente primero
+        models.BitacoraEntry.hora.desc()
     )
     
     result = await db.execute(query)

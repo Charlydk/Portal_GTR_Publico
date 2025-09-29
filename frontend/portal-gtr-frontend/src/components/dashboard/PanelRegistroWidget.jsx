@@ -1,19 +1,17 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
-import { useAuth } from '../../hooks/useAuth';
 import { GTR_API_URL, fetchWithAuth } from '../../api';
 import FormularioIncidencia from '../incidencias/FormularioIncidencia';
 
+
 function PanelRegistroWidget({ onUpdate }) {
-    const { authToken } = useAuth();
     const [key, setKey] = useState('bitacora');
     const [campanas, setCampanas] = useState([]);
     const [selectedCampana, setSelectedCampana] = useState('');
     const [logDiario, setLogDiario] = useState([]);
     const [lobs, setLobs] = useState([]);
     const [selectedLob, setSelectedLob] = useState('');
-    const [selectedLobIds, setSelectedLobIds] = useState([]);
     const [editingEntry, setEditingEntry] = useState(null);
     const [bitacoraData, setBitacoraData] = useState({ hora: '', comentario: '' });
     const [incidenciaData, setIncidenciaData] = useState({
@@ -21,220 +19,268 @@ function PanelRegistroWidget({ onUpdate }) {
         indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: ''
     });
     const [loading, setLoading] = useState({
-        campanas: false, log: false, lobs: false, submitBitacora: false, submitIncidencia: false
+        campanas: true, log: false, lobs: false, submitBitacora: false, submitIncidencia: false
     });
-    const [error, setError] = useState(null);
-    const [success, setSuccess] = useState('');
+    const [error, setError] = useState({ campanas: null, log: null, lobs: null, submit: null });
+    const [selectedLobIds, setSelectedLobIds] = useState([]);
+
+    const getLocalDateString = () => {
+        const hoy = new Date();
+        const anio = hoy.getFullYear();
+        const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+        const dia = String(hoy.getDate()).padStart(2, '0');
+        return `${anio}-${mes}-${dia}`;
+    };
 
     const fetchCampanas = useCallback(async () => {
-        if (!authToken) return;
         setLoading(prev => ({ ...prev, campanas: true }));
         try {
-            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`);
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`, {});
             if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
             const data = await response.json();
             setCampanas(data);
-        } catch (err) { setError(err.message); }
-        finally { setLoading(prev => ({ ...prev, campanas: false })); }
-    }, [authToken]);
-
-    const fetchLogDiario = useCallback(async (campanaId) => {
-        if (!campanaId) { setLogDiario([]); return; }
-        setLoading(prev => ({ ...prev, log: true }));
-        setError(null);
-        try {
-
-            // 1. Obtenemos la fecha de HOY según el navegador del usuario
-            const fechaDeHoy = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
-    
-            // 2. Añadimos la fecha como un parámetro en la URL
-            const url = `${GTR_API_URL}/campanas/${campanaId}/bitacora?fecha=${fechaDeHoy}`;
-            
-            const response = await fetchWithAuth(url);
-
-    
-            if (response.status === 404) {
-                setLogDiario([]);
-                return;
-            }
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error al cargar la bitácora.');
-            }
-            const data = await response.json();
-            setLogDiario(data);
         } catch (err) {
-            setError(err.message);
-            setLogDiario([]);
+            setError(prev => ({ ...prev, campanas: err.message }));
         } finally {
-            setLoading(prev => ({ ...prev, log: false }));
+            setLoading(prev => ({ ...prev, campanas: false }));
         }
-    }, [authToken]);
+    }, []);
 
     const fetchLobs = useCallback(async (campanaId) => {
         if (!campanaId) { setLobs([]); return; }
         setLoading(prev => ({ ...prev, lobs: true }));
         try {
-            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/lobs`);
-            if (response.ok) { setLobs(await response.json()); } else { setLobs([]); }
-        } catch (err) { console.error("Error al cargar LOBs:", err); } 
-        finally { setLoading(prev => ({ ...prev, lobs: false })); }
-    }, [authToken]);
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/lobs`, {});
+            if (!response.ok) throw new Error('No se pudieron cargar los LOBs.');
+            setLobs(await response.json());
+        } catch (err) {
+            setError(prev => ({ ...prev, lobs: err.message }));
+        } finally {
+            setLoading(prev => ({ ...prev, lobs: false }));
+        }
+    }, []);
 
-    // --- SECCIÓN DE useEffect CORREGIDA ---
+    const fetchLogDiario = useCallback(async (campanaId) => {
+        if (!campanaId) { setLogDiario([]); return; }
+        setLoading(prev => ({ ...prev, log: true }));
+        setError(prev => ({ ...prev, log: null }));
+        try {
+            const fechaLocal = getLocalDateString();
+            const url = `${GTR_API_URL}/bitacora/por-fecha/${campanaId}?fecha=${fechaLocal}`;
+            const response = await fetchWithAuth(url, {});
+            if (!response.ok) throw new Error('No se pudo cargar la bitácora.');
+            setLogDiario(await response.json());
+        } catch (err) {
+            setError(prev => ({ ...prev, log: err.message }));
+        } finally {
+            setLoading(prev => ({ ...prev, log: false }));
+        }
+    }, []);
+
     useEffect(() => {
         fetchCampanas();
     }, [fetchCampanas]);
 
     useEffect(() => {
-        // Este efecto reacciona a los cambios de pestaña y campaña
-        const campanaIdActiva = key === 'bitacora' ? selectedCampana : incidenciaData.campana_id;
-        
-        if (campanaIdActiva) {
-            fetchLobs(campanaIdActiva);
-            if (key === 'bitacora') {
-                fetchLogDiario(campanaIdActiva);
-            }
+        if (selectedCampana) {
+            fetchLogDiario(selectedCampana);
+            fetchLobs(selectedCampana);
+            setIncidenciaData(prev => ({ ...prev, campana_id: selectedCampana }));
         } else {
-            // Si no hay campaña seleccionada, nos aseguramos de que las listas estén vacías
+            setLogDiario([]);
             setLobs([]);
-            if (key === 'bitacora') setLogDiario([]);
         }
-    }, [key, selectedCampana, incidenciaData.campana_id, fetchLobs, fetchLogDiario]);
-    // --- FIN DE LA SECCIÓN CORREGIDA ---
+    }, [selectedCampana, fetchLogDiario, fetchLobs]);
 
-    const handleIncidenciaChange = (e) => {
-        const { name, value } = e.target;
-        setIncidenciaData(prev => ({ ...prev, [name]: value }));
-        // Si el campo que cambió es la campaña, limpiamos los LOBs seleccionados
-        if (name === 'campana_id') {
-            setSelectedLobIds([]);
-        }
-    };
-    
-    const handleBitacoraFormChange = (e) => setBitacoraData({ ...bitacoraData, [e.target.name]: e.target.value });
-    const handleLobChange = (lobId) => setSelectedLobIds(prev => prev.includes(lobId) ? prev.filter(id => id !== lobId) : [...prev, lobId]);
-    
-    const handleEditClick = (entry) => {
-        setEditingEntry(entry);
-        setSelectedLob(entry.lob ? entry.lob.id : '');
-        setBitacoraData({ hora: entry.hora.substring(0, 5), comentario: entry.comentario || '' });
-    };
-
-    const handleCancelEdit = () => {
-        setEditingEntry(null);
+    const handleCampanaChange = (e) => {
+        setSelectedCampana(e.target.value);
         setSelectedLob('');
-        setBitacoraData({ hora: '', comentario: '' });
-    };
-
-    const handleBitacoraSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(prev => ({...prev, submitBitacora: true}));
-        setError(null); setSuccess('');
-        const isEditing = !!editingEntry;
-        const url = isEditing ? `${GTR_API_URL}/bitacora_entries/${editingEntry.id}` : `${GTR_API_URL}/bitacora_entries/`;
-        const method = isEditing ? 'PUT' : 'POST';
-        const payload = isEditing 
-            ? { hora: bitacoraData.hora, comentario: bitacoraData.comentario, lob_id: selectedLob ? parseInt(selectedLob) : null }
-            : { ...bitacoraData, campana_id: selectedCampana, fecha: new Date().toISOString().split('T')[0], lob_id: selectedLob ? parseInt(selectedLob) : null };
-        try {
-            const response = await fetchWithAuth(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail); }
-            setSuccess(`Entrada ${isEditing ? 'actualizada' : 'registrada'}!`);
-            handleCancelEdit(); 
-            await fetchLogDiario(selectedCampana);
-        } catch (err) { setError(err.message); } 
-        finally { 
-            setLoading(prev => ({...prev, submitBitacora: false}));
-            setTimeout(() => setSuccess(''), 5000);
-        }
-    };
-    
-    const handleIncidenciaSubmit = async (formDataDesdeHijo) => {
-        setLoading(prev => ({...prev, submitIncidencia: true}));
-        setError(null); setSuccess('');
-        try {
-            const payload = { ...formDataDesdeHijo, campana_id: parseInt(formDataDesdeHijo.campana_id, 10) };
-            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.detail); }
-            setSuccess('¡Incidencia registrada!');
-            setIncidenciaData({ titulo: '', descripcion_inicial: '', herramienta_afectada: '', indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: '' });
-            setSelectedLobIds([]);
-            if(onUpdate) onUpdate();
-        } catch (err) { setError(err.message); } 
-        finally { 
-            setLoading(prev => ({...prev, submitIncidencia: false}));
-            setTimeout(() => { setSuccess(''); setError(null); }, 5000);
-        }
+        setSelectedLobIds([]);
     };
     
     const generarOpcionesHorario = () => {
         const opciones = [];
-        for (let h = 0; h < 24; h++) { for (let m = 0; m < 60; m += 30) { const hora = String(h).padStart(2, '0'); const minuto = String(m).padStart(2, '0'); opciones.push(`${hora}:${minuto}`); } }
+        const now = new Date();
+        for (let h = 0; h < 24; h++) {
+            for (let m = 0; m < 60; m += 30) {
+                const hora = String(h).padStart(2, '0');
+                const minuto = String(m).padStart(2, '0');
+                opciones.push(`${hora}:${minuto}`);
+            }
+        }
+        const currentHour = String(now.getHours()).padStart(2, '0');
+        const currentMinute = now.getMinutes() < 30 ? '00' : '30';
+        const currentTime = `${currentHour}:${currentMinute}`;
+        if (!opciones.includes(currentTime)) {
+            opciones.push(currentTime);
+            opciones.sort();
+        }
         return opciones;
+    };
+
+    const handleBitacoraChange = (e) => {
+        setBitacoraData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleBitacoraSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(prev => ({ ...prev, submitBitacora: true }));
+        setError(prev => ({ ...prev, submit: null }));
+        try {
+            const url = editingEntry ? `${GTR_API_URL}/bitacora_entries/${editingEntry.id}` : `${GTR_API_URL}/bitacora_entries/`;
+            const method = editingEntry ? 'PUT' : 'POST';
+            
+            const payload = {
+                ...bitacoraData,
+                campana_id: parseInt(selectedCampana),
+                fecha: getLocalDateString(),
+                lob_id: selectedLob ? parseInt(selectedLob) : null,
+            };
+
+            const response = await fetchWithAuth(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Error al guardar la entrada.');
+            }
+            
+            setBitacoraData({ hora: '', comentario: '' });
+            setEditingEntry(null);
+            setSelectedLob('');
+            fetchLogDiario(selectedCampana);
+            if(onUpdate) onUpdate();
+        } catch (err) {
+            setError(prev => ({ ...prev, submit: err.message }));
+        } finally {
+            setLoading(prev => ({ ...prev, submitBitacora: false }));
+        }
+    };
+
+    const handleEditClick = (entry) => {
+        setEditingEntry(entry);
+        setBitacoraData({ hora: entry.hora.substring(0, 5), comentario: entry.comentario });
+        setSelectedLob(entry.lob?.id || '');
+    };
+
+    const handleCancelEdit = () => {
+        setEditingEntry(null);
+        setBitacoraData({ hora: '', comentario: '' });
+        setSelectedLob('');
+    };
+
+    const handleIncidenciaChange = (e) => {
+        setIncidenciaData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleLobChange = (lobId) => {
+        setSelectedLobIds(prev => prev.includes(lobId) ? prev.filter(id => id !== lobId) : [...prev, lobId]);
+    };
+
+    const handleIncidenciaSubmit = async (payloadFromForm) => {
+        setLoading(prev => ({ ...prev, submitIncidencia: true }));
+        setError(prev => ({ ...prev, submit: null }));
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payloadFromForm),
+            });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `Error al registrar la incidencia.`);
+            }
+            setIncidenciaData({
+                titulo: '', descripcion_inicial: '', herramienta_afectada: '',
+                indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: selectedCampana
+            });
+            setSelectedLobIds([]);
+            if(onUpdate) onUpdate();
+        } catch (err) {
+            setError(prev => ({ ...prev, submit: err.message }));
+        } finally {
+            setLoading(prev => ({ ...prev, submitIncidencia: false }));
+        }
     };
 
     return (
         <Card className="shadow-sm h-100">
             <Card.Header>
-                <Tabs activeKey={key} onSelect={(k) => setKey(k)} id="panel-registro-tabs" fill>
-                    <Tab eventKey="bitacora" title="📝 Bitácora de Eventos" />
-                    <Tab eventKey="incidencia" title="⚡ Registrar Incidencia" />
-                </Tabs>
+                <Row className="align-items-center">
+                    <Col xs={5}><h5 className="mb-0">Registro Rápido</h5></Col>
+                    <Col xs={7}>
+                        {loading.campanas ? <Spinner size="sm" /> : (
+                            <Form.Select size="sm" value={selectedCampana} onChange={handleCampanaChange}>
+                                <option value="">Seleccione una campaña...</option>
+                                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                            </Form.Select>
+                        )}
+                    </Col>
+                </Row>
             </Card.Header>
             <Card.Body>
-                {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
-                {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
-                <Tab.Content>
-                    <Tab.Pane eventKey="bitacora" active={key === 'bitacora'}>
-                         <Form onSubmit={handleBitacoraSubmit}>
-                            <Form.Group as={Row} className="mb-3">
-                                <Form.Label column sm={3}>Campaña</Form.Label>
-                                <Col sm={9}><Form.Select required value={selectedCampana} onChange={e => setSelectedCampana(e.target.value)} disabled={!!editingEntry}><option value="">Selecciona...</option>{campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</Form.Select></Col>
-                            </Form.Group>
-                            {selectedCampana && (<>
-                                <Form.Group as={Row} className="mb-3">
-                                    <Form.Label column sm={3}>LOB (Opcional)</Form.Label>
-                                    <Col sm={9}>
-                                        <Form.Select 
-                                            value={selectedLob} 
-                                            onChange={e => setSelectedLob(e.target.value)}
-                                            disabled={loading.lobs || !!editingEntry}
-                                        >
-                                            <option value="">{loading.lobs ? 'Cargando...' : 'Seleccionar...'}</option>
-                                            {lobs.map(lob => <option key={lob.id} value={lob.id}>{lob.nombre}</option>)}
-                                        </Form.Select>
-                                    </Col>
-                                </Form.Group>
-                                <Form.Group as={Row} className="mb-3"><Form.Label column sm={3}>Horario</Form.Label><Col sm={9}><Form.Select required name="hora" value={bitacoraData.hora} onChange={handleBitacoraFormChange}><option value="">Selecciona...</option>{generarOpcionesHorario().map(h => <option key={h} value={h}>{h}</option>)}</Form.Select></Col></Form.Group>
-                                <Form.Group as={Row} className="mb-3"><Form.Label column sm={3}>Comentario</Form.Label><Col sm={9}><Form.Control as="textarea" rows={2} name="comentario" value={bitacoraData.comentario} onChange={handleBitacoraFormChange} /></Col></Form.Group>
-                                <div className="d-flex justify-content-end">{editingEntry && (<Button variant="secondary" onClick={handleCancelEdit} className="me-2">Cancelar</Button>)}<Button variant={editingEntry ? 'warning' : 'primary'} type="submit" disabled={loading.submitBitacora}>{loading.submitBitacora ? <Spinner size="sm" /> : (editingEntry ? 'Actualizar' : 'Registrar')}</Button></div>
-                            </>)}
-                        </Form>
-                        <hr />
-                        <h6>Log de Hoy</h6>
-                        {loading.log ? <div className="text-center"><Spinner size="sm"/></div> : (<ListGroup variant="flush" style={{maxHeight: '350px', overflowY: 'auto'}}>{logDiario.length > 0 ? logDiario.map(entry => (<ListGroup.Item key={entry.id} className="d-flex justify-content-between align-items-center"><div><strong>{entry.hora.substring(0, 5)}:</strong>
-                        {entry.lob && <Badge bg="info" text="dark" className="ms-2">{entry.lob.nombre}</Badge>}
-                        <span className="ms-2">{entry.comentario}</span><br /><small className="text-muted">Por: {entry.autor.nombre}</small></div><Button variant="outline-secondary" size="sm" onClick={() => handleEditClick(entry)}>Editar</Button></ListGroup.Item>)) : <p className="text-muted small mt-2">No hay entradas.</p>}</ListGroup>)}
-                    </Tab.Pane>
-                    <Tab.Pane eventKey="incidencia" active={key === 'incidencia'}>
-                        <FormularioIncidencia
-                            formData={incidenciaData}
-                            handleChange={handleIncidenciaChange}
-                            handleSubmit={handleIncidenciaSubmit}
-                            isSubmitting={loading.submitIncidencia}
-                            campanas={campanas}
-                            lobs={lobs}
-                            loadingLobs={loading.lobs}
-                            selectedLobIds={selectedLobIds}
-                            handleLobChange={handleLobChange}
-                        />
-                    </Tab.Pane>
-                </Tab.Content>
+                {error.campanas && <Alert variant="danger">{error.campanas}</Alert>}
+                {error.submit && <Alert variant="danger" onClose={() => setError(prev => ({...prev, submit: null}))} dismissible>{error.submit}</Alert>}
+                
+                {!selectedCampana ? (
+                    <Alert variant="info" className="text-center">Por favor, seleccione una campaña para comenzar.</Alert>
+                ) : (
+                    <>
+                        <Tabs activeKey={key} onSelect={(k) => setKey(k)} id="registro-tabs" className="mb-3" fill>
+                            <Tab eventKey="bitacora" title="Bitácora"></Tab>
+                            <Tab eventKey="incidencia" title="Incidencia"></Tab>
+                        </Tabs>
+                        <Tab.Content>
+                            <Tab.Pane eventKey="bitacora" active={key === 'bitacora'}>
+                                <Form onSubmit={handleBitacoraSubmit}>
+                                    {editingEntry && <Alert variant="warning" size="sm">Editando entrada de las {editingEntry.hora.substring(0, 5)}.</Alert>}
+                                    <Row>
+                                        <Col md={6}><Form.Group><Form.Label>Horario</Form.Label><Form.Select name="hora" value={bitacoraData.hora} onChange={handleBitacoraChange} required><option value="">Seleccionar</option>{generarOpcionesHorario().map(h => <option key={h} value={h}>{h}</option>)}</Form.Select></Form.Group></Col>
+                                        <Col md={6}><Form.Group><Form.Label>LOB (Opcional)</Form.Label><Form.Select value={selectedLob} onChange={(e) => setSelectedLob(e.target.value)} disabled={loading.lobs}>{loading.lobs ? <option>Cargando...</option> : <><option value="">General</option>{lobs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}</>}</Form.Select></Form.Group></Col>
+                                    </Row>
+                                    <Form.Group className="mt-2"><Form.Label>Comentario</Form.Label><Form.Control as="textarea" rows={2} name="comentario" value={bitacoraData.comentario} onChange={handleBitacoraChange} required /></Form.Group>
+                                    <div className="d-flex justify-content-end mt-2">
+                                        {editingEntry && <Button variant="secondary" size="sm" onClick={handleCancelEdit} className="me-2">Cancelar</Button>}
+                                        <Button type="submit" variant="primary" size="sm" disabled={loading.submitBitacora}>{loading.submitBitacora ? <Spinner size="sm" /> : (editingEntry ? 'Actualizar' : 'Registrar')}</Button>
+                                    </div>
+                                </Form>
+                                <hr />
+                                <h6>Log de Hoy</h6>
+                                {loading.log ? <div className="text-center"><Spinner size="sm"/></div> : error.log ? <Alert variant="warning" size="sm">{error.log}</Alert> : (
+                                    <ListGroup variant="flush" style={{maxHeight: '200px', overflowY: 'auto'}}>
+                                        {logDiario.length > 0 ? logDiario.map(entry => (
+                                            <ListGroup.Item key={entry.id} className="d-flex justify-content-between align-items-center px-0">
+                                                <div>
+                                                    <strong>{entry.hora.substring(0, 5)}:</strong>
+                                                    {entry.lob && <Badge bg="info" text="dark" className="ms-2">{entry.lob.nombre}</Badge>}
+                                                    <span className="ms-2">{entry.comentario}</span><br />
+                                                    <small className="text-muted">Por: {entry.autor.nombre}</small>
+                                                </div>
+                                                <Button variant="outline-secondary" size="sm" onClick={() => handleEditClick(entry)}>Editar</Button>
+                                            </ListGroup.Item>
+                                        )) : <p className="text-muted small mt-2">No hay entradas para esta campaña hoy.</p>}
+                                    </ListGroup>
+                                )}
+                            </Tab.Pane>
+                            <Tab.Pane eventKey="incidencia" active={key === 'incidencia'}>
+                                <FormularioIncidencia
+                                    formData={incidenciaData}
+                                    handleChange={handleIncidenciaChange}
+                                    handleSubmit={handleIncidenciaSubmit}
+                                    isSubmitting={loading.submitIncidencia}
+                                    campanas={campanas}
+                                    lobs={lobs}
+                                    loadingLobs={loading.lobs}
+                                    selectedLobIds={selectedLobIds}
+                                    handleLobChange={handleLobChange}
+                                />
+                            </Tab.Pane>
+                        </Tab.Content>
+                    </>
+                )}
             </Card.Body>
         </Card>
     );
