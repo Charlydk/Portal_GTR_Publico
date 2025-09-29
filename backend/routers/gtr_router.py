@@ -2172,7 +2172,7 @@ async def update_incidencia(
     incidencia_id: int,
     update_data: IncidenciaUpdate,
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
     result = await db.execute(select(models.Incidencia).options(selectinload(models.Incidencia.lobs)).filter(models.Incidencia.id == incidencia_id))
     db_incidencia = result.scalars().first()

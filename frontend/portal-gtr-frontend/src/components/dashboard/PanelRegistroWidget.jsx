@@ -228,8 +228,8 @@ function PanelRegistroWidget({ onUpdate }) {
                     <Col xs={5}><h5 className="mb-0">Registro Rápido</h5></Col>
                     <Col xs={7}>
                         {loading.campanas ? <Spinner size="sm" /> : (
-                            <Form.Select size="sm" value={selectedCampana} onChange={handleCampanaChange}>
-                                <option value="">Seleccione una campaña...</option>
+                            <Form.Select size="lg" value={selectedCampana} onChange={handleCampanaChange}>
+                                <option value="">Seleccione campaña...</option>
                                 {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                             </Form.Select>
                         )}
@@ -291,6 +291,7 @@ function PanelRegistroWidget({ onUpdate }) {
                                     loadingLobs={loading.lobs}
                                     selectedLobIds={selectedLobIds}
                                     handleLobChange={handleLobChange}
+                                    hideCampanaSelector={true}
                                 />
                             </Tab.Pane>
                         </Tab.Content>

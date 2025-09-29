@@ -91,6 +91,7 @@ const AppContent = () => {
             <Route path="/control-incidencias" element={<ControlIncidenciasPage />} />
             <Route path="/incidencias/crear" element={<FormularioIncidenciaPage />} />
             <Route path="/incidencias/:id" element={<DetalleIncidenciaPage />} />
+            <Route path="/incidencias/editar/:id" element={<FormularioIncidenciaPage />} />
             <Route path="/control-eventos" element={<ControlEventosPage />} />
             <Route path="/historial-aprobaciones" element={<HistorialAprobacionesPage />} />
           </Route>
@@ -110,7 +111,6 @@ const AppContent = () => {
             <Route path="/campanas/crear" element={<FormularioCampanaPage />} />
             <Route path="/campanas/editar/:id" element={<FormularioCampanaPage />} />
             <Route path="/asignar-campanas" element={<AsignacionCampanasPage />} />
-            <Route path="/incidencias/editar/:id" element={<FormularioIncidenciaPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
           </Route>
 
