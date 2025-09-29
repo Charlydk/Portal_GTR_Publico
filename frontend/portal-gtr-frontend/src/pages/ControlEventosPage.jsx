@@ -12,10 +12,12 @@ function ControlEventosPage() {
     const [error, setError] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
     const [filtros, setFiltros] = useState({
-        fecha_inicio: '', fecha_fin: '', campana_id: '', autor_id: ''
+        fecha_inicio: '', fecha_fin: '', campana_id: '', autor_id: '',
+        lob_id: ''
     });
     const [listaCampanas, setListaCampanas] = useState([]);
     const [listaAnalistas, setListaAnalistas] = useState([]);
+    const [listaLobs, setListaLobs] = useState([]);
 
     const fetchFilterData = useCallback(async () => {
         if (!authToken) return;
@@ -28,6 +30,24 @@ function ControlEventosPage() {
             setListaCampanas(await campanasRes.json());
             setListaAnalistas(await analistasRes.json());
         } catch (err) { setError(err.message); }
+    }, [authToken]);
+
+    const fetchLobsPorCampana = useCallback(async (campanaId) => {
+        if (!authToken || !campanaId) {
+            setListaLobs([]);
+            return;
+        }
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/lobs`);
+            if (!response.ok) {
+                setListaLobs([]);
+                console.error("No se pudieron cargar los LOBs para la campaña seleccionada.");
+                return;
+            }
+            setListaLobs(await response.json());
+        } catch (err) {
+            setError(err.message);
+        }
     }, [authToken]);
 
     useEffect(() => { fetchFilterData(); }, [fetchFilterData]);
@@ -46,12 +66,26 @@ function ControlEventosPage() {
         finally { setLoading(false); }
     }, [authToken, filtros]);
 
-    const handleFiltroChange = (e) => setFiltros(prev => ({ ...prev, [e.target.name]: e.target.value }));
     const handleLimpiarFiltros = () => {
-        setFiltros({ fecha_inicio: '', fecha_fin: '', campana_id: '', autor_id: '' });
+        setFiltros({
+            fecha_inicio: '', fecha_fin: '', campana_id: '', autor_id: '', lob_id: ''
+        });
         setEventos([]);
+        setListaLobs([]);
     };
 
+    // --- FUNCIÓN CORREGIDA (Lógica de estado unificada) ---
+    const handleFiltroChange = (e) => {
+        const { name, value } = e.target;
+        if (name === 'campana_id') {
+            setFiltros(prev => ({ ...prev, campana_id: value, lob_id: '' })); 
+            fetchLobsPorCampana(value);
+        } else {
+            setFiltros(prev => ({ ...prev, [name]: value }));
+        }
+    };
+
+    // --- FUNCIÓN CORREGIDA (lob -> lob_id) ---
     const handleExportar = async () => {
         setIsExporting(true);
         setError(null);
@@ -60,11 +94,12 @@ function ControlEventosPage() {
                 fecha_inicio: filtros.fecha_inicio || null,
                 fecha_fin: filtros.fecha_fin || null,
                 campana_id: filtros.campana_id ? parseInt(filtros.campana_id) : null,
-                lob: filtros.lob || null,
                 autor_id: filtros.autor_id ? parseInt(filtros.autor_id) : null,
+                lob_id: filtros.lob_id ? parseInt(filtros.lob_id) : null,
             };
             const response = await fetchWithAuth(`${GTR_API_URL}/bitacora/exportar/`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             if (!response.ok) { const errData = await response.json(); throw new Error(errData.detail); }
@@ -92,6 +127,7 @@ function ControlEventosPage() {
                                 <Col md={3}><Form.Group><Form.Label>Desde Fecha</Form.Label><Form.Control type="date" name="fecha_inicio" value={filtros.fecha_inicio} onChange={handleFiltroChange} /></Form.Group></Col>
                                 <Col md={3}><Form.Group><Form.Label>Hasta Fecha</Form.Label><Form.Control type="date" name="fecha_fin" value={filtros.fecha_fin} onChange={handleFiltroChange} /></Form.Group></Col>
                                 <Col md={3}><Form.Group><Form.Label>Campaña</Form.Label><Form.Select name="campana_id" value={filtros.campana_id} onChange={handleFiltroChange}><option value="">Todas</option>{listaCampanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</Form.Select></Form.Group></Col>
+                                <Col md={3}><Form.Group><Form.Label>LOB</Form.Label><Form.Select name="lob_id" value={filtros.lob_id} onChange={handleFiltroChange} disabled={!filtros.campana_id || listaLobs.length === 0}><option value="">Todos</option>{listaLobs.map(l => <option key={l.id} value={l.id}>{l.nombre}</option>)}</Form.Select></Form.Group></Col>
                                 <Col md={3}><Form.Group><Form.Label>Autor</Form.Label><Form.Select name="autor_id" value={filtros.autor_id} onChange={handleFiltroChange}><option value="">Todos</option>{listaAnalistas.map(a => <option key={a.id} value={a.id}>{`${a.nombre} ${a.apellido}`}</option>)}</Form.Select></Form.Group></Col>
                                 <Col md={6} className="d-flex align-items-end gap-2">
                                     <Button variant="primary" onClick={fetchEventos} disabled={loading || isExporting} className="w-100">{loading ? <Spinner size="sm" /> : 'Filtrar'}</Button>
@@ -105,24 +141,26 @@ function ControlEventosPage() {
                     <div className="table-responsive">
                         <Table striped bordered hover>
                             <thead>
-                                <tr><th>Fecha</th><th>Hora</th><th>Campaña</th><th>Lob</th><th>Autor</th><th>Comentario</th></tr>
+                                <tr><th>Fecha</th><th>Hora</th><th>Campaña</th><th>LOB</th><th>Autor</th><th>Comentario</th></tr>
                             </thead>
                             <tbody>
                                 {loading ? (
-                                    <tr><td colSpan="5" className="text-center"><Spinner /></td></tr>
+                                    <tr><td colSpan="6" className="text-center"><Spinner /></td></tr>
                                 ) : eventos.length > 0 ? (
                                     eventos.map(evt => (
                                         <tr key={evt.id}>
                                             <td>{evt.fecha}</td>
                                             <td>{evt.hora}</td>
-                                            <td>{evt.campana.nombre}</td>
-                                            <td>{evt.lob ? evt.lob.nombre : 'N/A'}</td>
-                                            <td>{`${evt.autor.nombre} ${evt.autor.apellido}`}</td>
+                                            {/* --- INICIO DE LA CORRECCIÓN DE RENDERIZADO --- */}
+                                            <td>{evt.campana?.nombre || 'N/A'}</td>
+                                            <td>{evt.lob?.nombre || 'N/A'}</td>
+                                            <td>{evt.autor ? `${evt.autor.nombre} ${evt.autor.apellido}` : 'N/A'}</td>
+                                            {/* --- FIN DE LA CORRECCIÓN DE RENDERIZADO --- */}
                                             <td>{evt.comentario}</td>
                                         </tr>
                                     ))
                                 ) : (
-                                    <tr><td colSpan="5" className="text-center text-muted">No se encontraron eventos.</td></tr>
+                                    <tr><td colSpan="6" className="text-center text-muted">No se encontraron eventos.</td></tr>
                                 )}
                             </tbody>
                         </Table>
