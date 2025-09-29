@@ -240,8 +240,8 @@ class Lob(LobBase):
 
 class BitacoraEntry(BitacoraEntryBase):
     id: int
-    fecha_creacion: datetime
-    fecha_ultima_actualizacion: datetime
+    fecha_creacion: Optional[datetime] = None
+    fecha_ultima_actualizacion: Optional[datetime] = None
     autor: AnalistaSimple
     campana: "CampanaSimple"
     lob: Optional[Lob] = None
