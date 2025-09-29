@@ -1906,20 +1906,23 @@ async def create_bitacora_entry(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ya existe un evento registrado en la misma franja horaria para esta campaña y LOB."
         )
-
-    datos_limpios = entry.model_dump(exclude={"fecha"}) # Excluimos la fecha que pudo venir del cliente
+    now_utc = datetime.now(pytz.utc)
+    
+    datos_limpios = entry.model_dump(exclude={"fecha"})
     if datos_limpios.get("comentario"):
         datos_limpios["comentario"] = bleach.clean(datos_limpios["comentario"])
     
     db_entry = models.BitacoraEntry(
         **datos_limpios,
-        fecha=fecha_correcta, # Usamos la fecha calculada en el servidor
-        autor_id=current_analista.id
+        fecha=fecha_correcta, 
+        autor_id=current_analista.id,
+        # 3. Asignamos los timestamps directamente en el código
+        fecha_creacion=now_utc,
+        fecha_ultima_actualizacion=now_utc
     )
     
     db.add(db_entry)
     await db.commit()
-    await db.refresh(db_entry)
 
     # El resto de la función para recargar y devolver la entrada se mantiene
     result = await db.execute(
@@ -1957,7 +1960,7 @@ async def update_bitacora_entry(
     for field, value in update_data.items():
         setattr(db_entry, field, value)
     
-    db_entry.fecha_ultima_actualizacion = func.now()
+    db_entry.fecha_ultima_actualizacion = datetime.now(pytz.utc)
 
     try:
         await db.commit()
