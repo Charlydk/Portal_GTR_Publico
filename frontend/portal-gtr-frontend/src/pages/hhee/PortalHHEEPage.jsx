@@ -287,16 +287,32 @@ function PortalHHEEPage() {
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/hhee/cargar-hhee`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ validaciones: validacionesParaEnviar })
             });
+            
+            // --- INICIO DE LA CORRECCIÓN DE MANEJO DE ERRORES ---
+            if (!response.ok) {
+                const errorData = await response.json();
+                // Si el error tiene un campo "detail" que es una lista (error de validación de FastAPI)
+                if (errorData.detail && Array.isArray(errorData.detail)) {
+                    const errorMessages = errorData.detail.map(err => {
+                        // err.loc nos da la ubicación del error, ej: ['body', 'validaciones', 0, 'rut_con_formato']
+                        const field = err.loc[err.loc.length - 1]; // Obtenemos el nombre del campo
+                        return `${field}: ${err.msg}`; // ej: "rut_con_formato: Field required"
+                    }).join('\n');
+                    throw new Error(`Errores de validación:\n${errorMessages}`);
+                }
+                // Para otros tipos de errores
+                throw new Error(errorData.detail || 'Ocurrió un error al guardar.');
+            }
+            // --- FIN DE LA CORRECCIÓN ---
+            
             const data = await response.json();
-            if (!response.ok) throw new Error(data.detail);
-    
-            // 1. CAMBIO: Usamos el nuevo resumen detallado del backend
             setGuardadoResumen(data.resumen_detallado || []);
             setResultados([]);
             setNombreAgente('');
-    
+
         } catch (err) {
             setError(err.message);
         } finally {

@@ -95,16 +95,22 @@ function MisSolicitudesHHEEPage() {
     const handleCreateSolicitud = async (formData) => {
         setSubmitStatus({ loading: true, error: null, success: null });
         try {
+
             const response = await fetchWithAuth(`${API_BASE_URL}/hhee/solicitudes/`, {
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
                 body: JSON.stringify(formData),
             });
+
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Error al enviar la solicitud.');
             }
             setSubmitStatus({ loading: false, error: null, success: '¡Solicitud enviada con éxito!' });
-            fetchMisSolicitudes();
+            fetchMisSolicitudes(); // Para actualizar la lista de historial
             return true;
         } catch (err) {
             setSubmitStatus({ loading: false, error: err.message, success: null });

@@ -1888,23 +1888,18 @@ async def create_bitacora_entry(
     if not campana_existente_result.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
-    # --- INICIO DEL BLOQUE DE VALIDACIÓN ANTI-DUPLICADOS ---
-    # 1. Creamos la base de la consulta para buscar duplicados
+    # 1. Definimos la zona horaria de referencia
+    tucuman_tz = pytz.timezone("America/Argentina/Tucuman")
+    # 2. Calculamos la fecha correcta en esa zona horaria
+    fecha_correcta = datetime.now(tucuman_tz).date()
+
+    # 3. Verificamos si ya existe una entrada para esa hora, usando la fecha correcta
     query_existente = select(models.BitacoraEntry).filter(
-        models.BitacoraEntry.fecha == entry.fecha,
+        models.BitacoraEntry.fecha == fecha_correcta,
         models.BitacoraEntry.hora == entry.hora,
-        models.BitacoraEntry.campana_id == entry.campana_id
+        models.BitacoraEntry.campana_id == entry.campana_id,
+        models.BitacoraEntry.lob_id == entry.lob_id
     )
-
-    # 2. Ajustamos la consulta dependiendo de si se proporcionó un LOB o no
-    if entry.lob_id:
-        # Si hay LOB, buscamos una coincidencia exacta con ese LOB
-        query_existente = query_existente.filter(models.BitacoraEntry.lob_id == entry.lob_id)
-    else:
-        # Si NO hay LOB, buscamos un registro que tampoco tenga LOB
-        query_existente = query_existente.filter(models.BitacoraEntry.lob_id.is_(None))
-
-    # 3. Ejecutamos la consulta y, si encontramos algo, lanzamos un error
     result_existente = await db.execute(query_existente)
     if result_existente.scalars().first():
         raise HTTPException(
@@ -1912,44 +1907,31 @@ async def create_bitacora_entry(
             detail="Ya existe un evento registrado en la misma franja horaria para esta campaña y LOB."
         )
 
-    
-    # --- Lógica de Seguridad ---
-    datos_limpios = entry.model_dump()
+    datos_limpios = entry.model_dump(exclude={"fecha"}) # Excluimos la fecha que pudo venir del cliente
     if datos_limpios.get("comentario"):
         datos_limpios["comentario"] = bleach.clean(datos_limpios["comentario"])
-    # -------------------------
     
-    # Creamos el objeto con los datos ya limpios
     db_entry = models.BitacoraEntry(
         **datos_limpios,
+        fecha=fecha_correcta, # Usamos la fecha calculada en el servidor
         autor_id=current_analista.id
     )
     
     db.add(db_entry)
-    try:
-        await db.commit()
-        await db.refresh(db_entry)
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al crear la entrada de bitácora: {e}"
-        )
-    
+    await db.commit()
+    await db.refresh(db_entry)
+
+    # El resto de la función para recargar y devolver la entrada se mantiene
     result = await db.execute(
-        select(models.BitacoraEntry)
-        .options(
+        select(models.BitacoraEntry).options(
             selectinload(models.BitacoraEntry.campana), 
             selectinload(models.BitacoraEntry.autor),
             selectinload(models.BitacoraEntry.lob)
-        )
-        .filter(models.BitacoraEntry.id == db_entry.id)
+        ).filter(models.BitacoraEntry.id == db_entry.id)
     )
-    entry_to_return = result.scalars().first()
-    if not entry_to_return:
-        raise HTTPException(status_code=500, detail="No se pudo recargar la entrada de bitácora después de la creación.")
-        
-    return entry_to_return
+    return result.scalars().first()
+
+
 
 @router.put("/bitacora_entries/{entry_id}", response_model=BitacoraEntry, summary="Actualizar una Entrada de Bitácora (Protegido)")
 async def update_bitacora_entry(
@@ -2028,30 +2010,47 @@ async def delete_bitacora_entry(
         )
     return
 
-@router.get("/bitacora/por-fecha/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene las entradas de bitácora para una fecha y campaña específicas")
-async def get_bitacora_por_fecha(
+@router.get("/bitacora/log_de_hoy/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene el log del día operativo actual (Hora de Argentina)")
+async def get_log_de_hoy(
     campana_id: int,
-    fecha: date = Query(..., description="Fecha en formato YYYY-MM-DD"), # <-- La fecha es un parámetro requerido
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Devuelve las entradas de la bitácora para una campaña y fecha específicas
-    proporcionadas por el cliente. No hace cálculos de zona horaria.
+    Obtiene las entradas de la bitácora para el día operativo actual,
+    definido por la zona horaria de Argentina (ART/UTC-3),
+    independientemente de la ubicación del usuario o del servidor.
     """
-    query = select(models.BitacoraEntry).options(
-        selectinload(models.BitacoraEntry.autor),
-        selectinload(models.BitacoraEntry.campana),
-        selectinload(models.BitacoraEntry.lob)
-    ).filter(
-        models.BitacoraEntry.campana_id == campana_id,
-        models.BitacoraEntry.fecha == fecha # Simplemente usa la fecha que nos llega
-    ).order_by(
-        models.BitacoraEntry.hora.desc()
-    )
-    
-    result = await db.execute(query)
-    return result.scalars().all()
+    try:
+        # 1. Establecemos la zona horaria de referencia para la operación
+        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+
+        # 2. Obtenemos el momento actual en esa zona horaria
+        now_in_argentina = datetime.now(tz_argentina)
+
+        # 3. Determinamos el inicio y el fin del "día de hoy" en Argentina
+        start_of_day_local = now_in_argentina.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day_local = now_in_argentina.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # 4. Construimos la consulta usando el timestamp `fecha_creacion`,
+        # que es la fuente de verdad del momento exacto del registro.
+        # Asumimos que `fecha_creacion` está en UTC, como confirman tus datos.
+        query = select(models.BitacoraEntry).options(
+            selectinload(models.BitacoraEntry.autor),
+            selectinload(models.BitacoraEntry.campana),
+            selectinload(models.BitacoraEntry.lob)
+        ).filter(
+            models.BitacoraEntry.campana_id == campana_id,
+            models.BitacoraEntry.fecha_creacion >= start_of_day_local,
+            models.BitacoraEntry.fecha_creacion <= end_of_day_local
+        ).order_by(
+            models.BitacoraEntry.hora.desc()
+        )
+        
+        result = await db.execute(query)
+        return result.scalars().all()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno al calcular el log del día: {e}")
+
 
 
 # --- NUEVOS ENDPOINTS PARA COMENTARIOS GENERALES DE BITÁCORA ---

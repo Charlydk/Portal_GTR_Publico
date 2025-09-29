@@ -1,9 +1,9 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
+import { useAuth } from '../../hooks/useAuth';
 import { GTR_API_URL, fetchWithAuth } from '../../api';
 import FormularioIncidencia from '../incidencias/FormularioIncidencia';
-
 
 function PanelRegistroWidget({ onUpdate }) {
     const [key, setKey] = useState('bitacora');
@@ -24,6 +24,7 @@ function PanelRegistroWidget({ onUpdate }) {
     const [error, setError] = useState({ campanas: null, log: null, lobs: null, submit: null });
     const [selectedLobIds, setSelectedLobIds] = useState([]);
 
+    // Función centralizada para obtener la fecha local del navegador
     const getLocalDateString = () => {
         const hoy = new Date();
         const anio = hoy.getFullYear();
@@ -61,14 +62,23 @@ function PanelRegistroWidget({ onUpdate }) {
     }, []);
 
     const fetchLogDiario = useCallback(async (campanaId) => {
-        if (!campanaId) { setLogDiario([]); return; }
+        if (!campanaId) {
+            setLogDiario([]);
+            return;
+        }
         setLoading(prev => ({ ...prev, log: true }));
         setError(prev => ({ ...prev, log: null }));
         try {
-            const fechaLocal = getLocalDateString();
-            const url = `${GTR_API_URL}/bitacora/por-fecha/${campanaId}?fecha=${fechaLocal}`;
+            // --- CAMBIO DEFINITIVO ---
+            // Llamamos al nuevo endpoint que no necesita parámetros de fecha
+            const url = `${GTR_API_URL}/bitacora/log_de_hoy/${campanaId}`;
+            
             const response = await fetchWithAuth(url, {});
-            if (!response.ok) throw new Error('No se pudo cargar la bitácora.');
+            if (!response.ok) {
+                if (response.status === 404) { setLogDiario([]); return; }
+                const errData = await response.json();
+                throw new Error(errData.detail || 'No se pudo cargar la bitácora de hoy.');
+            }
             setLogDiario(await response.json());
         } catch (err) {
             setError(prev => ({ ...prev, log: err.message }));
@@ -130,12 +140,17 @@ function PanelRegistroWidget({ onUpdate }) {
             const url = editingEntry ? `${GTR_API_URL}/bitacora_entries/${editingEntry.id}` : `${GTR_API_URL}/bitacora_entries/`;
             const method = editingEntry ? 'PUT' : 'POST';
             
+            // CAMBIO: El payload ya no lleva la fecha. El backend se encarga.
             const payload = {
                 ...bitacoraData,
                 campana_id: parseInt(selectedCampana),
-                fecha: getLocalDateString(),
                 lob_id: selectedLob ? parseInt(selectedLob) : null,
             };
+
+            // Si estamos editando, sí necesitamos enviar la fecha que ya tiene la entrada
+            if (editingEntry) {
+                payload.fecha = editingEntry.fecha;
+            }
 
             const response = await fetchWithAuth(url, {
                 method,

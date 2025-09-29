@@ -68,7 +68,7 @@ class AcuseReciboCreate(BaseModel):
 
 class BitacoraEntryBase(BaseModel):
     campana_id: int
-    fecha: date
+    fecha: Optional[date] = None
     hora: time
     comentario: Optional[str] = None
     lob_id: Optional[int] = None

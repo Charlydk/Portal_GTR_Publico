@@ -1,6 +1,6 @@
 # sql_app/models.py
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, ForeignKey, 
-                        Enum as SQLEnum, Enum, Date, Time, Text, Float, Date, DateTime)
+                        Enum as SQLEnum, Enum, Date, Time, Text, Float, Date, DateTime, TIMESTAMP, text)
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table
@@ -166,8 +166,8 @@ class BitacoraEntry(Base):
     autor_id = Column(Integer, ForeignKey('analistas.id'), nullable=False)
     lob_id = Column(Integer, ForeignKey("lobs.id"), nullable=True)
     autor = relationship("Analista")
-    fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    fecha_ultima_actualizacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    fecha_creacion = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+    fecha_ultima_actualizacion = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'), onupdate=text('now()'))
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
     campana = relationship("Campana", back_populates="bitacora_entries")
     lob = relationship("LOB")
