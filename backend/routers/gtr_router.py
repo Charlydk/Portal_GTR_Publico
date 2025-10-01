@@ -2272,7 +2272,7 @@ async def get_incidencias_filtradas(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     campana_id: Optional[int] = None,
-    estado: Optional[EstadoIncidencia] = None,
+    estado: Optional[List[EstadoIncidencia]] = Query(default=None),
     asignado_a_id: Optional[int] = None
 ):
     """
@@ -2294,7 +2294,7 @@ async def get_incidencias_filtradas(
     if campana_id:
         query = query.filter(models.Incidencia.campana_id == campana_id)
     if estado:
-        query = query.filter(models.Incidencia.estado == estado)
+        query = query.filter(models.Incidencia.estado.in_(estado))
     if asignado_a_id is not None:
         if asignado_a_id == 0:
             query = query.filter(models.Incidencia.asignado_a_id.is_(None))

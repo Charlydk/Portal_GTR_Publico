@@ -31,7 +31,7 @@ function EstadisticasGTRWidget({ stats, user, tareasDisponibles = 0 }) {
                     title="Total Incidencias Activas" 
                     value={stats.total_incidencias_activas} 
                     variant="danger" 
-                    linkTo="/control-incidencias"
+                    linkTo="/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO"
                 />
             </Col>
             
@@ -42,7 +42,7 @@ function EstadisticasGTRWidget({ stats, user, tareasDisponibles = 0 }) {
                            title="Incidencias sin Asignar" 
                            value={stats.incidencias_sin_asignar} 
                            variant="info"
-                           linkTo="/control-incidencias" // También puede llevar al mismo sitio
+                           linkTo="/control-incidencias?asignado_a_id=0"
                        />
                     </Col>
                     <Col>
