@@ -495,6 +495,34 @@ class BitacoraExportFilters(BaseModel):
     autor_id: Optional[int] = None
     lob_id: Optional[int] = None
 
+
+# --- SCHEMAS OPTIMIZADOS PARA WIDGETS DEL DASHBOARD ---
+
+class WidgetAnalista(BaseModel):
+    nombre: str
+    apellido: str
+    class Config:
+        from_attributes = True
+
+class WidgetCampana(BaseModel):
+    nombre: str
+    class Config:
+        from_attributes = True
+
+class DashboardIncidenciaWidget(BaseModel):
+    id: int
+    titulo: str
+    estado: EstadoIncidencia
+    gravedad: Optional[GravedadIncidencia] = 'MEDIA'
+    campana: WidgetCampana
+    asignado_a: Optional[WidgetAnalista] = None
+    ultimo_comentario: Optional[str] = None # Campo para el último comentario
+    
+    class Config:
+        from_attributes = True
+
+
+
 # --- Forward References Update ---
 Campana.model_rebuild()
 Analista.model_rebuild()
