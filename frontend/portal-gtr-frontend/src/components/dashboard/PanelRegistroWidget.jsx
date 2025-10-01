@@ -36,7 +36,7 @@ function PanelRegistroWidget({ onUpdate }) {
     const fetchCampanas = useCallback(async () => {
         setLoading(prev => ({ ...prev, campanas: true }));
         try {
-            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`, {});
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/listado-simple/`, {});
             if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
             const data = await response.json();
             setCampanas(data);

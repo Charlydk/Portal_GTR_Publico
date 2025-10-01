@@ -77,6 +77,20 @@ async def obtener_tareas_disponibles(
     return tareas.scalars().unique().all()
 
 
+@router.get("/campanas/listado-simple/", response_model=List[CampanaSimple], summary="Obtener una lista simple de campañas para selectores")
+async def obtener_campanas_simple(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Devuelve una lista ligera de campañas (ID, nombre) ideal para poblar
+    menús desplegables en el frontend sin sobrecargar la API.
+    """
+    query = select(models.Campana).order_by(models.Campana.nombre)
+    result = await db.execute(query)
+    campanas = result.scalars().all()
+    return campanas
+
 # --- Endpoints para Analistas (Protegidos) ---
 
 @router.post("/analistas/", response_model=Analista, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo Analista (Protegido por Supervisor/Responsable)")

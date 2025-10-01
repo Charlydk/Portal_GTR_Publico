@@ -20,6 +20,7 @@ function DashboardPage() {
     const [dashboardStats, setDashboardStats] = useState(null);
     const [tareasDisponibles, setTareasDisponibles] = useState([]);
 
+    // Estas funciones son estables gracias a useCallback con dependencias vacías
     const fetchDashboardStats = useCallback(async () => {
         const response = await fetchWithAuth(`${GTR_API_URL}/dashboard/stats`);
         if (!response.ok) throw new Error('Error al cargar estadísticas.');
@@ -39,30 +40,32 @@ function DashboardPage() {
     }, []);
 
     useEffect(() => {
-        if (!authLoading && user) {
-            if (!['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role)) {
-                setLoading(false);
-                return;
-            }
+        if (authLoading || !user) {
+            return; // Si está cargando la autenticación o no hay usuario, no hacemos nada.
+        }
 
-            const fetchInitialData = async () => {
-                setLoading(true);
-                setError(null);
-                try {
-                    const promises = [fetchDashboardStats()];
-                    if (user.role === 'ANALISTA') {
-                        promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
-                    }
-                    await Promise.all(promises);
-                } catch (err) {
-                    setError(err.message);
-                } finally {
+        const fetchInitialData = async () => {
+            // NO volvemos a poner setLoading(true) aquí. Esto evita el parpadeo.
+            setError(null);
+            try {
+                const promises = [fetchDashboardStats()];
+                if (user.role === 'ANALISTA') {
+                    promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
+                }
+                await Promise.all(promises);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                // Solo cambiamos el estado de carga a false la primera vez.
+                if (loading) {
                     setLoading(false);
                 }
-            };
-            fetchInitialData();
-        }
-    }, [authLoading, user, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles]);
+            }
+        };
+
+        fetchInitialData();
+    // --- CAMBIO CLAVE: Usamos user.id en lugar de user para evitar re-cargas innecesarias ---
+    }, [user?.id, authLoading, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles]);
 
     const handleIncidenciaCreada = useCallback(() => {
         setError(null);
