@@ -531,6 +531,7 @@ class DashboardStatsAnalista(BaseModel):
     incidencias_sin_asignar: int
     mis_incidencias_asignadas: int
     incidencias_del_dia: List[IncidenciaSimple] = []
+    total_incidencias_activas: int
 
 class DashboardStatsSupervisor(BaseModel):
     total_incidencias_activas: int

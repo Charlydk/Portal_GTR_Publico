@@ -2828,6 +2828,14 @@ async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
+    # Este cálculo ahora es común para todos los roles
+    query_activas = select(func.count(models.Incidencia.id)).filter(
+        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
+    )
+    result_activas = await db.execute(query_activas)
+    total_activas = result_activas.scalar_one()
+    
+    
     """
     Devuelve un conjunto de estadísticas para el dashboard.
     """
@@ -2849,7 +2857,8 @@ async def get_dashboard_stats(
              return DashboardStatsAnalista(
                  incidencias_sin_asignar=0,
                  mis_incidencias_asignadas=0,
-                 incidencias_del_dia=[]
+                 incidencias_del_dia=[],
+                 total_incidencias_activas=total_activas
              )
 
         unassigned_query = select(func.count(models.Incidencia.id)).filter(
@@ -2882,7 +2891,8 @@ async def get_dashboard_stats(
         return DashboardStatsAnalista(
             incidencias_sin_asignar=unassigned_count,
             mis_incidencias_asignadas=my_assigned_count,
-            incidencias_del_dia=daily_incidents
+            incidencias_del_dia=daily_incidents,
+            total_incidencias_activas=total_activas
         )
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard definido.")

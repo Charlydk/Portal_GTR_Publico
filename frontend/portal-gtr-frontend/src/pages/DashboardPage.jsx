@@ -1,3 +1,5 @@
+// RUTA: src/pages/DashboardPage.jsx
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
@@ -6,27 +8,17 @@ import { Link } from 'react-router-dom';
 
 // Widgets
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
-import IncidenciasActivasWidget from '../components/dashboard/IncidenciasActivasWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget';
 
 function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
 
-    // --- ESTADOS (sin cambios) ---
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [incidenciasActivas, setIncidenciasActivas] = useState([]);
     const [misIncidencias, setMisIncidencias] = useState([]);
     const [dashboardStats, setDashboardStats] = useState(null);
     const [tareasDisponibles, setTareasDisponibles] = useState([]);
-
-    // --- 1. SEPARAMOS LA LÓGICA DE BÚSQUEDA EN FUNCIONES INDIVIDUALES ---
-    const fetchIncidenciasActivas = useCallback(async () => {
-        const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/activas/recientes`);
-        if (!response.ok) throw new Error('Error al cargar incidencias activas.');
-        setIncidenciasActivas(await response.json());
-    }, []);
 
     const fetchDashboardStats = useCallback(async () => {
         const response = await fetchWithAuth(`${GTR_API_URL}/dashboard/stats`);
@@ -46,10 +38,9 @@ function DashboardPage() {
         setTareasDisponibles(await response.json());
     }, []);
 
-    // --- 2. useEffect INICIAL QUE CARGA TODO UNA SOLA VEZ ---
     useEffect(() => {
         if (!authLoading && user) {
-            if (!['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role)) {
+            if (!['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES'].includes(user.role)) {
                 setLoading(false);
                 return;
             }
@@ -58,7 +49,7 @@ function DashboardPage() {
                 setLoading(true);
                 setError(null);
                 try {
-                    const promises = [fetchIncidenciasActivas(), fetchDashboardStats()];
+                    const promises = [fetchDashboardStats()];
                     if (user.role === 'ANALISTA') {
                         promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
                     }
@@ -71,32 +62,20 @@ function DashboardPage() {
             };
             fetchInitialData();
         }
-    }, [authLoading, user, fetchIncidenciasActivas, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles]);
+    }, [authLoading, user, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles]);
 
-    // --- 3. CREAMOS UNA FUNCIÓN DE ACTUALIZACIÓN ESPECÍFICA ---
     const handleIncidenciaCreada = useCallback(() => {
         setError(null);
-    
-        // Inicia con las promesas que se ejecutan para todos los roles
-        const promisesToRun = [
-            fetchIncidenciasActivas(),
-            fetchDashboardStats()
-        ];
-    
-        // SI EL USUARIO ES UN ANALISTA, añade la promesa para refrescar sus incidencias
+        const promisesToRun = [fetchDashboardStats()];
         if (user && user.role === 'ANALISTA') {
             promisesToRun.push(fetchMisIncidencias());
         }
-    
         Promise.all(promisesToRun).catch(err => {
             console.error("Error al actualizar widgets del dashboard:", err);
             setError(err.message);
         });
-    
-    }, [user, fetchIncidenciasActivas, fetchDashboardStats, fetchMisIncidencias]);
-    
+    }, [user, fetchDashboardStats, fetchMisIncidencias]);
 
-    // --- RENDERIZADO (sin cambios en la estructura visual) ---
     if (authLoading || loading) {
         return <Container className="text-center py-5"><Spinner /></Container>;
     }
@@ -124,7 +103,6 @@ function DashboardPage() {
 
             <Row className="g-4">
                 <Col lg={5}>
-                    {/* 4. PASAMOS LA NUEVA FUNCIÓN ESPECÍFICA AL WIDGET */}
                     <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
                 </Col>
                 <Col lg={7}>
@@ -148,9 +126,6 @@ function DashboardPage() {
                                 </Col>
                             </>
                         )}
-                        <Col md={12}>
-                            <IncidenciasActivasWidget incidencias={incidenciasActivas} loading={loading} />
-                        </Col>
                     </Row>
                 </Col>
             </Row>
