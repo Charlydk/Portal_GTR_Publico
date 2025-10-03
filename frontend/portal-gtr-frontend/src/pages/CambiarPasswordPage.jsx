@@ -35,6 +35,12 @@ function CambiarPasswordPage() {
         try {
             const response = await fetchWithAuth(`${GTR_API_URL}/analistas/${user.id}/password`, {
                 method: 'PUT',
+                // --- INICIO DE LA CORRECCIÓN ---
+                // Añadimos este encabezado para decirle al backend que es un JSON
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                // --- FIN DE LA CORRECCIÓN ---
                 body: JSON.stringify({ new_password: newPassword }),
             });
 
