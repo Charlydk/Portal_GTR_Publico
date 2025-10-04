@@ -2207,17 +2207,13 @@ async def update_incidencia(
     if not db_incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
 
-
-    # --- INICIO DE LA LÓGICA DE SEGURIDAD ---
     update_dict = update_data.model_dump(exclude_unset=True)
     campos_a_sanitizar = ['titulo', 'descripcion_inicial', 'herramienta_afectada', 'indicador_afectado']
     
     for campo in campos_a_sanitizar:
         if campo in update_dict and update_dict[campo]:
             update_dict[campo] = bleach.clean(update_dict[campo])
-    # --- FIN DE LA LÓGICA DE SEGURIDAD ---
 
-    # --- LÓGICA PARA ACTUALIZAR LOS LOBS ---
     if "lob_ids" in update_dict:
         lob_ids = update_dict.pop("lob_ids")
         if lob_ids:
@@ -2225,19 +2221,32 @@ async def update_incidencia(
             db_incidencia.lobs = lobs_result.scalars().all()
         else:
             db_incidencia.lobs = []
-    # ------------------------------------
+
 
     historial_comentarios = []
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman") # Zona horaria de referencia
 
     for key, value in update_dict.items():
         old_value = getattr(db_incidencia, key)
         if old_value != value:
-            if key == "asignado_a_id":
+            
+            # Si el campo es una fecha, la formateamos
+            if isinstance(value, datetime):
+                # Aseguramos que el valor antiguo tenga zona horaria para poder convertirlo
+                old_value_aware = old_value.astimezone(pytz.utc) if old_value.tzinfo is None else old_value
+                
+                old_value_str = old_value_aware.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
+                new_value_str = value.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
+                historial_comentarios.append(f"Campo '{key}' cambiado de '{old_value_str}' a '{new_value_str}'.")
+
+            # Si es el ID del analista, buscamos su nombre
+            elif key == "asignado_a_id":
                 old_analyst_name = db_incidencia.asignado_a.nombre if db_incidencia.asignado_a else "Nadie"
-                new_analyst_result = await db.execute(select(models.Analista).filter(models.Analista.id == value))
-                new_analyst = new_analyst_result.scalars().first()
+                new_analyst = await db.get(models.Analista, value) if value else None
                 new_analyst_name = new_analyst.nombre if new_analyst else "Nadie"
                 historial_comentarios.append(f"Campo 'Asignado a' cambiado de '{old_analyst_name}' a '{new_analyst_name}'.")
+
+            # Para cualquier otro tipo de campo, lo dejamos como está
             else:
                 historial_comentarios.append(f"Campo '{key}' cambiado de '{old_value}' a '{value}'.")
             

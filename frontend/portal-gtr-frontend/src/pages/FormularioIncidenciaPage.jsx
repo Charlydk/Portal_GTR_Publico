@@ -1,26 +1,23 @@
 // RUTA: src/pages/FormularioIncidenciaPage.jsx
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
-import { Container, Card, Spinner, Alert } from 'react-bootstrap';
-import FormularioIncidencia from '../components/incidencias/FormularioIncidencia'; // <-- IMPORTAMOS EL NUEVO COMPONENTE
+import { Container, Card, Spinner } from 'react-bootstrap';
+import FormularioIncidencia from '../components/incidencias/FormularioIncidencia';
 
 function FormularioIncidenciaPage() {
     const { id } = useParams();
     const isEditing = !!id;
     const navigate = useNavigate();
-    const location = useLocation();
     const { authToken } = useAuth();
     
-    const queryParams = new URLSearchParams(location.search);
-    const campanaIdFromQuery = queryParams.get('campanaId');
-
+    const [incidencia, setIncidencia] = useState(null);
     const [formData, setFormData] = useState({
         titulo: '', descripcion_inicial: '', herramienta_afectada: '',
         indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA',
-        campana_id: campanaIdFromQuery || '', asignado_a_id: ''
+        campana_id: '', asignado_a_id: ''
     });
 
     const [campanas, setCampanas] = useState([]);
@@ -29,12 +26,39 @@ function FormularioIncidenciaPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    // --- 1. AÑADIMOS ESTADOS PARA LOS LOBS ---
+    const [lobs, setLobs] = useState([]);
+    const [loadingLobs, setLoadingLobs] = useState(false);
+
+    // --- 2. CREAMOS UNA FUNCIÓN PARA BUSCAR LOBS ---
+    const fetchLobs = useCallback(async (campanaId) => {
+        if (!authToken || !campanaId) {
+            setLobs([]);
+            return;
+        }
+        setLoadingLobs(true);
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/lobs`, {});
+            if (!response.ok) {
+                setLobs([]);
+                console.error("No se pudieron cargar los LOBs.");
+                return;
+            }
+            setLobs(await response.json());
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoadingLobs(false);
+        }
+    }, [authToken]);
+
+
     const fetchData = useCallback(async () => {
         if (!authToken) return;
         setLoading(true);
         try {
             const [campanasRes, analistasRes] = await Promise.all([
-                fetchWithAuth(`${GTR_API_URL}/campanas/`, {}),
+                fetchWithAuth(`${GTR_API_URL}/campanas/listado-simple/`, {}),
                 fetchWithAuth(`${GTR_API_URL}/analistas/listado-simple/`, {})
             ]);
             if (!campanasRes.ok || !analistasRes.ok) throw new Error('No se pudieron cargar los datos necesarios.');
@@ -45,6 +69,8 @@ function FormularioIncidenciaPage() {
                 const incidenciaRes = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}`, {});
                 if (!incidenciaRes.ok) throw new Error('No se pudo cargar la incidencia para editar.');
                 const incidenciaData = await incidenciaRes.json();
+                
+                setIncidencia(incidenciaData);
                 setFormData({
                     titulo: incidenciaData.titulo || '',
                     descripcion_inicial: incidenciaData.descripcion_inicial || '',
@@ -53,41 +79,48 @@ function FormularioIncidenciaPage() {
                     tipo: incidenciaData.tipo || 'TECNICA',
                     gravedad: incidenciaData.gravedad || 'MEDIA',
                     campana_id: incidenciaData.campana?.id || '',
-                    asignado_a_id: incidenciaData.asignado_a?.id || ''
+                    asignado_a_id: incidenciaData.asignado_a?.id || '',
+                    fecha_apertura: incidenciaData.fecha_apertura
                 });
+
+                // --- 3. LLAMAMOS A LA FUNCIÓN PARA CARGAR LOS LOBS DE LA CAMPAÑA EDITADA ---
+                if (incidenciaData.campana?.id) {
+                    fetchLobs(incidenciaData.campana.id);
+                }
             }
         } catch (err) {
             setError(err.message);
         } finally {
             setLoading(false);
         }
-    }, [authToken, id, isEditing]);
+    }, [authToken, id, isEditing, fetchLobs]);
 
     useEffect(() => {
         fetchData();
     }, [fetchData]);
 
+    // --- 4. AÑADIMOS UN useEffect PARA RECARGAR LOBS SI SE CAMBIA LA CAMPAÑA MANUALMENTE ---
+    useEffect(() => {
+        if (formData.campana_id) {
+            fetchLobs(formData.campana_id);
+        }
+    }, [formData.campana_id, fetchLobs]);
+
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSubmit = async (e) => { // La `e` viene del formulario hijo, pero es en realidad el payload
+    const handleSubmit = async (payload) => {
         setIsSubmitting(true);
         setError(null);
-    
-        // Ya no necesitamos e.preventDefault() porque el hijo no es un form real
-        const payload = e; // El argumento 'e' es ahora nuestro payload de datos
     
         const url = isEditing ? `${GTR_API_URL}/incidencias/${id}` : `${GTR_API_URL}/incidencias/`;
         const method = isEditing ? 'PUT' : 'POST';
     
         try {
-            // AÑADIMOS el header 'Content-Type'
             const response = await fetchWithAuth(url, {
                 method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
     
@@ -104,7 +137,7 @@ function FormularioIncidenciaPage() {
         }
     };
 
-    if (loading && !isEditing) return <Container className="text-center py-5"><Spinner /></Container>;
+    if (loading) return <Container className="text-center py-5"><Spinner /></Container>;
 
     return (
         <Container className="py-5">
@@ -121,7 +154,11 @@ function FormularioIncidenciaPage() {
                         campanas={campanas}
                         analistas={analistas}
                         error={error}
-                        campanaIdFromQuery={campanaIdFromQuery}
+                        selectedLobs={incidencia?.lobs || []}
+
+                        // --- 5. PASAMOS LOS NUEVOS DATOS AL FORMULARIO ---
+                        lobs={lobs}
+                        loadingLobs={loadingLobs}
                     />
                 </Card.Body>
             </Card>

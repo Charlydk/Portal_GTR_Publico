@@ -304,6 +304,7 @@ class IncidenciaUpdate(BaseModel):
     campana_id: Optional[int] = None
     asignado_a_id: Optional[int] = None
     lob_ids: Optional[List[int]] = []
+    fecha_apertura: Optional[datetime] = None
 
 class IncidenciaExportFilters(BaseModel):
     fecha_inicio: Optional[date] = None

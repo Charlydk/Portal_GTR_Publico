@@ -1,4 +1,5 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
 import { GTR_API_URL, fetchWithAuth } from '../../api';
@@ -21,15 +22,13 @@ function PanelRegistroWidget({ onUpdate }) {
         campanas: true, log: false, lobs: false, submitBitacora: false, submitIncidencia: false
     });
     const [error, setError] = useState({ campanas: null, log: null, lobs: null, submit: null });
-    const [selectedLobIds, setSelectedLobIds] = useState([]);
 
     const fetchCampanas = useCallback(async () => {
         setLoading(prev => ({ ...prev, campanas: true }));
         try {
             const response = await fetchWithAuth(`${GTR_API_URL}/campanas/listado-simple/`, {});
             if (!response.ok) throw new Error('No se pudieron cargar las campañas.');
-            const data = await response.json();
-            setCampanas(data);
+            setCampanas(await response.json());
         } catch (err) {
             setError(prev => ({ ...prev, campanas: err.message }));
         } finally {
@@ -52,15 +51,11 @@ function PanelRegistroWidget({ onUpdate }) {
     }, []);
 
     const fetchLogDiario = useCallback(async (campanaId) => {
-        if (!campanaId) {
-            setLogDiario([]);
-            return;
-        }
+        if (!campanaId) { setLogDiario([]); return; }
         setLoading(prev => ({ ...prev, log: true }));
         setError(prev => ({ ...prev, log: null }));
         try {
             const url = `${GTR_API_URL}/bitacora/log_de_hoy/${campanaId}`;
-            
             const response = await fetchWithAuth(url, {});
             if (!response.ok) {
                 if (response.status === 404) { setLogDiario([]); return; }
@@ -93,7 +88,6 @@ function PanelRegistroWidget({ onUpdate }) {
     const handleCampanaChange = (e) => {
         setSelectedCampana(e.target.value);
         setSelectedLob('');
-        setSelectedLobIds([]);
     };
     
     const generarOpcionesHorario = () => {
@@ -128,14 +122,12 @@ function PanelRegistroWidget({ onUpdate }) {
             const url = editingEntry ? `${GTR_API_URL}/bitacora_entries/${editingEntry.id}` : `${GTR_API_URL}/bitacora_entries/`;
             const method = editingEntry ? 'PUT' : 'POST';
             
-            // CAMBIO: El payload ya no lleva la fecha. El backend se encarga.
             const payload = {
                 ...bitacoraData,
                 campana_id: parseInt(selectedCampana),
                 lob_id: selectedLob ? parseInt(selectedLob) : null,
             };
 
-            // Si estamos editando, sí necesitamos enviar la fecha que ya tiene la entrada
             if (editingEntry) {
                 payload.fecha = editingEntry.fecha;
             }
@@ -179,10 +171,6 @@ function PanelRegistroWidget({ onUpdate }) {
         setIncidenciaData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const handleLobChange = (lobId) => {
-        setSelectedLobIds(prev => prev.includes(lobId) ? prev.filter(id => id !== lobId) : [...prev, lobId]);
-    };
-
     const handleIncidenciaSubmit = async (payloadFromForm) => {
         setLoading(prev => ({ ...prev, submitIncidencia: true }));
         setError(prev => ({ ...prev, submit: null }));
@@ -200,7 +188,6 @@ function PanelRegistroWidget({ onUpdate }) {
                 titulo: '', descripcion_inicial: '', herramienta_afectada: '',
                 indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: selectedCampana
             });
-            setSelectedLobIds([]);
             if(onUpdate) onUpdate();
         } catch (err) {
             setError(prev => ({ ...prev, submit: err.message }));
@@ -216,8 +203,8 @@ function PanelRegistroWidget({ onUpdate }) {
                     <Col xs={5}><h5 className="mb-0">Registro Rápido</h5></Col>
                     <Col xs={7}>
                         {loading.campanas ? <Spinner size="sm" /> : (
-                            <Form.Select size="lg" value={selectedCampana} onChange={handleCampanaChange}>
-                                <option value="">Seleccione campaña...</option>
+                            <Form.Select value={selectedCampana} onChange={handleCampanaChange}>
+                                <option value="">Seleccione una campaña...</option>
                                 {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                             </Form.Select>
                         )}
@@ -260,7 +247,9 @@ function PanelRegistroWidget({ onUpdate }) {
                                                     <strong>{entry.hora.substring(0, 5)}:</strong>
                                                     {entry.lob && <Badge bg="info" text="dark" className="ms-2">{entry.lob.nombre}</Badge>}
                                                     <span className="ms-2">{entry.comentario}</span><br />
-                                                    <small className="text-muted">Por: {entry.autor.nombre}</small>
+                                                    <small className="text-muted">
+                                                        Por: {entry.autor?.nombre || 'Autor Desconocido'}
+                                                    </small>
                                                 </div>
                                                 <Button variant="outline-secondary" size="sm" onClick={() => handleEditClick(entry)}>Editar</Button>
                                             </ListGroup.Item>
@@ -277,8 +266,6 @@ function PanelRegistroWidget({ onUpdate }) {
                                     campanas={campanas}
                                     lobs={lobs}
                                     loadingLobs={loading.lobs}
-                                    selectedLobIds={selectedLobIds}
-                                    handleLobChange={handleLobChange}
                                     hideCampanaSelector={true}
                                 />
                             </Tab.Pane>
