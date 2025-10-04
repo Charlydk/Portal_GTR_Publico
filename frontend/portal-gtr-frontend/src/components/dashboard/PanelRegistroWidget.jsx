@@ -1,7 +1,6 @@
 // RUTA: src/components/dashboard/PanelRegistroWidget.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Form, Button, Spinner, Alert, Col, Row, ListGroup, Tabs, Tab, Badge } from 'react-bootstrap';
-import { useAuth } from '../../hooks/useAuth';
 import { GTR_API_URL, fetchWithAuth } from '../../api';
 import FormularioIncidencia from '../incidencias/FormularioIncidencia';
 
@@ -23,15 +22,6 @@ function PanelRegistroWidget({ onUpdate }) {
     });
     const [error, setError] = useState({ campanas: null, log: null, lobs: null, submit: null });
     const [selectedLobIds, setSelectedLobIds] = useState([]);
-
-    // Función centralizada para obtener la fecha local del navegador
-    const getLocalDateString = () => {
-        const hoy = new Date();
-        const anio = hoy.getFullYear();
-        const mes = String(hoy.getMonth() + 1).padStart(2, '0');
-        const dia = String(hoy.getDate()).padStart(2, '0');
-        return `${anio}-${mes}-${dia}`;
-    };
 
     const fetchCampanas = useCallback(async () => {
         setLoading(prev => ({ ...prev, campanas: true }));
@@ -69,8 +59,6 @@ function PanelRegistroWidget({ onUpdate }) {
         setLoading(prev => ({ ...prev, log: true }));
         setError(prev => ({ ...prev, log: null }));
         try {
-            // --- CAMBIO DEFINITIVO ---
-            // Llamamos al nuevo endpoint que no necesita parámetros de fecha
             const url = `${GTR_API_URL}/bitacora/log_de_hoy/${campanaId}`;
             
             const response = await fetchWithAuth(url, {});

@@ -4,6 +4,7 @@ import pandas as pd
 import io
 import bleach
 import pytz
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.models import Campana, AnalistaConCampanas
@@ -14,7 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func
-from sqlalchemy import case, text
+from sqlalchemy import case, text, select, delete
 from ..database import get_db
 from ..sql_app import models
 from ..enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
@@ -701,17 +702,35 @@ async def actualizar_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    db_campana_result = await db.execute(select(models.Campana).where(models.Campana.id == campana_id))
-    campana_existente = db_campana_result.scalars().first()
-
-    if campana_existente is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada")
-
-    campana_data = campana_update.model_dump(exclude_unset=True)
-    for key, value in campana_data.items():
-        setattr(campana_existente, key, value)
+    # --- INICIO DE LA LÍNEA DE DEPURACIÓN ---
+    # Esta línea nos mostrará exactamente qué datos llegan desde el frontend.
+    print(f"\n\n--- [DEBUG] DATOS CRUDOS RECIBIDOS POR LA API ---\n{campana_update.model_dump_json(indent=2)}\n---------------------------------------------\n\n")
+    # --- FIN DE LA LÍNEA DE DEPURACIÓN ---
 
     try:
+        result = await db.execute(
+            select(models.Campana).options(selectinload(models.Campana.lobs)).filter(models.Campana.id == campana_id)
+        )
+        campana_existente = result.scalars().first()
+
+        if campana_existente is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada")
+
+        campana_data = campana_update.model_dump(exclude_unset=True)
+        nuevos_lobs_nombres = campana_data.pop("lobs_nombres", None)
+
+        for key, value in campana_data.items():
+            setattr(campana_existente, key, value)
+
+        if nuevos_lobs_nombres is not None:
+            campana_existente.lobs.clear()
+            await db.flush()
+
+            for nombre in nuevos_lobs_nombres:
+                if nombre.strip():
+                    nuevo_lob = models.LOB(nombre=bleach.clean(nombre.strip()), campana_id=campana_existente.id)
+                    db.add(nuevo_lob)
+        
         await db.commit()
         await db.refresh(campana_existente)
     except Exception as e:
@@ -721,22 +740,16 @@ async def actualizar_campana(
             detail=f"Error inesperado al actualizar campaña: {e}"
         )
     
+    # Recargamos la campaña con los datos necesarios para la respuesta
     updated_campana_result = await db.execute(
         select(models.Campana)
         .filter(models.Campana.id == campana_id)
         .options(
-            selectinload(models.Campana.analistas_asignados),
-            selectinload(models.Campana.tareas),
-            selectinload(models.Campana.avisos),
-            selectinload(models.Campana.bitacora_entries),
-            # CORRECCIÓN: Usar el nuevo nombre de la relación
-            selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias)
+            selectinload(models.Campana.lobs),
+            selectinload(models.Campana.analistas_asignados)
         )
     )
     updated_campana = updated_campana_result.scalars().first()
-    if not updated_campana:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar la campaña después de la actualización.")
     
     return updated_campana
 

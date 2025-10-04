@@ -547,11 +547,3 @@ class Lob(LobBase):
         from_attributes = True # Permite que Pydantic lea los datos desde el modelo ORM
 
 
-# --- Esquema para Campana ---
-# Define qué campos de una Campana quieres mostrar.
-# ¡Lo más importante es que incluimos una lista de Lobs!
-class CampanaBase(BaseModel):
-    nombre: str
-    descripcion: Optional[str] = None
-    fecha_inicio: Optional[datetime] = None
-    fecha_fin: Optional[datetime] = None

@@ -12,48 +12,74 @@ function FormularioCampanaPage() {
     const { authToken } = useAuth();
     const isEditing = !!id;
 
-    // --- ESTADO PRINCIPAL ---
     const [formData, setFormData] = useState({
         nombre: '',
         descripcion: '',
         fecha_inicio: '',
         fecha_fin: '',
     });
-    // --- NUEVO ESTADO PARA MANEJAR LOS LOBS ---
-    const [lobs, setLobs] = useState(['']); // Empezamos con un LOB vacío
-
+    const [lobs, setLobs] = useState(['']); 
     const [loading, setLoading] = useState(isEditing);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
 
-    // --- LÓGICA PARA MANEJAR LOS LOBS ---
-    
-    // Cambia el valor de un LOB específico por su índice
     const handleLobChange = (index, event) => {
         const nuevosLobs = [...lobs];
         nuevosLobs[index] = event.target.value;
         setLobs(nuevosLobs);
     };
 
-    // Añade un nuevo campo de LOB vacío a la lista
     const handleAddLob = () => {
         setLobs([...lobs, '']);
     };
 
-    // Quita un campo de LOB de la lista por su índice
     const handleRemoveLob = (index) => {
-        const nuevosLobs = [...lobs];
-        nuevosLobs.splice(index, 1);
-        setLobs(nuevosLobs);
+        // Solo permite eliminar si hay más de un campo
+        if (lobs.length > 1) {
+            const nuevosLobs = lobs.filter((_, i) => i !== index);
+            setLobs(nuevosLobs);
+        } else {
+            // Si es el último, simplemente lo vacía
+            setLobs(['']);
+        }
     };
     
-    // --- LÓGICA PRINCIPAL DEL FORMULARIO ---
-
-    // Cargar datos si estamos en modo edición (la dejaremos preparada para el futuro)
+    // --- FUNCIÓN DE CARGA DE DATOS (AHORA IMPLEMENTADA) ---
     const fetchCampana = useCallback(async () => {
-        // ... (La lógica de edición la implementaremos más adelante) ...
-        setLoading(false);
+        if (!isEditing || !authToken) {
+            setLoading(false);
+            return;
+        }
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${id}`);
+            if (!response.ok) {
+                throw new Error('No se pudo cargar la información de la campaña.');
+            }
+            const data = await response.json();
+
+            // Función para formatear fechas para el input type="date"
+            const formatDateForInput = (dateString) => {
+                if (!dateString) return '';
+                return new Date(dateString).toISOString().split('T')[0];
+            };
+            
+            setFormData({
+                nombre: data.nombre || '',
+                descripcion: data.descripcion || '',
+                fecha_inicio: formatDateForInput(data.fecha_inicio),
+                fecha_fin: formatDateForInput(data.fecha_fin),
+            });
+
+            // Cargamos los LOBs existentes
+            const lobsExistentes = data.lobs.map(lob => lob.nombre);
+            setLobs(lobsExistentes.length > 0 ? lobsExistentes : ['']);
+
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
     }, [id, isEditing, authToken]);
 
     useEffect(() => {
@@ -64,13 +90,13 @@ function FormularioCampanaPage() {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
+    // --- FUNCIÓN DE GUARDADO (AHORA MANEJA EDICIÓN Y CREACIÓN) ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSubmitting(true);
         setError(null);
         setSuccess(null);
 
-        // Filtramos los LOBs para no enviar campos vacíos
         const lobs_nombres_filtrados = lobs.filter(lob => lob.trim() !== '');
 
         const payload = {
@@ -80,22 +106,23 @@ function FormularioCampanaPage() {
             lobs_nombres: lobs_nombres_filtrados
         };
 
+        const method = isEditing ? 'PUT' : 'POST';
+        const url = isEditing ? `${GTR_API_URL}/campanas/${id}` : `${GTR_API_URL}/campanas/`;
+
         try {
-            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/`, {
-                method: 'POST',
-                headers: {
-                'Content-Type': 'application/json'
-            },
+            const response = await fetchWithAuth(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
 
             if (!response.ok) {
                 const errorData = await response.json();
-                throw new Error(errorData.detail || `Error al crear la campaña.`);
+                throw new Error(errorData.detail || `Error al ${isEditing ? 'actualizar' : 'crear'} la campaña.`);
             }
 
             const result = await response.json();
-            setSuccess(`Campaña "${result.nombre}" creada con éxito!`);
+            setSuccess(`Campaña "${result.nombre}" ${isEditing ? 'actualizada' : 'creada'} con éxito!`);
             setTimeout(() => navigate(`/campanas/${result.id}`), 2000);
 
         } catch (err) {
@@ -129,7 +156,6 @@ function FormularioCampanaPage() {
 
                     <hr />
 
-                    {/* --- SECCIÓN DINÁMICA PARA LOBS --- */}
                     <Form.Group className="mb-3">
                         <Form.Label>Líneas de Negocio (LOBs)</Form.Label>
                         {lobs.map((lob, index) => (
@@ -140,7 +166,7 @@ function FormularioCampanaPage() {
                                     value={lob}
                                     onChange={(e) => handleLobChange(index, e)}
                                 />
-                                <Button variant="outline-danger" onClick={() => handleRemoveLob(index)} disabled={lobs.length <= 1}>
+                                <Button variant="outline-danger" onClick={() => handleRemoveLob(index)}>
                                     ✕
                                 </Button>
                             </InputGroup>
@@ -152,7 +178,7 @@ function FormularioCampanaPage() {
                     
                     <div className="d-grid gap-2 mt-4">
                         <Button variant="primary" type="submit" disabled={submitting}>
-                            {submitting ? <Spinner as="span" size="sm" /> : 'Crear Campaña'}
+                            {submitting ? <Spinner as="span" size="sm" /> : (isEditing ? 'Actualizar Campaña' : 'Crear Campaña')}
                         </Button>
                         <Button variant="secondary" onClick={() => navigate('/campanas')} disabled={submitting}>
                             Cancelar
