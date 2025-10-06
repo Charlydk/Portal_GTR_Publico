@@ -220,7 +220,7 @@ function PanelRegistroWidget({ onUpdate }) {
                 ) : (
                     <>
                         <Tabs activeKey={key} onSelect={(k) => setKey(k)} id="registro-tabs" className="mb-3" fill>
-                            <Tab eventKey="bitacora" title="Bitácora"></Tab>
+                            <Tab eventKey="bitacora" title="Eventos"></Tab>
                             <Tab eventKey="incidencia" title="Incidencia"></Tab>
                         </Tabs>
                         <Tab.Content>

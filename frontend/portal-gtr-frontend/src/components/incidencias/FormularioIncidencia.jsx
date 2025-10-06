@@ -45,16 +45,17 @@ function FormularioIncidencia({
     const [fechaManual, setFechaManual] = useState('');
 
     useEffect(() => {
-        if (isEditing && Array.isArray(selectedLobs)) {
-            setSelectedLobIds(selectedLobs.map(lob => lob.id));
-        }
-        
-        if (isEditing && formData.fecha_apertura) {
-            setUsarAhora(false);
-            setFechaManual(toLocalISOString(formData.fecha_apertura));
-        } else if (!isEditing) {
-            setUsarAhora(true);
-            setFechaManual('');
+        if (isEditing) {
+            // Sincroniza los LOBs seleccionados
+            if (Array.isArray(selectedLobs)) {
+                setSelectedLobIds(selectedLobs.map(lob => lob.id));
+            }
+            
+            // Sincroniza la fecha de apertura
+            if (formData.fecha_apertura) {
+                setUsarAhora(false);
+                setFechaManual(new Date(formData.fecha_apertura));
+            }
         }
     }, [selectedLobs, formData.fecha_apertura, isEditing]);
 
