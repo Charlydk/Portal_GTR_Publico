@@ -114,6 +114,9 @@ function AprobacionHHEEPage() {
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/hhee/solicitudes/procesar-lote/`, {
                 method: 'POST',
+                headers: {
+            'Content-Type': 'application/json'
+             },
                 body: JSON.stringify({ decisiones }),
             });
             if (!response.ok) {
