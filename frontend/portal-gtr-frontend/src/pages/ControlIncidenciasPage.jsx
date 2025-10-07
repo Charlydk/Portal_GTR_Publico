@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table, Badge } from 'react-bootstrap';
+import { Container, Card, Spinner, Alert, Form, Button, Row, Col, Table, Badge, Modal, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL, fetchWithAuth } from '../api';
 import { formatDateTime } from '../utils/dateFormatter';
+import HistorialItem from '../components/incidencias/HistorialItem';
 
 function ControlIncidenciasPage() {
-    const { authToken } = useAuth();
+    const { authToken, user } = useAuth();
     const location = useLocation(); // Hook para leer la URL
 
     const [incidencias, setIncidencias] = useState([]);
@@ -27,6 +28,10 @@ function ControlIncidenciasPage() {
 
     const [listaCampanas, setListaCampanas] = useState([]);
     const [listaAnalistas, setListaAnalistas] = useState([]);
+
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [selectedIncidence, setSelectedIncidence] = useState(null);
+    const [loadingDetail, setLoadingDetail] = useState(false);
 
     const fetchFilterData = useCallback(async () => {
         if (!authToken) return;
@@ -119,6 +124,56 @@ function ControlIncidenciasPage() {
         return map[estado] || 'secondary';
     };
 
+    const handleShowDetail = async (incidenciaId) => {
+        setShowDetailModal(true);
+        setLoadingDetail(true);
+        setError(null);
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${incidenciaId}`);
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || "No se pudo cargar el detalle de la incidencia.");
+            }
+            setSelectedIncidence(await response.json());
+        } catch (err) {
+            setError(err.message);
+            // Si hay un error, cerramos el modal para mostrar el error principal
+            setShowDetailModal(false); 
+        } finally {
+            setLoadingDetail(false);
+        }
+    };
+
+    const handleCloseDetail = () => {
+        setShowDetailModal(false);
+        setSelectedIncidence(null); // Limpiamos la incidencia seleccionada
+    };
+
+    const handleAssignToMe = async (incidenciaId) => {
+        setLoadingDetail(true); // Reutilizamos el spinner del modal
+        setError(null);
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${incidenciaId}/asignar`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'No se pudo asignar la incidencia.');
+            }
+            // Si tiene éxito, cerramos el modal y refrescamos la lista principal
+            handleCloseDetail();
+            fetchIncidencias(filtros);
+        } catch (err) {
+            setError(err.message);
+            setLoadingDetail(false); // Detenemos el spinner si hay error
+        }
+    };
+
+    const canEdit = user && ['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+
+
     return (
         <Container fluid className="py-4">
             <Card className="shadow-lg">
@@ -186,7 +241,7 @@ function ControlIncidenciasPage() {
                                             <td><Badge bg={getStatusVariant(inc.estado)}>{inc.estado.replace('_', ' ')}</Badge></td>
                                             <td>
                                                 {inc.estado === 'CERRADA' && inc.cerrado_por 
-                                                    ? <span title={`Cerrada por ${inc.cerrado_por.nombre}`}>{inc.cerrado_por.nombre}</span>
+                                                    ? <span title={`Cerrada por ${inc.cerrado_por.nombre}`}>{inc.cerrado_por.nombre} {inc.cerrado_por.apellido}</span>
                                                     : inc.asignado_a 
                                                         ? `${inc.asignado_a.nombre} ${inc.asignado_a.apellido}` 
                                                         : <span className="text-muted fst-italic">Sin Asignar</span>}
@@ -194,9 +249,9 @@ function ControlIncidenciasPage() {
                                             <td>{formatDateTime(inc.fecha_apertura)}</td>
                                             <td>{formatDateTime(inc.fecha_cierre)}</td>
                                             <td>
-                                                <Link to={`/incidencias/${inc.id}`}>
-                                                    <Button variant="outline-primary" size="sm">Ver Detalle</Button>
-                                                </Link>
+                                                <Button variant="outline-primary" size="sm" onClick={() => handleShowDetail(inc.id)}>
+                                                    Ver Detalle
+                                                </Button>
                                             </td>
                                         </tr>
                                     ))
@@ -208,6 +263,87 @@ function ControlIncidenciasPage() {
                     </div>
                 </Card.Body>
             </Card>
+
+            <Modal show={showDetailModal} onHide={handleCloseDetail} size="lg" centered>
+                <Modal.Header closeButton>
+                    <Modal.Title>Detalle de Incidencia: #{selectedIncidence?.id}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {loadingDetail ? (
+                        <div className="text-center"><Spinner /></div>
+                    ) : selectedIncidence ? (
+                        <>
+                            <h4>{selectedIncidence.titulo}</h4>
+                            <hr />
+                            <Row>
+                                <Col md={6}>
+                                    {/* --- INICIO DE LA CORRECCIÓN --- */}
+                                    <p><strong>Campaña:</strong> {selectedIncidence.campana?.nombre || 'N/A'}</p>
+                                    <p><strong>Creador:</strong> {selectedIncidence.creador?.nombre || 'Usuario'} {selectedIncidence.creador?.apellido || 'Desconocido'}</p>
+                                    <p><strong>Responsable:</strong> 
+                                    {selectedIncidence.estado === 'CERRADA' && selectedIncidence.cerrado_por
+                                        ? <span title={`Cerrada por ${selectedIncidence.cerrado_por.nombre}`}>{selectedIncidence.cerrado_por.nombre} {selectedIncidence.cerrado_por.apellido}</span>
+                                        : selectedIncidence.asignado_a
+                                            ? `${selectedIncidence.asignado_a.nombre} ${selectedIncidence.asignado_a.apellido}`
+                                            : 'Sin Asignar'
+                                    }
+                                </p>
+
+                                <p><strong>Estado:</strong> <Badge bg={getStatusVariant(selectedIncidence.estado)}>{selectedIncidence.estado}</Badge></p>
+                                    </Col>
+                                <Col md={6}>
+                                    <p><strong>Gravedad:</strong> <Badge bg={selectedIncidence.gravedad === 'ALTA' ? 'danger' : 'warning'}>{selectedIncidence.gravedad}</Badge></p>
+                                    <p><strong>Herramienta Afectada:</strong> {selectedIncidence.herramienta_afectada || 'N/A'}</p>
+                                    <p><strong>Indicador Afectado:</strong> {selectedIncidence.indicador_afectado || 'N/A'}</p>
+                                    <p><strong>Fecha Apertura:</strong> {formatDateTime(selectedIncidence.fecha_apertura)}</p>
+                                </Col>
+                            </Row>
+                            <hr />
+                            <h5>Descripción</h5>
+                            <p>{selectedIncidence.descripcion_inicial}</p>
+                            
+                            <h5>Historial de Actualizaciones</h5>
+
+                            {selectedIncidence.actualizaciones?.length > 0 ? (
+                                <ListGroup variant="flush">
+                                    {selectedIncidence.actualizaciones
+                                        .sort((a, b) => new Date(b.fecha_actualizacion) - new Date(a.fecha_actualizacion)) // Ordenamos
+                                        .map(act => (
+                                            <HistorialItem key={act.id} actualizacion={act} />
+                                        ))}
+                                </ListGroup>
+                            ) : (
+                                <p className="text-muted">No hay actualizaciones para esta incidencia.</p>
+                            )}
+                        </>
+                    ) : (
+                        <p>No se pudo cargar la información de la incidencia.</p>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleCloseDetail}>
+                        Cerrar
+                    </Button>
+                    
+                    {/* Botón para Asignarse a uno mismo (si está libre y no es tuya) */}
+                    {user && selectedIncidence && selectedIncidence.asignado_a?.id !== user.id && selectedIncidence.estado !== 'CERRADA' && (
+                        <Button variant="info" onClick={() => handleAssignToMe(selectedIncidence.id)} disabled={loadingDetail}>
+                            {loadingDetail ? <Spinner size="sm"/> : 'Asignar a Mí'}
+                        </Button>
+                    )}
+                    
+                    {/* Botón para ir a la página de detalles completos */}
+                    {selectedIncidence && (
+                        // Añadimos target y rel para abrir en una nueva pestaña de forma segura
+                        <Link to={`/incidencias/${selectedIncidence.id}`} target="_blank" rel="noopener noreferrer">
+                            <Button variant="primary" onClick={handleCloseDetail}>
+                                Ver / Gestionar Detalles
+                            </Button>
+                        </Link>
+                    )}
+                </Modal.Footer>
+            </Modal>
+
         </Container>
     );
 }

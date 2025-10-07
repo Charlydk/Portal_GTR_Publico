@@ -11,7 +11,7 @@ from ..schemas.models import Campana, AnalistaConCampanas
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func
@@ -2370,27 +2370,42 @@ async def update_incidencia_estado(
     estado_anterior = db_incidencia.estado.value
     db_incidencia.estado = update_data.estado
 
-    comentario_final = f"El estado de la incidencia cambió de '{estado_anterior}' a '{update_data.estado.value}'."
-    
+
+    # 1. Creamos la actualización del cambio de estado.
+    comentario_cambio_estado = f"El estado de la incidencia cambió de '{estado_anterior}' a '{update_data.estado.value}'."
+    actualizacion_estado = models.ActualizacionIncidencia(
+        comentario=comentario_cambio_estado,
+        incidencia_id=incidencia_id,
+        autor_id=current_analista.id
+    )
+    db.add(actualizacion_estado)
+
+    # 2. Manejamos la lógica específica para el cierre.
     if update_data.estado == EstadoIncidencia.CERRADA:
-        db_incidencia.fecha_cierre = update_data.fecha_cierre or datetime.utcnow()
+        # Si el usuario no manda una fecha manual, le decimos a la BD que ponga la hora actual.
+        if update_data.fecha_cierre:
+            db_incidencia.fecha_cierre = update_data.fecha_cierre
+        else:
+            db_incidencia.fecha_cierre = func.now() # <-- CAMBIO CLAVE
+        
         db_incidencia.asignado_a_id = None
-        db_incidencia.cerrado_por_id = current_analista.id
+        
+        # 3. Si hay un comentario de cierre, creamos una SEGUNDA actualización.
         if update_data.comentario_cierre:
-            comentario_final += f"\nComentario de cierre: {update_data.comentario_cierre}"
+            texto_comentario_cierre = f"Comentario de Cierre: {update_data.comentario_cierre}"
+            actualizacion_cierre = models.ActualizacionIncidencia(
+                comentario=texto_comentario_cierre,
+                incidencia_id=incidencia_id,
+                autor_id=current_analista.id
+            )
+            db.add(actualizacion_cierre)
 
     elif update_data.estado == EstadoIncidencia.ABIERTA:
         db_incidencia.fecha_cierre = None
         db_incidencia.asignado_a_id = None
         db_incidencia.cerrado_por_id = None
 
-    nueva_actualizacion = models.ActualizacionIncidencia(
-        comentario=comentario_final,
-        incidencia_id=incidencia_id,
-        autor_id=current_analista.id
-    )
-   
-    db.add(nueva_actualizacion)
+
     await db.commit()
     
     return await get_incidencia_by_id(incidencia_id, db, current_analista)
@@ -2840,15 +2855,22 @@ async def get_mis_incidencias_asignadas(
     Devuelve una lista de incidencias activas asignadas al analista
     que realiza la petición.
     """
-    # Esta consulta ahora es más ligera y no carga LOBs innecesarios para el widget.
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Añadimos los `selectinload` necesarios para que el response_model 'IncidenciaSimple'
+    # tenga todos los datos que necesita (creador, cerrado_por, etc.)
     query = select(models.Incidencia).options(
-        selectinload(models.Incidencia.campana)
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.lobs),
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.cerrado_por),
+        selectinload(models.Incidencia.asignado_a)
     ).filter(
         models.Incidencia.asignado_a_id == current_analista.id,
         models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
     ).order_by(
         models.Incidencia.fecha_apertura.asc()
     )
+    # --- FIN DE LA CORRECCIÓN ---
     
     result = await db.execute(query)
     return result.scalars().unique().all()

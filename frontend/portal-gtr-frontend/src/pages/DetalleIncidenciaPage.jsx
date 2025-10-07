@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { formatDateTime } from '../utils/dateFormatter';
+import HistorialItem from '../components/incidencias/HistorialItem';
 // CORRECCIÓN: Añadimos 'Modal' a la lista de importaciones
 import { Container, Card, Spinner, Alert, ListGroup, Badge, Form, Button, Row, Col, Modal } from 'react-bootstrap';
 
@@ -103,16 +104,20 @@ function DetalleIncidenciaPage() {
     const handleStatusChange = async (nuevoEstado, fechaCierre = null, comentario = null) => {
         setIsSubmitting(true);
         setError(null);
-    
+
         const payload = { estado: nuevoEstado };
-    
+
         if (nuevoEstado === 'CERRADA') {
             if (fechaCierre) payload.fecha_cierre = fechaCierre;
             if (comentario) payload.comentario_cierre = comentario;
         }
-    
+        
+        // --- INICIO DE LA LÍNEA DE DEPURACIÓN ---
+        // Esta línea nos mostrará en la consola del navegador exactamente lo que estamos enviando.
+        console.log("--- [DEBUG] Enviando este payload al backend:", JSON.stringify(payload, null, 2));
+        // --- FIN DE LA LÍNEA DE DEPURACIÓN ---
+
         try {
-            // CORRECCIÓN: Añadimos el header Content-Type
             const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/${id}/estado`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -161,34 +166,39 @@ function DetalleIncidenciaPage() {
                 <Card.Body>
                     <Row>
                         <Col md={6}>
-                        <p><strong>Campaña:</strong> <Link to={`/campanas/${incidencia.campana.id}`}>{incidencia.campana.nombre}</Link></p>
-
-                        <p>
-                            <strong>LOBs Afectados:</strong>
-                            {incidencia.lobs && incidencia.lobs.length > 0 ? (
-                                incidencia.lobs.map(lob => (
-                                    <Badge key={lob.id} bg="secondary" className="ms-1">
-                                        {lob.nombre}
-                                    </Badge>
-                                ))
-                            ) : (
-                                <span className="text-muted fst-italic"> N/A</span>
-                            )}
-                        </p>
-                            <p><strong>Creador:</strong> {incidencia.creador.nombre} {incidencia.creador.apellido}</p>
-                            <p><strong>Asignado a:</strong> {incidencia.asignado_a ? `${incidencia.asignado_a.nombre} ${incidencia.asignado_a.apellido}` : <span className="text-muted fst-italic">Nadie (Abierta)</span>}</p>
-                        </Col>
+                            {/* --- INICIO DE LA CORRECCIÓN --- */}
+                            <p><strong>Campaña:</strong> 
+                                {incidencia.campana ? (
+                                    <Link to={`/campanas/${incidencia.campana.id}`}>{incidencia.campana.nombre}</Link>
+                                ) : 'N/A'}
+                            </p>
+                            <p><strong>Creador:</strong> {incidencia.creador?.nombre || 'Desconocido'} {incidencia.creador?.apellido || ''}</p>
+                            {/* --- FIN DE LA CORRECCIÓN --- */}
+                            <p><strong>Responsable:</strong> 
+                                {incidencia.estado === 'CERRADA' && incidencia.cerrado_por 
+                                    ? <span title={`Cerrada por ${incidencia.cerrado_por.nombre}`}>{incidencia.cerrado_por.nombre} {incidencia.cerrado_por.apellido}</span>
+                                    : incidencia.asignado_a 
+                                        ? `${incidencia.asignado_a.nombre} ${incidencia.asignado_a.apellido}` 
+                                        : <span className="text-muted fst-italic">Sin Asignar</span>}
+                            </p>                        </Col>
                         <Col md={6}>
+                            <p><strong>LOBs Afectados:</strong>
+                                {incidencia.lobs && incidencia.lobs.length > 0 ? (
+                                    incidencia.lobs.map(lob => (<Badge key={lob.id} bg="secondary" className="ms-1">{lob.nombre}</Badge>))
+                                ) : (<span className="text-muted fst-italic"> N/A</span>)}
+                            </p>
                             <p><strong>Herramienta Afectada:</strong> {incidencia.herramienta_afectada || 'N/A'}</p>
                             <p><strong>Indicador Afectado:</strong> {incidencia.indicador_afectado || 'N/A'}</p>
                             <p><strong>Gravedad:</strong> <Badge bg={incidencia.gravedad === 'ALTA' ? 'danger' : incidencia.gravedad === 'MEDIA' ? 'warning' : 'info'}>{incidencia.gravedad}</Badge></p>
-                            <p><strong>Fecha Apertura:</strong> {formatDateTime(incidencia.fecha_apertura)}</p>
-                            <p><strong>Fecha Cierre:</strong> {formatDateTime(incidencia.fecha_cierre)}</p>
                         </Col>
                     </Row>
-                    <hr />
+                    <hr/>
                     <h5>Descripción Inicial</h5>
                     <p>{incidencia.descripcion_inicial}</p>
+                    <Row className="text-muted small mt-3">
+                        <Col><strong>Fecha Apertura:</strong> {formatDateTime(incidencia.fecha_apertura)}</Col>
+                        <Col><strong>Fecha Cierre:</strong> {formatDateTime(incidencia.fecha_cierre)}</Col>
+                    </Row>
                 </Card.Body>
             </Card>
 
@@ -196,15 +206,12 @@ function DetalleIncidenciaPage() {
                 <Card.Header as="h4">Historial de Actualizaciones</Card.Header>
                 <Card.Body>
                     <ListGroup variant="flush">
-                        {incidencia.actualizaciones.length > 0 ? (
-                            incidencia.actualizaciones.map(act => (
-                                <ListGroup.Item key={act.id} className="px-0">
-                                    <p className="mb-1">{act.comentario}</p>
-                                    <small className="text-muted">
-                                        Por {act.autor.nombre} {act.autor.apellido} el {formatDateTime(act.fecha_actualizacion)}
-                                    </small>
-                                </ListGroup.Item>
-                            ))
+                        {incidencia.actualizaciones?.length > 0 ? (
+                            incidencia.actualizaciones
+                                .sort((a, b) => new Date(b.fecha_actualizacion) - new Date(a.fecha_actualizacion)) // Ordenamos por más reciente
+                                .map(act => (
+                                    <HistorialItem key={act.id} actualizacion={act} />
+                                ))
                         ) : (
                             <p className="text-muted">No hay actualizaciones para esta incidencia.</p>
                         )}

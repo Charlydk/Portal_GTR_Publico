@@ -1,24 +1,24 @@
-// src/utils/dateFormatter.js
+// RUTA: src/utils/dateFormatter.js
 
-// Usamos "export" para que la función pueda ser importada desde otros archivos.
 export const formatDateTime = (apiDateString) => {
-    // Si no hay fecha, devuelve N/A
     if (!apiDateString) {
         return 'N/A';
     }
 
-    // Verificamos si el string ya tiene información de zona horaria ('Z' o '+').
-    const isAlreadyUtc = apiDateString.includes('Z') || apiDateString.includes('+');
+    // 1. Eliminamos los microsegundos para estandarizar el formato.
+    let cleanDateString = apiDateString.split('.')[0];
 
-    // Si NO la tiene, le añadimos la 'Z' para tratarlo como UTC.
-    const date = new Date(isAlreadyUtc ? apiDateString : apiDateString + 'Z');
+    // 2. Verificamos si ya tiene un indicador de zona horaria.
+    const isAlreadyUtc = cleanDateString.includes('Z') || cleanDateString.includes('+');
+    
+    // 3. Si no lo tiene, añadimos la 'Z' para tratarlo como UTC.
+    const date = new Date(isAlreadyUtc ? cleanDateString : cleanDateString + 'Z');
 
-    // Verificamos si la fecha parseada es válida
     if (isNaN(date.getTime())) {
         return `Fecha inválida (${apiDateString})`;
     }
 
-    // Estos métodos devuelven los componentes en la hora local del navegador
+    // 4. Estos métodos siempre devuelven los componentes en la hora local del navegador.
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -28,6 +28,3 @@ export const formatDateTime = (apiDateString) => {
 
     return `${day}/${month}/${year}, ${hours}:${minutes}:${seconds}`;
 };
-
-// En el futuro, podrías añadir más funciones relacionadas con fechas aquí.
-// export const formatDateOnly = (apiDateString) => { ... };

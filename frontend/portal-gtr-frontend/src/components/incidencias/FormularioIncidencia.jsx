@@ -4,15 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { Form, Button, Row, Col, OverlayTrigger, Tooltip, Spinner, Alert, Card } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 
-// Función para formatear fechas UTC a un string local para el input "datetime-local"
 const toLocalISOString = (dateString) => {
     if (!dateString) return '';
-    
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Le añadimos la 'Z' para decirle a JS que este string es UTC
-    const date = new Date(dateString + 'Z');
-    // --- FIN DE LA CORRECCIÓN ---
-
+    // Añadimos la 'Z' para asegurar que se interprete como UTC
+    const date = new Date(dateString.endsWith('Z') ? dateString : dateString + 'Z');
     if (isNaN(date.getTime())) return '';
 
     const year = date.getFullYear();
@@ -45,6 +40,7 @@ function FormularioIncidencia({
     const [fechaManual, setFechaManual] = useState('');
 
     useEffect(() => {
+        // Este efecto SÓLO se preocupa de rellenar el formulario en modo EDICIÓN.
         if (isEditing) {
             // Sincroniza los LOBs seleccionados
             if (Array.isArray(selectedLobs)) {
@@ -54,7 +50,7 @@ function FormularioIncidencia({
             // Sincroniza la fecha de apertura
             if (formData.fecha_apertura) {
                 setUsarAhora(false);
-                setFechaManual(new Date(formData.fecha_apertura));
+                setFechaManual(toLocalISOString(formData.fecha_apertura));
             }
         }
     }, [selectedLobs, formData.fecha_apertura, isEditing]);
@@ -69,18 +65,18 @@ function FormularioIncidencia({
         e.preventDefault();
         let payload = { ...formData, lob_ids: selectedLobIds };
 
-        if (usarAhora) {
-            if (isEditing) {
-                payload.fecha_apertura = new Date().toISOString();
-            } else {
-                delete payload.fecha_apertura;
-            }
-        } else {
+        if (!usarAhora) {
             if (!fechaManual) {
                 alert("Por favor, seleccione una fecha y hora de apertura.");
                 return;
             }
             payload.fecha_apertura = new Date(fechaManual).toISOString();
+        } else {
+            if (isEditing) {
+                payload.fecha_apertura = new Date().toISOString();
+            } else {
+                delete payload.fecha_apertura;
+            }
         }
         
         handleSubmit(payload);

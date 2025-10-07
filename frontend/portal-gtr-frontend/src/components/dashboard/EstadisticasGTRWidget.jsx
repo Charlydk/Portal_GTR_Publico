@@ -42,8 +42,7 @@ function EstadisticasGTRWidget({ stats, user, tareasDisponibles = 0 }) {
                            title="Incidencias sin Asignar" 
                            value={stats.incidencias_sin_asignar} 
                            variant="info"
-                           linkTo="/control-incidencias?asignado_a_id=0"
-                       />
+                            linkTo="/control-incidencias?asignado_a_id=0&estado=ABIERTA"                       />
                     </Col>
                     <Col>
                        <StatCard 
