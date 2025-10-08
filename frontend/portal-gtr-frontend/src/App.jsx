@@ -42,6 +42,7 @@ import MisSolicitudesHHEEPage from './pages/hhee/MisSolicitudesHHEEPage';
 import AprobacionHHEEPage from './pages/hhee/AprobacionHHEEPage';
 import HistorialAprobacionesPage from './pages/hhee/HistorialAprobacionesPage';
 import CambiarPasswordPage from './pages/CambiarPasswordPage';
+import AyudaPage from './pages/AyudaPage';
 
 
 const AppContent = () => {
@@ -79,6 +80,7 @@ const AppContent = () => {
           <Route element={<ProtectedRoute allowedRoles={['ANALISTA', 'SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']} />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/cambiar-password" element={<CambiarPasswordPage />} />
+            <Route path="/ayuda" element={<AyudaPage />} />
             <Route path="/tareas/:id" element={<DetalleTareaPage />} />
             <Route path="/tareas/editar/:id" element={<FormularioTareaPage />} />
             <Route path="/tareas/:tareaId/checklist_items/crear" element={<FormularioChecklistItemPage />} />

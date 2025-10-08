@@ -93,6 +93,8 @@ function NavbarComponent() {
                     <Nav>
                         {user ? (
                             <NavDropdown title={`Hola, ${user.nombre} (${user.role})`} id="user-nav-dropdown" align="end">
+                                <NavDropdown.Item as={Link} to="/ayuda" onClick={() => setExpanded(false)}>Ayuda</NavDropdown.Item>
+                                <NavDropdown.Divider />
                                 <NavDropdown.Item as={Link} to="/cambiar-password" onClick={() => setExpanded(false)}>Cambiar Contraseña</NavDropdown.Item>
                                 <NavDropdown.Divider />
                                 <NavDropdown.Item onClick={handleLogout}>Cerrar Sesión</NavDropdown.Item>
