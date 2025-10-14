@@ -2277,7 +2277,8 @@ async def get_incidencia_by_id(
             selectinload(models.Incidencia.campana),
             selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
             selectinload(models.Incidencia.asignado_a),
-            selectinload(models.Incidencia.lobs)
+            selectinload(models.Incidencia.lobs),
+            selectinload(models.Incidencia.cerrado_por)
         )
         .filter(models.Incidencia.id == incidencia_id)
     )
