@@ -41,9 +41,9 @@ function NavbarComponent() {
                                 {/* Estos enlaces ahora solo son visibles para Supervisores y Responsables */}
                                 {isGtrAdmin && (
                                     <>
-                                        <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
+                                        {/* <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>*/}
                                     </>
                                 )}
                                 {/* --- FIN DEL CAMBIO --- */}
