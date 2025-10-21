@@ -533,10 +533,12 @@ class DashboardStatsAnalista(BaseModel):
     mis_incidencias_asignadas: int
     incidencias_del_dia: List[IncidenciaSimple] = []
     total_incidencias_activas: int
+    incidencias_cerradas_hoy: int
 
 class DashboardStatsSupervisor(BaseModel):
     total_incidencias_activas: int
-    
+    incidencias_sin_asignar: int
+    incidencias_cerradas_hoy: int
 
 # --- Esquema para LOB ---
 # Define qué campos de un LOB quieres mostrar en la respuesta.

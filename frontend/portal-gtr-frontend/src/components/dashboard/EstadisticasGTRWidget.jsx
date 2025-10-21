@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Row, Col, Card } from 'react-bootstrap';
-import { Link } from 'react-router-dom'; // <-- 1. IMPORTAMOS Link
+import { Link } from 'react-router-dom';
 
 const StatCard = ({ title, value, variant = 'primary', linkTo = null }) => {
     const cardContent = (
@@ -13,49 +13,82 @@ const StatCard = ({ title, value, variant = 'primary', linkTo = null }) => {
             </Card.Body>
         </Card>
     );
-    // Si la tarjeta tiene un 'linkTo', la envolvemos en un Link
+
     if (linkTo) {
         return <Link to={linkTo} className="text-decoration-none h-100">{cardContent}</Link>;
     }
     return cardContent;
 };
 
-function EstadisticasGTRWidget({ stats, user, tareasDisponibles = 0 }) {
+function EstadisticasGTRWidget({ stats, user }) {
     if (!stats) return null;
 
-    return (
-        <Row className="g-3">
-            {/* --- 2. AÑADIMOS LA PROP 'linkTo' --- */}
-            <Col>
-                <StatCard 
-                    title="Total Incidencias Activas" 
-                    value={stats.total_incidencias_activas} 
-                    variant="danger" 
-                    linkTo="/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO"
-                />
-            </Col>
-            
-            {user.role === 'ANALISTA' && (
-                <>
-                    <Col>
-                       <StatCard 
-                           title="Incidencias sin Asignar" 
-                           value={stats.incidencias_sin_asignar} 
-                           variant="info"
-                            linkTo="/control-incidencias?asignado_a_id=0&estado=ABIERTA"                       />
-                    </Col>
-                    <Col>
-                       <StatCard 
-                           title="Tareas Disponibles" 
-                           value={tareasDisponibles} 
-                           variant="success"
-                           linkTo="/tareas/disponibles"
-                       />
-                    </Col>
-                </>
-            )}
-        </Row>
-    );
+    // --- VISTA PARA SUPERVISOR Y RESPONSABLE (SIN CAMBIOS) ---
+    if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
+        return (
+            <Row className="g-3">
+                <Col>
+                   <StatCard 
+                       title="Total Activas" 
+                       value={stats.total_incidencias_activas} 
+                       variant="danger" 
+                       linkTo="/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO"
+                   />
+                </Col>
+                <Col>
+                   <StatCard 
+                       title="Sin Asignar" 
+                       value={stats.incidencias_sin_asignar} 
+                       variant="warning"
+                       linkTo="/control-incidencias?asignado_a_id=0&estado=ABIERTA"
+                   />
+                </Col>
+                <Col>
+                   <StatCard 
+                       title="Cerradas Hoy" 
+                       value={stats.incidencias_cerradas_hoy} 
+                       variant="success"
+                       linkTo="/control-incidencias?estado=CERRADA" // Link a todas las cerradas
+                   />
+                </Col>
+            </Row>
+        );
+    }
+
+    // --- VISTA MEJORADA PARA ANALISTA ---
+    if (user.role === 'ANALISTA') {
+        return (
+             <Row className="g-3">
+                <Col>
+                   <StatCard 
+                       title="Total Activas" 
+                       value={stats.total_incidencias_activas} 
+                       variant="danger" 
+                       linkTo="/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO"
+                   />
+                </Col>
+                <Col>
+                   <StatCard 
+                       title="Cerradas Hoy" 
+                       value={stats.incidencias_cerradas_hoy} 
+                       variant="success" // Verde para "completado"
+                       // Este enlace filtrará por las incidencias cerradas por el usuario, hoy.
+                       linkTo={`/control-incidencias?estado=CERRADA&cerrado_por_id=${user.id}`}
+                   />
+                </Col>
+                <Col>
+                   <StatCard 
+                       title="Sin Asignar" 
+                       value={stats.incidencias_sin_asignar} 
+                       variant="warning" // Amarillo para "atención"
+                       linkTo="/control-incidencias?asignado_a_id=0&estado=ABIERTA"
+                   />
+                </Col>
+            </Row>
+        );
+    }
+
+    return null;
 }
 
 export default EstadisticasGTRWidget;
