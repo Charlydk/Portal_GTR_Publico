@@ -30,6 +30,7 @@ from ..schemas.models import (
     Campana, CampanaBase, CampanaSimple,
     Tarea, TareaBase, TareaSimple, TareaListOutput, TareaUpdate,
     ChecklistItem, ChecklistItemBase, ChecklistItemSimple, ChecklistItemUpdate,
+    PlantillaChecklistItem, PlantillaChecklistItemCreate,
     HistorialEstadoTarea,
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
@@ -2792,6 +2793,52 @@ async def get_tarea_generada_historial_estados(
     )
     historial = result.scalars().unique().all()
     return historial
+
+# --- ENDPOINTS PARA LA GESTIÓN DE PLANTILLAS DE CHECKLIST ---
+
+@router.get("/campanas/{campana_id}/plantilla", response_model=List[PlantillaChecklistItem], summary="Obtener la plantilla de checklist de una campaña")
+async def get_plantilla_por_campana(
+    campana_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    result = await db.execute(
+        select(models.PlantillaChecklistItem)
+        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
+        .order_by(models.PlantillaChecklistItem.orden)
+    )
+    return result.scalars().all()
+
+@router.post("/campanas/{campana_id}/plantilla", response_model=PlantillaChecklistItem, status_code=status.HTTP_201_CREATED, summary="Añadir un ítem a la plantilla de una campaña")
+async def add_item_a_plantilla(
+    campana_id: int,
+    item_data: PlantillaChecklistItemCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    nuevo_item = models.PlantillaChecklistItem(
+        descripcion=item_data.descripcion,
+        campana_id=campana_id
+    )
+    db.add(nuevo_item)
+    await db.commit()
+    await db.refresh(nuevo_item)
+    return nuevo_item
+
+@router.delete("/plantilla-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar un ítem de una plantilla")
+async def delete_item_de_plantilla(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    result = await db.execute(select(models.PlantillaChecklistItem).filter(models.PlantillaChecklistItem.id == item_id))
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ítem de plantilla no encontrado.")
+    
+    await db.delete(item)
+    await db.commit()
+    return
 
 # --- NUEVOS ENDPOINTS PARA WIDGETS DEL DASHBOARD ---
 

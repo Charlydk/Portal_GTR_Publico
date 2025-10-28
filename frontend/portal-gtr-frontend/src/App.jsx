@@ -43,6 +43,7 @@ import AprobacionHHEEPage from './pages/hhee/AprobacionHHEEPage';
 import HistorialAprobacionesPage from './pages/hhee/HistorialAprobacionesPage';
 import CambiarPasswordPage from './pages/CambiarPasswordPage';
 import AyudaPage from './pages/AyudaPage';
+import GestionPlantillasPage from './pages/GestionPlantillasPage.jsx';
 
 
 const AppContent = () => {
@@ -113,6 +114,7 @@ const AppContent = () => {
             <Route path="/campanas/crear" element={<FormularioCampanaPage />} />
             <Route path="/campanas/editar/:id" element={<FormularioCampanaPage />} />
             <Route path="/asignar-campanas" element={<AsignacionCampanasPage />} />
+            <Route path="/plantillas-checklist" element={<GestionPlantillasPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
           </Route>
 

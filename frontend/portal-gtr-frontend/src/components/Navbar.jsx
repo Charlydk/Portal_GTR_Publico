@@ -63,6 +63,7 @@ function NavbarComponent() {
                              <NavDropdown title="Admin GTR" id="admin-gtr-nav-dropdown">
                                 <NavDropdown.Item as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</NavDropdown.Item>
                                 <NavDropdown.Item as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/plantillas-checklist" onClick={() => setExpanded(false)}>Plantillas de Tareas</NavDropdown.Item>
                             </NavDropdown>
                         )}
                         

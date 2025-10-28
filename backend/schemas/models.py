@@ -353,6 +353,21 @@ class ChecklistItem(ChecklistItemBase):
     tarea: TareaSimple
     class Config:
         from_attributes = True
+        
+class PlantillaChecklistItemBase(BaseModel):
+    descripcion: str
+
+class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
+    pass
+
+class PlantillaChecklistItem(PlantillaChecklistItemBase):
+    id: int
+    orden: int
+    campana_id: int
+
+    class Config:
+        from_attributes = True
+
 
 class Aviso(AvisoBase):
     id: int
