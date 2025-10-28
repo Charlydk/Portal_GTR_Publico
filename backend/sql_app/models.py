@@ -309,6 +309,7 @@ class PlantillaChecklistItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     descripcion = Column(String, nullable=False)
     orden = Column(Integer, default=0) # Para ordenar los ítems en la plantilla
+    hora_sugerida = Column(Time, nullable=True)
     
     campana_id = Column(Integer, ForeignKey('campanas.id'), nullable=False)
     campana = relationship("Campana", back_populates="plantilla_checklist")

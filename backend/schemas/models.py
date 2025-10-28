@@ -356,6 +356,7 @@ class ChecklistItem(ChecklistItemBase):
         
 class PlantillaChecklistItemBase(BaseModel):
     descripcion: str
+    hora_sugerida: Optional[time] = None
 
 class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
     pass

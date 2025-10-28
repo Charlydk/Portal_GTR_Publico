@@ -2818,8 +2818,10 @@ async def add_item_a_plantilla(
 ):
     nuevo_item = models.PlantillaChecklistItem(
         descripcion=item_data.descripcion,
-        campana_id=campana_id
+        campana_id=campana_id,
+        hora_sugerida=item_data.hora_sugerida 
     )
+
     db.add(nuevo_item)
     await db.commit()
     await db.refresh(nuevo_item)

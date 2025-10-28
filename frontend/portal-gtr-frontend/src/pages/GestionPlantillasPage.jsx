@@ -1,7 +1,7 @@
 // RUTA: src/pages/GestionPlantillasPage.jsx
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Card, Form, Button, Spinner, Alert, ListGroup, InputGroup } from 'react-bootstrap';
+import { Container, Card, Form, Button, Spinner, Alert, ListGroup, InputGroup, Row, Col } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL, fetchWithAuth } from '../api';
 
@@ -11,6 +11,7 @@ function GestionPlantillasPage() {
     const [selectedCampanaId, setSelectedCampanaId] = useState('');
     const [plantillaItems, setPlantillaItems] = useState([]);
     const [newItemText, setNewItemText] = useState('');
+    const [newItemTime, setNewItemTime] = useState('');
     
     const [loading, setLoading] = useState({ campanas: false, items: false });
     const [submitting, setSubmitting] = useState(false);
@@ -62,14 +63,19 @@ function GestionPlantillasPage() {
         setSubmitting(true);
         setError(null);
         try {
+            const payload = {
+                descripcion: newItemText,
+                hora_sugerida: newItemTime || null // Envía null si el campo de hora está vacío
+            };
             const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${selectedCampanaId}/plantilla`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ descripcion: newItemText }),
+                body: JSON.stringify(payload),
             });
             if (!response.ok) throw new Error('No se pudo añadir el ítem.');
             setNewItemText('');
-            fetchPlantillaItems(); // Refrescamos la lista
+            setNewItemTime('');
+            fetchPlantillaItems();
         } catch (err) {
             setError(err.message);
         } finally {
@@ -112,32 +118,46 @@ function GestionPlantillasPage() {
                     {selectedCampanaId && (
                         <>
                             <hr />
-                            <h5>2. Tareas de la Plantilla</h5>
+                            <h5>Tareas de la Plantilla</h5>
                             {loading.items ? <div className="text-center"><Spinner/></div> : (
                                 <ListGroup className="mb-4">
                                     {plantillaItems.length > 0 ? plantillaItems.map(item => (
                                         <ListGroup.Item key={item.id} className="d-flex justify-content-between align-items-center">
-                                            {item.descripcion}
+                                            <div>
+                                                {item.hora_sugerida && <span className="fw-bold me-2">{item.hora_sugerida.substring(0, 5)}</span>}
+                                                {item.descripcion}
+                                            </div>
                                             <Button variant="outline-danger" size="sm" onClick={() => handleDeleteItem(item.id)}>✕</Button>
                                         </ListGroup.Item>
                                     )) : <p className="text-muted">Esta campaña aún no tiene una plantilla de checklist.</p>}
                                 </ListGroup>
                             )}
 
-                            <h5>3. Añadir Nueva Tarea a la Plantilla</h5>
+                            <h5>Añadir Nueva Tarea a la Plantilla</h5>
                             <Form onSubmit={handleAddItem}>
-                                <InputGroup>
-                                    <Form.Control
-                                        type="text"
-                                        placeholder="Ej: Generar reporte de ausentismo"
-                                        value={newItemText}
-                                        onChange={e => setNewItemText(e.target.value)}
-                                        required
-                                    />
-                                    <Button type="submit" disabled={submitting}>
-                                        {submitting ? <Spinner size="sm"/> : 'Añadir'}
-                                    </Button>
-                                </InputGroup>
+                                <Row className="g-2">
+                                    <Col xs={3} md={2}>
+                                        <Form.Control
+                                            type="time"
+                                            value={newItemTime}
+                                            onChange={e => setNewItemTime(e.target.value)}
+                                        />
+                                    </Col>
+                                    <Col xs={9} md={10}>
+                                        <InputGroup>
+                                            <Form.Control
+                                                type="text"
+                                                placeholder="Ej: Generar reporte de ausentismo"
+                                                value={newItemText}
+                                                onChange={e => setNewItemText(e.target.value)}
+                                                required
+                                            />
+                                            <Button type="submit" disabled={submitting}>
+                                                {submitting ? <Spinner size="sm"/> : 'Añadir'}
+                                            </Button>
+                                        </InputGroup>
+                                    </Col>
+                                </Row>
                             </Form>
                         </>
                     )}
