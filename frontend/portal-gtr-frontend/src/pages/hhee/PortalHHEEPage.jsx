@@ -262,6 +262,17 @@ function PortalHHEEPage() {
             const validacion = validaciones[dia.fecha];
             if (!validacion) return null;
 
+            // Si la fila está marcada como pendiente...
+            if (validacion.pendiente) {
+                // ...y no se ha seleccionado una nota/motivo...
+                if (!validacion.nota || validacion.nota === '') {
+                    // ...lanzamos un error ANTES de enviar.
+                    setError(`Error en la fecha ${dia.fecha}: Si marcas un día como pendiente, debes seleccionar un motivo.`);
+                    setLoading(false); // Detenemos la carga
+                    return 'INVALIDO'; // Devolvemos una marca para detener el proceso
+                }
+            }
+
             const debeEnviar = validacion.antes?.habilitado || validacion.despues?.habilitado || validacion.descanso?.habilitado || validacion.pendiente || validacion.revalidado;
             if (!debeEnviar) return null;
 
@@ -277,6 +288,11 @@ function PortalHHEEPage() {
                 hhee_aprobadas_descanso: validacion.descanso.habilitado ? hhmmToDecimal(validacion.descanso.valor) : (dia.hhee_aprobadas_descanso || 0),
             };
         }).filter(Boolean);
+
+        // Si encontramos la marca 'INVALIDO', detenemos la función.
+        if (validacionesParaEnviar.some(v => v === 'INVALIDO')) {
+            return; 
+        }
 
         if (validacionesParaEnviar.length === 0) {
             setError("No has habilitado ninguna fila para guardar o re-validar.");
