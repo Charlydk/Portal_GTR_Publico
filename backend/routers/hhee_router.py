@@ -520,22 +520,29 @@ async def get_hhee_metricas(
     
 @router.get("/metricas-pendientes", response_model=MetricasPendientesHHEE, summary="Obtener métricas de HHEE pendientes de validación")
 async def get_hhee_metricas_pendientes(
+
+    fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
+    fecha_fin: date = Query(..., description="Fecha de fin del período a consultar"),
+
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     """
     Calcula y devuelve un resumen de HHEE en estado 'Pendiente por Corrección',
-    desglosado por el motivo de la nota.
+    filtrado por un rango de fechas.
     """
+
+    # Aplicamos el filtro de fecha a la consulta base
     base_query = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.estado == 'Pendiente por Corrección'
+        models.ValidacionHHEE.estado == 'Pendiente por Corrección',
+        models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
     )
+
 
     # Si el usuario es Supervisor de Operaciones, filtramos solo los pendientes que él mismo marcó.
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
         query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
     else:
-        # Supervisor y Responsable ven todos los pendientes.
         query = base_query
     
     result = await db.execute(query)

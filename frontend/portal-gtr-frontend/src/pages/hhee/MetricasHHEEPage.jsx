@@ -72,17 +72,20 @@ function MetricasHHEEPage() {
 
         setLoading(true); setError(null); setMetricas(null); setMetricasPendientes(null);
         try {
+
+            // Creamos la URL para el endpoint de pendientes con las fechas
+            const pendientesUrl = `${API_BASE_URL}/hhee/metricas-pendientes/?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+
             const [metricasRes, pendientesRes] = await Promise.all([
                 fetchWithAuth(`${API_BASE_URL}/hhee/metricas`, {
                     method: 'POST',
-                    // AÑADE ESTE BLOQUE DE HEADERS
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ fecha_inicio: fechaInicio, fecha_fin: fechaFin }),
                 }),
-                fetchWithAuth(`${API_BASE_URL}/hhee/metricas-pendientes`, {})
+                // Usamos la nueva URL que incluye las fechas
+                fetchWithAuth(pendientesUrl, {})
             ]);
+            
             if (!metricasRes.ok) { const errorData = await metricasRes.json(); throw new Error(errorData.detail); }
             if (!pendientesRes.ok) { const errorData = await pendientesRes.json(); throw new Error(errorData.detail); }
             const metricasData = await metricasRes.json();
