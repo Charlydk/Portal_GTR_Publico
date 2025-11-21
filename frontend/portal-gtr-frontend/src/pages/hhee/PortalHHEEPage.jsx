@@ -3,6 +3,7 @@ import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, C
 import { API_BASE_URL, fetchWithAuth } from '../../api';
 import ResultadoFila from '../../components/hhee/ResultadoFila';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
+import { useLocation } from 'react-router-dom';
 
 function PortalHHEEPage() {
     const [rut, setRut] = useState('');
@@ -16,6 +17,7 @@ function PortalHHEEPage() {
     const [validaciones, setValidaciones] = useState({});
     const [guardadoResumen, setGuardadoResumen] = useState(null);
     const [isPendientesView, setIsPendientesView] = useState(false);
+    const location = useLocation();
 
 
 
@@ -307,7 +309,6 @@ function PortalHHEEPage() {
                 body: JSON.stringify({ validaciones: validacionesParaEnviar })
             });
             
-            // --- INICIO DE LA CORRECCIÓN DE MANEJO DE ERRORES ---
             if (!response.ok) {
                 const errorData = await response.json();
                 // Si el error tiene un campo "detail" que es una lista (error de validación de FastAPI)
@@ -322,7 +323,7 @@ function PortalHHEEPage() {
                 // Para otros tipos de errores
                 throw new Error(errorData.detail || 'Ocurrió un error al guardar.');
             }
-            // --- FIN DE LA CORRECCIÓN ---
+
             
             const data = await response.json();
             setGuardadoResumen(data.resumen_detallado || []);
@@ -335,6 +336,21 @@ function PortalHHEEPage() {
             setLoading(false);
         }
     };
+        useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const rutParam = params.get('rut');
+        const viewParam = params.get('view');
+
+        if (rutParam) {
+            setRut(rutParam);
+            // Opcional: Podrías disparar handleConsulta automáticamente si también pasas fechas en la URL
+        }
+        
+        if (viewParam === 'pendientes') {
+            handleCargarPendientes();
+        }
+    }, [location]);
+
     
     return (
         <Container className="py-1">

@@ -1,5 +1,6 @@
 # /backend/routers/hhee_router.py
 
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -429,57 +430,117 @@ async def get_hhee_metricas(
     fecha_inicio = request.fecha_inicio
     fecha_fin = request.fecha_fin
 
+    # --- A. CONSULTA DE VALIDACIONES (VALIDACIÓN MANUAL) ---
+    # Regla:
+    # - Supervisor/Responsable: VEN TODO GLOBAL (sin filtro por supervisor_carga).
+    # - Supervisor Operaciones: VE SOLO SU CARGA (filtro por supervisor_carga).
+    
     base_query = select(models.ValidacionHHEE).filter(
         models.ValidacionHHEE.estado == 'Validado',
         models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
     )
 
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+        # Filtro personal para Ops
         query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
     else:
+        # Global para GTR Admin
         query = base_query
     
     result = await db.execute(query)
     validaciones_periodo = result.scalars().all()
 
-    if not validaciones_periodo:
-        # Si no hay datos validados, devolvemos una respuesta vacía para evitar errores
-        return DashboardHHEEMetricas(
-            total_hhee_declaradas=0,
-            total_hhee_aprobadas_rrhh=0,
-            empleado_top=None,
-            desglose_por_empleado=[],
-            desglose_por_campana=[]
+    # --- B. CONSULTA DE SOLICITUDES (CONTROL GENERAL) ---
+    # Regla:
+    # - Supervisor Operaciones: NO DEBE VER ESTO (Devolvemos 0).
+    # - Supervisor/Responsable: VEN TODO.
+    
+    solicitudes_pendientes = 0
+    horas_aprobadas_sol = 0
+    horas_rechazadas_sol = 0
+
+    if current_user.role != UserRole.SUPERVISOR_OPERACIONES:
+        query_solicitudes = select(models.SolicitudHHEE).filter(
+            models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
         )
+        result_sol = await db.execute(query_solicitudes)
+        solicitudes_periodo = result_sol.scalars().all()
 
+        for sol in solicitudes_periodo:
+            if sol.estado == EstadoSolicitudHHEE.PENDIENTE:
+                solicitudes_pendientes += 1
+            elif sol.estado == EstadoSolicitudHHEE.APROBADA:
+                horas_aprobadas_sol += (sol.horas_aprobadas or 0)
+            elif sol.estado == EstadoSolicitudHHEE.RECHAZADA:
+                horas_rechazadas_sol += (sol.horas_solicitadas or 0)
+
+    # --- C. CONSULTAS A GEOVICTORIA (HÍBRIDO) ---
     ruts_unicos = {v.rut.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
-
-    mapa_datos_gv = {}
+    
+    mapa_datos_consolidados = {}
+    datos_gv_lista = []
+    
     if ruts_unicos:
         token = await geovictoria_service.obtener_token_geovictoria()
         if token:
             fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
             fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
             
-            datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt)
-            mapa_datos_gv = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_lista}
+            results = await asyncio.gather(
+                geovictoria_service.obtener_datos_consolidados_async(
+                    token, list(ruts_unicos), fecha_inicio, fecha_fin
+                ),
+                geovictoria_service.obtener_datos_completos_periodo(
+                    token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt
+                ),
+                return_exceptions=True
+            )
+            
+            # Manejo de resultados
+            if isinstance(results[0], dict): mapa_datos_consolidados = results[0]
+            if isinstance(results[1], list): datos_gv_lista = results[1]
 
+    mapa_datos_gv_diario = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_lista}
+
+    # --- D. PROCESAMIENTO DE DATOS ---
     total_declaradas = 0
-    total_rrhh = 0
     desglose_empleado = {}
     desglose_campana = {}
+    
+    # Fallback: Si la API consolidada falló (está vacía), calculamos el total RRHH sumando la API antigua
+    usar_fallback = len(mapa_datos_consolidados) == 0 and len(datos_gv_lista) > 0
+    total_rrhh_calculado = 0
+
+    ruts_procesados = set()
 
     for v in validaciones_periodo:
         rut_limpio = v.rut.replace('-', '').replace('.', '').upper() if v.rut else None
-        
-        if '26093368' in rut_limpio:
-            print(f"DEBUG: Buscando en el mapa con el RUT de la BD: '{rut_limpio}' (Tipo: {type(rut_limpio)})")
-        
         fecha_str = v.fecha_hhee.strftime('%Y-%m-%d')
-        gv_dia = mapa_datos_gv.get((rut_limpio, fecha_str), {})
         
+        # 1. Desglose Empleado (Solo para Ops Supervisor o si queremos mostrarlo)
+        if rut_limpio and rut_limpio not in ruts_procesados:
+            # Si usamos fallback, el total se calculará sumando días (más abajo o complejo), 
+            # pero por simplicidad, si falla la consolidada, mostramos 0 en la tabla de agentes para no bloquear.
+            horas_agente = mapa_datos_consolidados.get(rut_limpio, 0)
+            
+            desglose_empleado[v.rut] = {
+                "nombre": v.nombre_apellido, 
+                "declaradas": 0, 
+                "rrhh": horas_agente 
+            }
+            ruts_procesados.add(rut_limpio)
+
+        if v.rut in desglose_empleado:
+            desglose_empleado[v.rut]["declaradas"] += v.cantidad_hhee_aprobadas
+
+        # 2. Desglose Campaña & Total Declaradas
+        total_declaradas += v.cantidad_hhee_aprobadas
+        
+        # Obtenemos datos diarios de la API antigua
+        gv_dia = mapa_datos_gv_diario.get((rut_limpio, fecha_str), {})
         
         horas_rrhh_dia = 0
+        # Sumamos según el tipo validado
         if v.tipo_hhee == 'Antes de Turno':
             horas_rrhh_dia = gv_dia.get('hhee_autorizadas_antes_gv', 0) or 0
         elif v.tipo_hhee == 'Después de Turno':
@@ -487,24 +548,24 @@ async def get_hhee_metricas(
         elif v.tipo_hhee == 'Día de Descanso':
             horas_rrhh_dia = (gv_dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (gv_dia.get('hhee_autorizadas_despues_gv', 0) or 0)
         
-        
-        total_declaradas += v.cantidad_hhee_aprobadas
-        total_rrhh += horas_rrhh_dia
+        # Si estamos en fallback, sumamos al total global
+        if usar_fallback:
+            total_rrhh_calculado += horas_rrhh_dia
 
-        if v.rut not in desglose_empleado:
-            desglose_empleado[v.rut] = {"nombre": v.nombre_apellido, "declaradas": 0, "rrhh": 0}
-        desglose_empleado[v.rut]["declaradas"] += v.cantidad_hhee_aprobadas
-        desglose_empleado[v.rut]["rrhh"] += horas_rrhh_dia
+        campana_nombre = v.campaña or "Sin Campaña"
+        if campana_nombre not in desglose_campana:
+            desglose_campana[campana_nombre] = {"declaradas": 0, "rrhh": 0}
+        desglose_campana[campana_nombre]["declaradas"] += v.cantidad_hhee_aprobadas
+        desglose_campana[campana_nombre]["rrhh"] += horas_rrhh_dia
 
-        if v.campaña not in desglose_campana:
-            desglose_campana[v.campaña] = {"declaradas": 0, "rrhh": 0}
-        desglose_campana[v.campaña]["declaradas"] += v.cantidad_hhee_aprobadas
-        desglose_campana[v.campaña]["rrhh"] += horas_rrhh_dia
+    # Definimos el total final de RRHH
+    total_rrhh_final = total_rrhh_calculado if usar_fallback else sum(mapa_datos_consolidados.values())
 
     desglose_por_empleado_lista = sorted(
         [MetricasPorEmpleado(nombre_empleado=val["nombre"], rut=rut, total_horas_declaradas=val["declaradas"], total_horas_rrhh=val["rrhh"]) for rut, val in desglose_empleado.items()],
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
+    
     desglose_por_campana_lista = sorted(
         [MetricasPorCampana(nombre_campana=campana, total_horas_declaradas=val["declaradas"], total_horas_rrhh=val["rrhh"]) for campana, val in desglose_campana.items()],
         key=lambda x: x.total_horas_declaradas, reverse=True
@@ -512,8 +573,11 @@ async def get_hhee_metricas(
     
     return DashboardHHEEMetricas(
         total_hhee_declaradas=total_declaradas,
-        total_hhee_aprobadas_rrhh=total_rrhh,
-        empleado_top=desglose_por_empleado_lista[0] if desglose_por_empleado_lista else None,
+        total_hhee_aprobadas_rrhh=total_rrhh_final,
+        total_solicitudes_pendientes=solicitudes_pendientes,
+        total_horas_aprobadas_solicitud=horas_aprobadas_sol,
+        total_horas_rechazadas_solicitud=horas_rechazadas_sol,
+        empleado_top=None,
         desglose_por_empleado=desglose_por_empleado_lista,
         desglose_por_campana=desglose_por_campana_lista
     )

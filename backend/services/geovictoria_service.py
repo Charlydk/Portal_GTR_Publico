@@ -1,15 +1,17 @@
 # /backend/services/geovictoria_service.py
+import asyncio
 import httpx
 import os
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import List
-import asyncio
+from datetime import datetime, timedelta, date
+from typing import List, Dict, Any, Optional
+
 
 GEOVICTORIA_USER = os.getenv("GEOVICTORIA_USER")
 GEOVICTORIA_PASSWORD = os.getenv("GEOVICTORIA_PASSWORD")
 GEOVICTORIA_LOGIN_URL = "https://customerapi.geovictoria.com/api/v1/Login"
 GEOVICTORIA_ATTENDANCE_URL = "https://customerapi.geovictoria.com/api/v1/AttendanceBook"
+GEOVICTORIA_CONSOLIDATED_URL = "https://customerapi.geovictoria.com/api/v1/Consolidated"
 
 
 async def obtener_token_geovictoria():
@@ -35,6 +37,91 @@ def hhmm_to_decimal(time_str):
         return int(parts[0]) + (int(parts[1]) / 60)
     except (ValueError, IndexError):
         return 0
+    
+
+# ===================================================================
+# === INICIO: NUEVA FUNCIÓN ASÍNCRONA PARA /Consolidated ===
+# ===================================================================
+
+async def _post_consolidated_chunk(
+    client: httpx.AsyncClient, 
+    headers: Dict[str, str], 
+    payload: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    RETRY_COUNT = 3
+    RETRY_DELAY = 2
+    
+    for attempt in range(RETRY_COUNT):
+        try:
+            response = await client.post(GEOVICTORIA_CONSOLIDATED_URL, json=payload, headers=headers, timeout=45.0)
+            response.raise_for_status()
+            raw = response.json()
+            
+            if isinstance(raw, dict):
+                for key in ("Users", "WorkedHours", "Data"):
+                    if key in raw: return raw[key]
+            elif isinstance(raw, list):
+                return raw
+            return []
+            
+        except Exception as e:
+            print(f"Error en chunk /Consolidated, intento {attempt + 1}/{RETRY_COUNT}: {e}")
+            # Loguear el payload para debug si falla
+            if attempt == RETRY_COUNT - 1:
+                print(f"PAYLOAD FALLIDO: {payload}")
+            if attempt < RETRY_COUNT - 1:
+                await asyncio.sleep(RETRY_DELAY)
+            else:
+                return [] 
+    return []
+
+async def obtener_datos_consolidados_async(
+    token: str, 
+    ruts_limpios: List[str], 
+    fecha_inicio: date, 
+    fecha_fin: date
+) -> Dict[str, float]:
+    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    
+    # Aseguramos formato YYYYMMDDHHMMSS
+    start_date = fecha_inicio.strftime("%Y%m%d") + "000000"
+    end_date   = fecha_fin.strftime("%Y%m%d") + "235959"
+    
+    CHUNK_SIZE = 50 # Bajamos el chunk size por seguridad ante el error 400
+    
+    # Aseguramos que sean strings y únicos
+    ruts_list = sorted(list(set(str(r) for r in ruts_limpios)))
+    chunks: List[List[str]] = [ruts_list[i:i + CHUNK_SIZE] for i in range(0, len(ruts_list), CHUNK_SIZE)]
+    
+    tasks = []
+    async with httpx.AsyncClient() as client:
+        for chunk in chunks:
+            # Payload estricto según tu script funcional
+            payload = {
+                "StartDate": start_date, 
+                "EndDate": end_date, 
+                "IncludeAll": "0", 
+                "UserIds": ",".join(chunk) 
+            }
+            tasks.append(_post_consolidated_chunk(client, headers, payload))
+            
+        results_list_of_lists = await asyncio.gather(*tasks)
+
+    rows_consolidadas = [item for sublist in results_list_of_lists for item in sublist]
+
+    mapa_horas_final: Dict[str, float] = {}
+    for row in rows_consolidadas:
+        rut_raw = row.get("Identifier")
+        if not rut_raw: continue
+        rut = str(rut_raw).strip().replace('.', '').replace('-', '').upper()
+        horas_hhmm = row.get("TotalAuthorizedExtraTime", "00:00")
+        mapa_horas_final[rut] = hhmm_to_decimal(horas_hhmm)
+
+    return mapa_horas_final
+# ===================================================================
+# === FIN: NUEVA FUNCIÓN ASÍNCRONA PARA /Consolidated ===
+# ===================================================================
+
 
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
@@ -178,7 +265,6 @@ def aplicar_logica_de_negocio(datos_procesados):
         if fin_real < inicio_real: # Marcas nocturnas
             fin_real += timedelta(days=1)
 
-        # --- INICIO DE LA CORRECCIÓN CLAVE ---
         # Comparamos los objetos datetime completos, no solo la hora con .time()
         if inicio_real < inicio_teorico:
             tipo_hhee += "Antes de Turno "
@@ -187,7 +273,7 @@ def aplicar_logica_de_negocio(datos_procesados):
         if fin_real > fin_teorico:
             tipo_hhee += "Después de Turno"
             hhee_fin = (fin_real - fin_teorico).total_seconds() / 3600
-        # --- FIN DE LA CORRECCIÓN CLAVE ---
+
 
     hhee_calculadas_total = max(0, hhee_inicio) + max(0, hhee_fin)
 
