@@ -681,7 +681,8 @@ async def get_hhee_metricas_pendientes(
 async def crear_solicitud_hhee(
     solicitud_data: SolicitudHHEECreate,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
+    # 👇 AQUÍ ESTÁ EL CAMBIO: Agregamos use_simple_auth=True
+    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA], use_simple_auth=True))
 ):
     """
     Permite a un analista crear una nueva solicitud de horas extras,
@@ -702,12 +703,11 @@ async def crear_solicitud_hhee(
         for sol in solicitudes_existentes:
             if sol.estado in [EstadoSolicitudHHEE.PENDIENTE, EstadoSolicitudHHEE.APROBADA]:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, # 409 es el código HTTP para "Conflicto"
+                    status_code=status.HTTP_409_CONFLICT, 
                     detail=f"Ya tienes una solicitud en estado '{sol.estado.value}' para esta fecha y tipo. No puedes crear otra."
                 )
-   
 
-    # Si pasamos la validación, creamos la nueva solicitud (el código que ya teníamos)
+    # Si pasamos la validación, creamos la nueva solicitud
     nueva_solicitud = models.SolicitudHHEE(
         **solicitud_data.model_dump(),
         analista_id=current_user.id,
@@ -717,6 +717,7 @@ async def crear_solicitud_hhee(
     await db.commit()
     await db.refresh(nueva_solicitud)
     
+    # Recargamos para devolver el objeto completo con relaciones
     result = await db.execute(
         select(models.SolicitudHHEE)
         .options(selectinload(models.SolicitudHHEE.solicitante))
@@ -728,13 +729,13 @@ async def crear_solicitud_hhee(
 @router.get("/solicitudes/mis-solicitudes/", summary="[Analista] Ver mi historial de solicitudes de HHEE")
 async def obtener_mis_solicitudes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True)),
+    # 👇 CAMBIO AQUÍ: Agregamos use_simple_auth=True
+    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA], use_simple_auth=True)),
     fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
     fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
     """
-    Devuelve el historial de solicitudes de HHEE para el analista actual
-    dentro de un rango de fechas, enriquecido con datos de GeoVictoria.
+    Devuelve el historial de solicitudes de HHEE para el analista actual.
     """
     # 1. Filtramos las solicitudes por analista y por rango de fecha (esto estaba bien)
     query = select(models.SolicitudHHEE).options(

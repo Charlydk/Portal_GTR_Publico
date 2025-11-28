@@ -44,7 +44,7 @@ function DashboardPage() {
             return; 
         }
 
-        // --- CORRECCIÓN AQUÍ ---
+
         // Si es Supervisor de Operaciones, NO cargamos estadísticas de GTR.
         // Simplemente desactivamos el loading para que muestre su tarjeta de bienvenida.
         if (user.role === 'SUPERVISOR_OPERACIONES') {

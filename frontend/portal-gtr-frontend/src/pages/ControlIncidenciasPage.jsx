@@ -117,7 +117,50 @@ function ControlIncidenciasPage() {
         setIncidencias([]);
     };
 
-    const handleExportar = async () => { /* ... (esta función no necesita cambios) ... */ };
+    const handleExportar = async () => {
+        setIsExporting(true);
+        setError(null);
+        
+        try {
+            // Preparamos el payload igual que en los filtros
+            // Asegurándonos de enviar null si los campos están vacíos
+            const payload = {
+                fecha_inicio: filtros.fecha_inicio || null,
+                fecha_fin: filtros.fecha_fin || null,
+                campana_id: filtros.campana_id ? parseInt(filtros.campana_id) : null,
+                estado: filtros.estado || null, // El backend espera un string o null en el esquema actual de exportación
+                asignado_a_id: filtros.asignado_a_id ? parseInt(filtros.asignado_a_id) : null
+            };
+
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/exportar/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Error al generar el archivo Excel.');
+            }
+
+            // Manejo de la descarga del archivo binario (Blob)
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Reporte_Incidencias_${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+
+        } catch (err) {
+            console.error("Error exportando incidencias:", err);
+            setError(err.message);
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     const getStatusVariant = (estado) => {
         const map = { 'ABIERTA': 'danger', 'EN_PROGRESO': 'warning', 'CERRADA': 'success' };

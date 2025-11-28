@@ -68,9 +68,13 @@ async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSes
         raise credentials_exception
     return analista
 
-def require_role(required_roles: List[UserRole]):
-    def role_checker(current_analista: models.Analista = Depends(get_current_analista)):
+def require_role(required_roles: List[UserRole], use_simple_auth: bool = False):
+    dependency = get_current_analista_simple if use_simple_auth else get_current_analista
+
+    async def role_checker(current_analista: models.Analista = Depends(dependency)):
+        # 👇 Verifica que esta lógica sea correcta
         if current_analista.role.value not in [r.value for r in required_roles]:
+            print(f"🚫 Acceso denegado. Rol usuario: {current_analista.role.value}, Requeridos: {[r.value for r in required_roles]}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permiso para realizar esta acción."
