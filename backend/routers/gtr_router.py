@@ -30,6 +30,7 @@ from ..schemas.models import (
     Campana, CampanaBase, CampanaSimple,
     Tarea, TareaBase, TareaSimple, TareaListOutput, TareaUpdate,
     ChecklistItem, ChecklistItemBase, ChecklistItemSimple, ChecklistItemUpdate,
+    PlantillaChecklistItem, PlantillaChecklistItemCreate,
     HistorialEstadoTarea,
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
@@ -2793,6 +2794,54 @@ async def get_tarea_generada_historial_estados(
     historial = result.scalars().unique().all()
     return historial
 
+# --- ENDPOINTS PARA LA GESTIÓN DE PLANTILLAS DE CHECKLIST ---
+
+@router.get("/campanas/{campana_id}/plantilla", response_model=List[PlantillaChecklistItem], summary="Obtener la plantilla de checklist de una campaña")
+async def get_plantilla_por_campana(
+    campana_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    result = await db.execute(
+        select(models.PlantillaChecklistItem)
+        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
+        .order_by(models.PlantillaChecklistItem.orden)
+    )
+    return result.scalars().all()
+
+@router.post("/campanas/{campana_id}/plantilla", response_model=PlantillaChecklistItem, status_code=status.HTTP_201_CREATED, summary="Añadir un ítem a la plantilla de una campaña")
+async def add_item_a_plantilla(
+    campana_id: int,
+    item_data: PlantillaChecklistItemCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    nuevo_item = models.PlantillaChecklistItem(
+        descripcion=item_data.descripcion,
+        campana_id=campana_id,
+        hora_sugerida=item_data.hora_sugerida 
+    )
+
+    db.add(nuevo_item)
+    await db.commit()
+    await db.refresh(nuevo_item)
+    return nuevo_item
+
+@router.delete("/plantilla-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar un ítem de una plantilla")
+async def delete_item_de_plantilla(
+    item_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    result = await db.execute(select(models.PlantillaChecklistItem).filter(models.PlantillaChecklistItem.id == item_id))
+    item = result.scalars().first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ítem de plantilla no encontrado.")
+    
+    await db.delete(item)
+    await db.commit()
+    return
+
 # --- NUEVOS ENDPOINTS PARA WIDGETS DEL DASHBOARD ---
 
 @router.get("/incidencias/activas/recientes", response_model=List[DashboardIncidenciaWidget], summary="Obtener todas las incidencias activas (Optimizado)")
@@ -3004,6 +3053,16 @@ async def exportar_incidencias(
     # Preparar datos para el DataFrame de Pandas
     datos_para_excel = []
     for inc in incidencias:
+        # --- CORRECCIÓN AQUÍ: "Comentario de Cierre" con mayúsculas ---
+        comentario_cierre = "N/A"
+        if inc.estado == EstadoIncidencia.CERRADA:
+            # Buscamos en las actualizaciones la que contenga el texto clave
+            for act in sorted(inc.actualizaciones, key=lambda x: x.fecha_actualizacion, reverse=True):
+                if "Comentario de Cierre: " in act.comentario:
+                    comentario_cierre = act.comentario.split("Comentario de Cierre: ")[1]
+                    break
+        # -------------------------------------------------------------
+
         datos_para_excel.append({
             "ID": inc.id,
             "Titulo": inc.titulo,
@@ -3019,7 +3078,7 @@ async def exportar_incidencias(
             "Herramienta Afectada": inc.herramienta_afectada,
             "Indicador Afectado": inc.indicador_afectado,
             "Descripción": inc.descripcion_inicial,
-            "Comentario de Cierre": next((act.comentario.split("Comentario de cierre: ")[1] for act in sorted(inc.actualizaciones, key=lambda x: x.fecha_actualizacion, reverse=True) if "Comentario de cierre: " in act.comentario), "N/A") if inc.estado == 'CERRADA' else "N/A"
+            "Comentario de Cierre": comentario_cierre # Usamos la variable calculada arriba
         })
     
     df = pd.DataFrame(datos_para_excel)
@@ -3035,7 +3094,6 @@ async def exportar_incidencias(
     }
     
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
 @router.get("/bitacora/filtrar/", response_model=List[BitacoraEntry], summary="[Portal de Control] Obtener entradas de bitácora con filtros")
 async def filtrar_bitacora(
     db: AsyncSession = Depends(get_db),

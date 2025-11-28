@@ -3,6 +3,7 @@ import { Container, Form, Button, Card, Spinner, Alert, ListGroup, Table, Row, C
 import { API_BASE_URL, fetchWithAuth } from '../../api';
 import ResultadoFila from '../../components/hhee/ResultadoFila';
 import { decimalToHHMM, hhmmToDecimal } from '../../utils/timeUtils';
+import { useLocation } from 'react-router-dom';
 
 function PortalHHEEPage() {
     const [rut, setRut] = useState('');
@@ -16,6 +17,7 @@ function PortalHHEEPage() {
     const [validaciones, setValidaciones] = useState({});
     const [guardadoResumen, setGuardadoResumen] = useState(null);
     const [isPendientesView, setIsPendientesView] = useState(false);
+    const location = useLocation();
 
 
 
@@ -173,7 +175,7 @@ function PortalHHEEPage() {
         }
     };
     
-    const handleCargarPendientes = async () => {
+    const handleCargarPendientes = async (fechaInicioOverride = null, fechaFinOverride = null) => {
         setLoading(true);
         setError(null);
         setSuccess(null);
@@ -183,17 +185,33 @@ function PortalHHEEPage() {
         setIsPendientesView(true);
     
         try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/pendientes`, {});
-    
-            if (!response.ok) {
-                 const data = await response.json();
-                 throw new Error(data.detail);
+            // 1. Determinamos qué fechas usar: las pasadas por argumento (URL) o las del estado
+            const inicio = fechaInicioOverride || fechaInicio;
+            const fin = fechaFinOverride || fechaFin;
+
+            let url = `${API_BASE_URL}/hhee/pendientes`;
+            
+            // 2. Construimos la URL con los parámetros
+            const params = new URLSearchParams();
+            if (inicio) params.append('fecha_inicio', inicio);
+            if (fin) params.append('fecha_fin', fin);
+            
+            const queryString = params.toString();
+            if (queryString) {
+                url += `?${queryString}`;
             }
     
-            const data = await response.json();
+            const response = await fetchWithAuth(url, {});
+    
+            if (!response.ok) {
+                 const errorInfo = await response.json();
+                 throw new Error(errorInfo.detail);
+            }
+    
+            const data = await response.json(); 
     
             if (!data.datos_periodo || data.datos_periodo.length === 0) {
-                setSuccess('¡Excelente! No hay registros pendientes por corregir.');
+                setSuccess('¡Excelente! No hay registros pendientes por corregir para el período seleccionado.');
                 return;
             }
     
@@ -262,6 +280,17 @@ function PortalHHEEPage() {
             const validacion = validaciones[dia.fecha];
             if (!validacion) return null;
 
+            // Si la fila está marcada como pendiente...
+            if (validacion.pendiente) {
+                // ...y no se ha seleccionado una nota/motivo...
+                if (!validacion.nota || validacion.nota === '') {
+                    // ...lanzamos un error ANTES de enviar.
+                    setError(`Error en la fecha ${dia.fecha}: Si marcas un día como pendiente, debes seleccionar un motivo.`);
+                    setLoading(false); // Detenemos la carga
+                    return 'INVALIDO'; // Devolvemos una marca para detener el proceso
+                }
+            }
+
             const debeEnviar = validacion.antes?.habilitado || validacion.despues?.habilitado || validacion.descanso?.habilitado || validacion.pendiente || validacion.revalidado;
             if (!debeEnviar) return null;
 
@@ -278,6 +307,11 @@ function PortalHHEEPage() {
             };
         }).filter(Boolean);
 
+        // Si encontramos la marca 'INVALIDO', detenemos la función.
+        if (validacionesParaEnviar.some(v => v === 'INVALIDO')) {
+            return; 
+        }
+
         if (validacionesParaEnviar.length === 0) {
             setError("No has habilitado ninguna fila para guardar o re-validar.");
             setLoading(false);
@@ -291,7 +325,6 @@ function PortalHHEEPage() {
                 body: JSON.stringify({ validaciones: validacionesParaEnviar })
             });
             
-            // --- INICIO DE LA CORRECCIÓN DE MANEJO DE ERRORES ---
             if (!response.ok) {
                 const errorData = await response.json();
                 // Si el error tiene un campo "detail" que es una lista (error de validación de FastAPI)
@@ -306,7 +339,7 @@ function PortalHHEEPage() {
                 // Para otros tipos de errores
                 throw new Error(errorData.detail || 'Ocurrió un error al guardar.');
             }
-            // --- FIN DE LA CORRECCIÓN ---
+
             
             const data = await response.json();
             setGuardadoResumen(data.resumen_detallado || []);
@@ -319,7 +352,83 @@ function PortalHHEEPage() {
             setLoading(false);
         }
     };
+        useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const viewParam = params.get('view');
+        const rutParam = params.get('rut');
+        
+        const fInicioParam = params.get('fecha_inicio');
+        const fFinParam = params.get('fecha_fin');
+
+        if (fInicioParam) setFechaInicio(fInicioParam);
+        if (fFinParam) setFechaFin(fFinParam);
+
+        if (viewParam === 'pendientes') {
+            // Pasamos los parámetros de la URL directamente
+            // para no esperar a que el estado se actualice.
+            handleCargarPendientes(fInicioParam, fFinParam);
+        } else if (rutParam && fInicioParam && fFinParam) {
+            setRut(rutParam);
+            autoConsultar(rutParam, fInicioParam, fFinParam);
+        }
+    }, [location]);
+
+    // ---  Auto-ejecución basada en URL ---
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const viewParam = params.get('view');
+        const rutParam = params.get('rut');
+        const fInicioParam = params.get('fecha_inicio');
+        const fFinParam = params.get('fecha_fin');
+
+        if (viewParam === 'pendientes') {
+            // Si vienen fechas para pendientes (opcional), podríamos setearlas, 
+            // pero handleCargarPendientes usualmente no necesita fechas (trae todo lo pendiente).
+            handleCargarPendientes();
+        } else if (rutParam && fInicioParam && fFinParam) {
+            // Auto-rellenar y consultar agente
+            setRut(rutParam);
+            setFechaInicio(fInicioParam);
+            setFechaFin(fFinParam);
+            
+            // IMPORTANTE: Debemos llamar a la API usando los valores de los PARÁMETROS,
+            // no del estado, porque el estado (setRut, etc) es asíncrono y no se habrá actualizado aún.
+            autoConsultar(rutParam, fInicioParam, fFinParam);
+        }
+    }, [location]);
+
+    // Función auxiliar para consultar sin depender del estado actualizado
+    const autoConsultar = async (rutParam, fInicio, fFin) => {
+        setLoading(true);
+        setError(null);
+        setSuccess(null);
+        setResultados([]);
+        setNombreAgente('');
+        setGuardadoResumen(null);
+        setIsPendientesView(false);
     
+        try {
+            const response = await fetchWithAuth(`${API_BASE_URL}/hhee/consultar-empleado`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rut: rutParam, fecha_inicio: fInicio, fecha_fin: fFin })
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail);
+            }
+            const data = await response.json();
+            setNombreAgente(data.nombre_agente);
+            setResultados(data.datos_periodo);
+            initializeValidaciones(data.datos_periodo);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <Container className="py-1">
             <h3 className="mb-2">Portal de Carga de Horas Extras (HHEE)</h3>

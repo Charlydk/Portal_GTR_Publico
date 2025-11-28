@@ -77,6 +77,7 @@ class Campana(Base):
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="campana", cascade="all, delete-orphan")
+    plantilla_checklist = relationship("PlantillaChecklistItem", back_populates="campana", cascade="all, delete-orphan")
 
 class LOB(Base):
     __tablename__ = "lobs"
@@ -298,3 +299,33 @@ class SolicitudHHEE(Base):
 
     solicitante = relationship("Analista", back_populates="solicitudes_realizadas", foreign_keys=[analista_id])
     supervisor = relationship("Analista", back_populates="solicitudes_gestionadas", foreign_keys=[supervisor_id])
+
+
+# --- INICIO DE LA NUEVA SECCIÓN DE CHECKLIST DIARIO ---
+
+class PlantillaChecklistItem(Base):
+    __tablename__ = 'plantillas_checklist_items'
+
+    id = Column(Integer, primary_key=True, index=True)
+    descripcion = Column(String, nullable=False)
+    orden = Column(Integer, default=0) # Para ordenar los ítems en la plantilla
+    hora_sugerida = Column(Time, nullable=True)
+    
+    campana_id = Column(Integer, ForeignKey('campanas.id'), nullable=False)
+    campana = relationship("Campana", back_populates="plantilla_checklist")
+
+class ChecklistDiarioItem(Base):
+    __tablename__ = 'checklist_diario_items'
+
+    id = Column(Integer, primary_key=True, index=True)
+    descripcion = Column(String, nullable=False) # Copiamos la descripción por si la plantilla cambia
+    completado = Column(Boolean, default=False, nullable=False)
+    fecha = Column(Date, nullable=False, index=True)
+    
+    # --- Relaciones ---
+    analista_id = Column(Integer, ForeignKey('analistas.id'), nullable=False, index=True)
+    analista = relationship("Analista")
+
+    # Si el ítem viene de una plantilla, guardamos la referencia
+    plantilla_item_id = Column(Integer, ForeignKey('plantillas_checklist_items.id'), nullable=True)
+    plantilla_item = relationship("PlantillaChecklistItem")

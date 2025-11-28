@@ -1,15 +1,17 @@
 # /backend/services/geovictoria_service.py
+import asyncio
 import httpx
 import os
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import List
-import asyncio
+from datetime import datetime, timedelta, date
+from typing import List, Dict, Any, Optional
+
 
 GEOVICTORIA_USER = os.getenv("GEOVICTORIA_USER")
 GEOVICTORIA_PASSWORD = os.getenv("GEOVICTORIA_PASSWORD")
 GEOVICTORIA_LOGIN_URL = "https://customerapi.geovictoria.com/api/v1/Login"
 GEOVICTORIA_ATTENDANCE_URL = "https://customerapi.geovictoria.com/api/v1/AttendanceBook"
+GEOVICTORIA_CONSOLIDATED_URL = "https://customerapi.geovictoria.com/api/v1/Consolidated"
 
 
 async def obtener_token_geovictoria():
@@ -35,6 +37,8 @@ def hhmm_to_decimal(time_str):
         return int(parts[0]) + (int(parts[1]) / 60)
     except (ValueError, IndexError):
         return 0
+    
+
 
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
@@ -178,7 +182,6 @@ def aplicar_logica_de_negocio(datos_procesados):
         if fin_real < inicio_real: # Marcas nocturnas
             fin_real += timedelta(days=1)
 
-        # --- INICIO DE LA CORRECCIÓN CLAVE ---
         # Comparamos los objetos datetime completos, no solo la hora con .time()
         if inicio_real < inicio_teorico:
             tipo_hhee += "Antes de Turno "
@@ -187,7 +190,7 @@ def aplicar_logica_de_negocio(datos_procesados):
         if fin_real > fin_teorico:
             tipo_hhee += "Después de Turno"
             hhee_fin = (fin_real - fin_teorico).total_seconds() / 3600
-        # --- FIN DE LA CORRECCIÓN CLAVE ---
+
 
     hhee_calculadas_total = max(0, hhee_inicio) + max(0, hhee_fin)
 

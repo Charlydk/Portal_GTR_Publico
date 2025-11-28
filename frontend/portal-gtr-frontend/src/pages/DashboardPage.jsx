@@ -41,11 +41,19 @@ function DashboardPage() {
 
     useEffect(() => {
         if (authLoading || !user) {
-            return; // Si está cargando la autenticación o no hay usuario, no hacemos nada.
+            return; 
         }
 
+
+        // Si es Supervisor de Operaciones, NO cargamos estadísticas de GTR.
+        // Simplemente desactivamos el loading para que muestre su tarjeta de bienvenida.
+        if (user.role === 'SUPERVISOR_OPERACIONES') {
+            setLoading(false);
+            return;
+        }
+        // -----------------------
+
         const fetchInitialData = async () => {
-            // NO volvemos a poner setLoading(true) aquí. Esto evita el parpadeo.
             setError(null);
             try {
                 const promises = [fetchDashboardStats()];
@@ -56,7 +64,6 @@ function DashboardPage() {
             } catch (err) {
                 setError(err.message);
             } finally {
-                // Solo cambiamos el estado de carga a false la primera vez.
                 if (loading) {
                     setLoading(false);
                 }
@@ -64,7 +71,6 @@ function DashboardPage() {
         };
 
         fetchInitialData();
-    // --- CAMBIO CLAVE: Usamos user.id en lugar de user para evitar re-cargas innecesarias ---
     }, [user?.id, authLoading, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles]);
 
     const handleIncidenciaCreada = useCallback(() => {

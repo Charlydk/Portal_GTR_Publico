@@ -353,6 +353,22 @@ class ChecklistItem(ChecklistItemBase):
     tarea: TareaSimple
     class Config:
         from_attributes = True
+        
+class PlantillaChecklistItemBase(BaseModel):
+    descripcion: str
+    hora_sugerida: Optional[time] = None
+
+class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
+    pass
+
+class PlantillaChecklistItem(PlantillaChecklistItemBase):
+    id: int
+    orden: int
+    campana_id: int
+
+    class Config:
+        from_attributes = True
+
 
 class Aviso(AvisoBase):
     id: int
@@ -441,7 +457,11 @@ class MetricasPorCampana(BaseModel):
 class DashboardHHEEMetricas(BaseModel):
     total_hhee_declaradas: float     
     total_hhee_aprobadas_rrhh: float  
-    empleado_top: Optional[MetricasPorEmpleado] = None
+    total_solicitudes_pendientes: int = 0
+    total_horas_aprobadas_solicitud: float = 0
+    total_horas_rechazadas_solicitud: float = 0
+
+    empleado_top: Optional[MetricasPorEmpleado] = None # Lo dejo opcional por compatibilidad, pero por ahora no lo voy a usar en el frontend
     desglose_por_empleado: List[MetricasPorEmpleado]
     desglose_por_campana: List[MetricasPorCampana]
     

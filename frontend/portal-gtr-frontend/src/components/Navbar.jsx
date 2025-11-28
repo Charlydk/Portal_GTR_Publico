@@ -41,9 +41,9 @@ function NavbarComponent() {
                                 {/* Estos enlaces ahora solo son visibles para Supervisores y Responsables */}
                                 {isGtrAdmin && (
                                     <>
-                                        <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
+                                        {/* <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
                                         <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>*/}
                                     </>
                                 )}
                                 {/* --- FIN DEL CAMBIO --- */}
@@ -63,6 +63,7 @@ function NavbarComponent() {
                              <NavDropdown title="Admin GTR" id="admin-gtr-nav-dropdown">
                                 <NavDropdown.Item as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</NavDropdown.Item>
                                 <NavDropdown.Item as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</NavDropdown.Item>
+                                <NavDropdown.Item as={Link} to="/plantillas-checklist" onClick={() => setExpanded(false)}>Plantillas de Tareas</NavDropdown.Item>
                             </NavDropdown>
                         )}
                         
