@@ -16,7 +16,7 @@ const KpiCard = ({ title, value, variant = 'primary', linkTo = null }) => {
         </Card>
     );
     if (linkTo) {
-        return <Link to={linkTo} className="text-decoration-none h-100">{cardContent}</Link>;
+        return <Link to={linkTo} className="text-decoration-none h-100 d-block" target="_blank" rel="noopener noreferrer">{cardContent}</Link>;
     }
     return cardContent;
 };
@@ -117,7 +117,7 @@ function MetricasHHEEPage() {
                                 title="Total Pendientes (Ir a Gestionar)" 
                                 value={metricasPendientes.total_pendientes} 
                                 variant={metricasPendientes.total_pendientes > 0 ? 'danger' : 'success'}
-                                linkTo={`/hhee/portal?view=pendientes`} 
+                                linkTo={`/hhee/portal?view=pendientes&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`} 
                                 clickable={true}
                             />
                         </Col>
@@ -190,7 +190,12 @@ function MetricasHHEEPage() {
                                                     <tr key={emp.rut}>
                                                         <td>
                                                             {/* Enlace Clickable para ir al Portal de Carga */}
-                                                            <Link to={`/hhee/portal?rut=${emp.rut}`} title="Ver en Portal de Carga">
+                                                            <Link 
+                                                                to={`/hhee/portal?rut=${emp.rut}&fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`} 
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer"
+                                                                title="Ver en Portal de Carga"
+                                                            >
                                                                 {emp.nombre_empleado}
                                                             </Link>
                                                         </td>

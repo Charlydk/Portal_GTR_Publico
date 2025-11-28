@@ -82,7 +82,7 @@ router = APIRouter(
 async def consultar_empleado(
     consulta: ConsultaHHEE,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     token = await geovictoria_service.obtener_token_geovictoria()
     if not token:
@@ -155,7 +155,7 @@ async def consultar_empleado(
 async def cargar_horas_extras(
     request_body: CargarHHEERequest,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     # 1. CAMBIO: Renombramos la lista para mayor claridad
     resumen_operaciones = []
@@ -260,15 +260,27 @@ async def cargar_horas_extras(
         "resumen_detallado": resumen_operaciones
     }
 
-@router.get("/pendientes", summary="Consulta todos los registros pendientes de HHEE")
+@router.get("/pendientes", summary="Consulta registros pendientes de HHEE (con filtro opcional de fecha)")
 async def consultar_pendientes(
+    fecha_inicio: Optional[date] = Query(None),
+    fecha_fin: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
-    query = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.estado == 'Pendiente por Corrección',
-        models.ValidacionHHEE.supervisor_carga == current_user.email
-    ).order_by(models.ValidacionHHEE.nombre_apellido.asc(), models.ValidacionHHEE.fecha_hhee.asc())
+    # 1. Consulta Base (Igual que antes)
+    base_query = select(models.ValidacionHHEE).filter(
+        models.ValidacionHHEE.estado == 'Pendiente por Corrección'
+    )
+
+    if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+        query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
+    else:
+        query = base_query
+
+    if fecha_inicio and fecha_fin:
+        query = query.filter(models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin))
+    
+    query = query.order_by(models.ValidacionHHEE.nombre_apellido.asc(), models.ValidacionHHEE.fecha_hhee.asc())
     
     result = await db.execute(query)
     pendientes = result.scalars().all()
@@ -276,40 +288,83 @@ async def consultar_pendientes(
     if not pendientes:
         return {"datos_periodo": [], "nombre_agente": "Múltiples Agentes con Pendientes"}
 
-    ruts_limpios_unicos = list({p.rut.strip().replace('-', '').replace('.', '').upper() for p in pendientes})
-    fecha_min = min(p.fecha_hhee for p in pendientes)
-    fecha_max = max(p.fecha_hhee for p in pendientes)
-    fecha_inicio_dt = datetime.combine(fecha_min, datetime.min.time())
-    fecha_fin_dt = datetime.combine(fecha_max, datetime.max.time())
+    # --- CAMBIO CLAVE AQUÍ ---
+    # Solo consultamos GeoVictoria si:
+    # A) Es un Supervisor de Operaciones (necesita el detalle para corregir).
+    # B) O si se ha filtrado por un rango de fechas específico (asumimos que quiere ver detalle).
+    # Si es un Supervisor GTR viendo el global histórico, NO consultamos GV.
+    
+    debe_consultar_gv = (current_user.role == UserRole.SUPERVISOR_OPERACIONES) or (fecha_inicio and fecha_fin)
 
-    token = await geovictoria_service.obtener_token_geovictoria()
-    datos_completos_gv = []
-    if token:
-        try:
-            datos_completos_gv = await geovictoria_service.obtener_datos_completos_periodo(
-                token, ruts_limpios_unicos, fecha_inicio_dt, fecha_fin_dt
-            )
-        except Exception as e:
-            print(f"ADVERTENCIA: Falló la consulta masiva a GV: {e}")
+    lookup_data = {}
+    
+    if debe_consultar_gv:
+        ruts_limpios_unicos = list({p.rut.strip().replace('-', '').replace('.', '').upper() for p in pendientes})
+        
+        if fecha_inicio and fecha_fin:
+            start_date = fecha_inicio
+            end_date = fecha_fin
+        else:
+            start_date = min(p.fecha_hhee for p in pendientes)
+            end_date = max(p.fecha_hhee for p in pendientes)
 
-    lookup_data = {
-        (d.get('rut_limpio'), d.get('fecha')): d for d in datos_completos_gv
-    }
+        fecha_inicio_dt = datetime.combine(start_date, datetime.min.time())
+        fecha_fin_dt = datetime.combine(end_date, datetime.max.time())
 
+        token = await geovictoria_service.obtener_token_geovictoria()
+        datos_completos_gv = []
+        if token:
+            try:
+                datos_completos_gv = await geovictoria_service.obtener_datos_completos_periodo(
+                    token, ruts_limpios_unicos, fecha_inicio_dt, fecha_fin_dt
+                )
+            except Exception as e:
+                print(f"ADVERTENCIA: Falló la consulta masiva a GV: {e}")
+
+        lookup_data = {
+            (d.get('rut_limpio'), d.get('fecha')): d for d in datos_completos_gv
+        }
+
+    # Construimos la respuesta
     resultados_enriquecidos = []
     for p in pendientes:
         rut_limpio = p.rut.strip().replace('-', '').replace('.', '').upper()
         fecha_str = p.fecha_hhee.strftime('%Y-%m-%d')
+        
+        # Si no consultamos GV, lookup_data estará vacío y usará valores por defecto (00:00)
         datos_dia_gv = lookup_data.get((rut_limpio, fecha_str), {})
         
-        logica_negocio = geovictoria_service.aplicar_logica_de_negocio(datos_dia_gv)
+        # Si hay datos de GV, calculamos lógica de negocio. Si no, devolvemos básicos.
+        if datos_dia_gv:
+            logica_negocio = geovictoria_service.aplicar_logica_de_negocio(datos_dia_gv)
+            datos_combinados = {**datos_dia_gv, **logica_negocio}
+        else:
+            # Datos mínimos para visualización sin GV
+            datos_combinados = {
+                "rut_limpio": rut_limpio,
+                "rut": p.rut,
+                "campaña": p.campaña,
+                "inicio_turno_teorico": p.turno_teorico_inicio or "N/A", # Recuperamos de BD si existe
+                "fin_turno_teorico": p.turno_teorico_fin or "N/A",
+                "marca_real_inicio": p.marca_real_inicio or "N/A",
+                "marca_real_fin": p.marca_real_fin or "N/A",
+                "hhee_inicio_calculadas": 0,
+                "hhee_fin_calculadas": 0,
+                "cantidad_hhee_calculadas": 0,
+                "hhee_autorizadas_antes_gv": 0,
+                "hhee_autorizadas_despues_gv": 0
+            }
         
         datos_dia_completo = {
-            **datos_dia_gv, **logica_negocio,
-            "nombre_apellido": p.nombre_apellido, "rut_con_formato": p.rut,
-            "fecha": fecha_str, "estado_final": 'Pendiente por Corrección',
-            "notas": p.notas, "hhee_aprobadas_inicio": 0,
-            "hhee_aprobadas_fin": 0, "hhee_aprobadas_descanso": 0,
+            **datos_combinados,
+            "nombre_apellido": p.nombre_apellido, 
+            "rut_con_formato": p.rut,
+            "fecha": fecha_str, 
+            "estado_final": 'Pendiente por Corrección',
+            "notas": p.notas, 
+            "hhee_aprobadas_inicio": 0,
+            "hhee_aprobadas_fin": 0, 
+            "hhee_aprobadas_descanso": 0,
         }
         
         resultados_enriquecidos.append(datos_dia_completo)
@@ -323,7 +378,7 @@ async def consultar_pendientes(
 async def exportar_hhee_a_excel(
     request: ExportRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     try:
         # Consulta base para obtener registros validados en el rango de fechas
@@ -425,40 +480,33 @@ class MetricasRequest(BaseModel):
 async def get_hhee_metricas(
     request: MetricasRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     fecha_inicio = request.fecha_inicio
     fecha_fin = request.fecha_fin
 
-    # --- A. CONSULTA DE VALIDACIONES (VALIDACIÓN MANUAL) ---
-    # Regla:
-    # - Supervisor/Responsable: VEN TODO GLOBAL (sin filtro por supervisor_carga).
-    # - Supervisor Operaciones: VE SOLO SU CARGA (filtro por supervisor_carga).
-    
+    # --- 1. CONSULTA DE VALIDACIONES (CARGA MANUAL) ---
     base_query = select(models.ValidacionHHEE).filter(
         models.ValidacionHHEE.estado == 'Validado',
         models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
     )
 
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
-        # Filtro personal para Ops
+        # Filtro personal para Ops: solo ven lo que ellos cargaron
         query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
     else:
-        # Global para GTR Admin
+        # Global para Supervisores GTR y Responsables: ven todo
         query = base_query
     
     result = await db.execute(query)
     validaciones_periodo = result.scalars().all()
 
-    # --- B. CONSULTA DE SOLICITUDES (CONTROL GENERAL) ---
-    # Regla:
-    # - Supervisor Operaciones: NO DEBE VER ESTO (Devolvemos 0).
-    # - Supervisor/Responsable: VEN TODO.
-    
+    # --- 2. CONSULTA DE SOLICITUDES (NUEVO FLUJO) ---
     solicitudes_pendientes = 0
     horas_aprobadas_sol = 0
     horas_rechazadas_sol = 0
 
+    # Los Supervisores de Operaciones NO ven el control general de solicitudes
     if current_user.role != UserRole.SUPERVISOR_OPERACIONES:
         query_solicitudes = select(models.SolicitudHHEE).filter(
             models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
@@ -474,10 +522,8 @@ async def get_hhee_metricas(
             elif sol.estado == EstadoSolicitudHHEE.RECHAZADA:
                 horas_rechazadas_sol += (sol.horas_solicitadas or 0)
 
-    # --- C. CONSULTAS A GEOVICTORIA (HÍBRIDO) ---
+    # --- 3. CONSULTA A GEOVICTORIA (API ANTIGUA / SEGURA) ---
     ruts_unicos = {v.rut.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
-    
-    mapa_datos_consolidados = {}
     datos_gv_lista = []
     
     if ruts_unicos:
@@ -486,61 +532,34 @@ async def get_hhee_metricas(
             fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
             fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
             
-            results = await asyncio.gather(
-                geovictoria_service.obtener_datos_consolidados_async(
-                    token, list(ruts_unicos), fecha_inicio, fecha_fin
-                ),
-                geovictoria_service.obtener_datos_completos_periodo(
+            try:
+                # Usamos SOLO la función antigua que sabemos que funciona
+                datos_gv_lista = await geovictoria_service.obtener_datos_completos_periodo(
                     token, list(ruts_unicos), fecha_inicio_dt, fecha_fin_dt
-                ),
-                return_exceptions=True
-            )
-            
-            # Manejo de resultados
-            if isinstance(results[0], dict): mapa_datos_consolidados = results[0]
-            if isinstance(results[1], list): datos_gv_lista = results[1]
+                )
+            except Exception as e:
+                print(f"Error consultando GeoVictoria (API Antigua): {e}")
+                # El flujo continúa, pero sin datos de GV (todo RRHH será 0)
 
-    mapa_datos_gv_diario = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_lista}
+    # Creamos un mapa para buscar rápidamente los datos por RUT y Fecha
+    mapa_datos_gv = {(item['rut_limpio'], item['fecha']): item for item in datos_gv_lista}
 
-    # --- D. PROCESAMIENTO DE DATOS ---
+    # --- 4. PROCESAMIENTO Y CÁLCULOS ---
     total_declaradas = 0
+    total_rrhh = 0 # Acumulador global para el total de RRHH
+    
     desglose_empleado = {}
     desglose_campana = {}
-    
-    # Fallback: Si la API consolidada falló (está vacía), calculamos el total RRHH sumando la API antigua
-    usar_fallback = len(mapa_datos_consolidados) == 0 and len(datos_gv_lista) > 0
-    total_rrhh_calculado = 0
-
-    ruts_procesados = set()
 
     for v in validaciones_periodo:
         rut_limpio = v.rut.replace('-', '').replace('.', '').upper() if v.rut else None
         fecha_str = v.fecha_hhee.strftime('%Y-%m-%d')
         
-        # 1. Desglose Empleado (Solo para Ops Supervisor o si queremos mostrarlo)
-        if rut_limpio and rut_limpio not in ruts_procesados:
-            # Si usamos fallback, el total se calculará sumando días (más abajo o complejo), 
-            # pero por simplicidad, si falla la consolidada, mostramos 0 en la tabla de agentes para no bloquear.
-            horas_agente = mapa_datos_consolidados.get(rut_limpio, 0)
-            
-            desglose_empleado[v.rut] = {
-                "nombre": v.nombre_apellido, 
-                "declaradas": 0, 
-                "rrhh": horas_agente 
-            }
-            ruts_procesados.add(rut_limpio)
-
-        if v.rut in desglose_empleado:
-            desglose_empleado[v.rut]["declaradas"] += v.cantidad_hhee_aprobadas
-
-        # 2. Desglose Campaña & Total Declaradas
-        total_declaradas += v.cantidad_hhee_aprobadas
+        # Obtenemos los datos de GeoVictoria para ese día específico
+        gv_dia = mapa_datos_gv.get((rut_limpio, fecha_str), {})
         
-        # Obtenemos datos diarios de la API antigua
-        gv_dia = mapa_datos_gv_diario.get((rut_limpio, fecha_str), {})
-        
+        # Calculamos horas RRHH según el tipo específico validado
         horas_rrhh_dia = 0
-        # Sumamos según el tipo validado
         if v.tipo_hhee == 'Antes de Turno':
             horas_rrhh_dia = gv_dia.get('hhee_autorizadas_antes_gv', 0) or 0
         elif v.tipo_hhee == 'Después de Turno':
@@ -548,76 +567,101 @@ async def get_hhee_metricas(
         elif v.tipo_hhee == 'Día de Descanso':
             horas_rrhh_dia = (gv_dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (gv_dia.get('hhee_autorizadas_despues_gv', 0) or 0)
         
-        # Si estamos en fallback, sumamos al total global
-        if usar_fallback:
-            total_rrhh_calculado += horas_rrhh_dia
+        # --- ACUMULADORES GLOBALES ---
+        total_declaradas += v.cantidad_hhee_aprobadas
+        total_rrhh += horas_rrhh_dia
 
+        # --- DESGLOSE POR EMPLEADO ---
+        if v.rut not in desglose_empleado:
+            desglose_empleado[v.rut] = {
+                "nombre": v.nombre_apellido, 
+                "declaradas": 0, 
+                "rrhh": 0
+            }
+        desglose_empleado[v.rut]["declaradas"] += v.cantidad_hhee_aprobadas
+        desglose_empleado[v.rut]["rrhh"] += horas_rrhh_dia
+
+        # --- DESGLOSE POR CAMPAÑA ---
         campana_nombre = v.campaña or "Sin Campaña"
         if campana_nombre not in desglose_campana:
             desglose_campana[campana_nombre] = {"declaradas": 0, "rrhh": 0}
+        
         desglose_campana[campana_nombre]["declaradas"] += v.cantidad_hhee_aprobadas
         desglose_campana[campana_nombre]["rrhh"] += horas_rrhh_dia
 
-    # Definimos el total final de RRHH
-    total_rrhh_final = total_rrhh_calculado if usar_fallback else sum(mapa_datos_consolidados.values())
-
+    # --- 5. ORDENAMIENTO Y RESPUESTA ---
     desglose_por_empleado_lista = sorted(
-        [MetricasPorEmpleado(nombre_empleado=val["nombre"], rut=rut, total_horas_declaradas=val["declaradas"], total_horas_rrhh=val["rrhh"]) for rut, val in desglose_empleado.items()],
+        [
+            MetricasPorEmpleado(
+                nombre_empleado=val["nombre"], 
+                rut=rut, 
+                total_horas_declaradas=val["declaradas"], 
+                total_horas_rrhh=val["rrhh"]
+            ) for rut, val in desglose_empleado.items()
+        ],
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
     
     desglose_por_campana_lista = sorted(
-        [MetricasPorCampana(nombre_campana=campana, total_horas_declaradas=val["declaradas"], total_horas_rrhh=val["rrhh"]) for campana, val in desglose_campana.items()],
+        [
+            MetricasPorCampana(
+                nombre_campana=campana, 
+                total_horas_declaradas=val["declaradas"], 
+                total_horas_rrhh=val["rrhh"]
+            ) for campana, val in desglose_campana.items()
+        ],
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
     
     return DashboardHHEEMetricas(
         total_hhee_declaradas=total_declaradas,
-        total_hhee_aprobadas_rrhh=total_rrhh_final,
+        total_hhee_aprobadas_rrhh=total_rrhh,
+        
+        # Nuevas Métricas de Control
         total_solicitudes_pendientes=solicitudes_pendientes,
         total_horas_aprobadas_solicitud=horas_aprobadas_sol,
         total_horas_rechazadas_solicitud=horas_rechazadas_sol,
-        empleado_top=None,
+        
+        empleado_top=None, # Ya no lo usamos en el frontend
         desglose_por_empleado=desglose_por_empleado_lista,
         desglose_por_campana=desglose_por_campana_lista
     )
     
 @router.get("/metricas-pendientes", response_model=MetricasPendientesHHEE, summary="Obtener métricas de HHEE pendientes de validación")
 async def get_hhee_metricas_pendientes(
-
     fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
     fecha_fin: date = Query(..., description="Fecha de fin del período a consultar"),
-
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
 ):
     """
     Calcula y devuelve un resumen de HHEE en estado 'Pendiente por Corrección',
     filtrado por un rango de fechas.
+    OPTIMIZADO: Solo consulta la BD local, no llama a GeoVictoria.
     """
 
-    # Aplicamos el filtro de fecha a la consulta base
+    # 1. Filtramos en la BD Local por estado y fecha
     base_query = select(models.ValidacionHHEE).filter(
         models.ValidacionHHEE.estado == 'Pendiente por Corrección',
         models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
     )
 
-
-    # Si el usuario es Supervisor de Operaciones, filtramos solo los pendientes que él mismo marcó.
+    # 2. Filtro de Rol
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
         query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
     else:
-        query = base_query
+        query = base_query # Global para GTR
     
     result = await db.execute(query)
     pendientes = result.scalars().all()
 
-    # Hacemos el conteo en Python
+    # 3. Conteo en memoria (Rápido y sin API externa)
     total_pendientes = len(pendientes)
     cambio_turno_count = 0
     correccion_marcas_count = 0
 
     for p in pendientes:
+        # Usamos el campo 'notas' que ya guardaste en la BD
         if p.notas == "Pendiente de cambio de turno":
             cambio_turno_count += 1
         elif p.notas == "Pendiente de corrección de marcas":
@@ -637,7 +681,7 @@ async def get_hhee_metricas_pendientes(
 async def crear_solicitud_hhee(
     solicitud_data: SolicitudHHEECreate,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Permite a un analista crear una nueva solicitud de horas extras,
@@ -684,7 +728,7 @@ async def crear_solicitud_hhee(
 @router.get("/solicitudes/mis-solicitudes/", summary="[Analista] Ver mi historial de solicitudes de HHEE")
 async def obtener_mis_solicitudes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.ANALISTA])),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True)),
     fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
     fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
@@ -742,7 +786,7 @@ async def obtener_mis_solicitudes(
 @router.get("/solicitudes/pendientes/", summary="[Supervisor] Ver solicitudes pendientes por rango de fecha con datos de GV")
 async def obtener_solicitudes_pendientes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES])),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True)),
     fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
     fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
@@ -808,7 +852,7 @@ async def procesar_solicitud(
     solicitud_id: int,
     decision: SolicitudHHEEDecision,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Permite a un supervisor aprobar (y ajustar) o rechazar una solicitud.
@@ -875,7 +919,7 @@ async def procesar_solicitud(
 async def obtener_detalle_solicitud_para_validacion(
     solicitud_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Obtiene los datos de una solicitud específica y los enriquece
@@ -922,7 +966,7 @@ async def obtener_detalle_solicitud_para_validacion(
 async def procesar_solicitudes_lote(
     lote_data: SolicitudHHEELote,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     solicitud_ids = [d.solicitud_id for d in lote_data.decisiones]
     if not solicitud_ids:
@@ -1025,7 +1069,7 @@ async def procesar_solicitudes_lote(
 @router.get("/solicitudes/historial/", summary="[Supervisor] Ver historial de solicitudes procesadas")
 async def obtener_historial_solicitudes(
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES])),
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True)),
     fecha_inicio: date = Query(..., description="Fecha de inicio del período a consultar"),
     fecha_fin: date = Query(..., description="Fecha de fin del período a consultar")
 ):
@@ -1083,7 +1127,7 @@ async def obtener_historial_solicitudes(
 async def exportar_y_marcar_rrhh(
     request: ExportRequest, # Reutilizamos el mismo modelo de solicitud
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Genera el reporte para RRHH (formato ADP), marca los registros
@@ -1151,7 +1195,7 @@ class ConfirmacionEnvio(BaseModel):
 async def marcar_rrhh_como_reportado(
     confirmacion: ConfirmacionPorIDs, # <-- Usamos el nuevo modelo
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Marca una lista específica de registros (por ID) como 'reportado_a_rrhh = true'.
@@ -1181,7 +1225,7 @@ async def obtener_ids_pendientes_rrhh(
     fecha_inicio: date = Query(...),
     fecha_fin: date = Query(...),
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
     """
     Devuelve una lista de IDs de validaciones que están pendientes de ser reportadas a RRHH
