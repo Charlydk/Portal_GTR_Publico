@@ -3157,3 +3157,51 @@ async def obtener_mis_sesiones_activas(
     
     result = await db.execute(query)
     return result.scalars().all()
+
+@router.get("/sesiones/cobertura", summary="Ver estado de cobertura de todas las campañas")
+async def obtener_cobertura_campanas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Retorna un listado de todas las campañas con la lista de analistas que están activos en ellas.
+    Ideal para el tablero de control del supervisor.
+    """
+    # 1. Traer todas las campañas
+    result_campanas = await db.execute(select(models.Campana).order_by(models.Campana.nombre.asc()))
+    campanas = result_campanas.scalars().all()
+
+    # 2. Traer todas las sesiones activas actuales (donde fecha_fin es NULL)
+    result_sesiones = await db.execute(
+        select(models.SesionCampana)
+        .options(selectinload(models.SesionCampana.analista)) # Cargar nombre del analista
+        .filter(models.SesionCampana.fecha_fin.is_(None))
+    )
+    sesiones_activas = result_sesiones.scalars().all()
+
+    # 3. Cruzar datos en memoria (Más rápido y simple que una query compleja de SQL para este caso)
+    # Creamos un diccionario: { campana_id: [lista_de_analistas] }
+    mapa_cobertura = {c.id: [] for c in campanas}
+    
+    for sesion in sesiones_activas:
+        if sesion.campana_id in mapa_cobertura:
+            mapa_cobertura[sesion.campana_id].append({
+                "nombre": f"{sesion.analista.nombre} {sesion.analista.apellido}",
+                "inicio": sesion.fecha_inicio
+            })
+
+    # 4. Formatear respuesta final
+    reporte = []
+    for c in campanas:
+        analistas_activos = mapa_cobertura[c.id]
+        estado = "CUBIERTA" if analistas_activos else "DESCUBIERTA"
+        
+        reporte.append({
+            "id": c.id,
+            "nombre": c.nombre,
+            "estado": estado,
+            "cantidad_activos": len(analistas_activos),
+            "analistas": analistas_activos
+        })
+
+    return reporte

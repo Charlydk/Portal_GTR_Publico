@@ -11,6 +11,7 @@ import CampaignSelector from '../components/dashboard/CampaignSelector';
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget';
+import CoberturaWidget from '../components/dashboard/CoberturaWidget';
 
 function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
@@ -164,16 +165,29 @@ function DashboardPage() {
             {error && <Alert variant="danger">{error}</Alert>}
 
             <Row className="g-4">
-                <Col lg={5}>
-                    <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
-                </Col>
-                <Col lg={7}>
-                    <Row className="g-4">
-                        {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                            <Col md={12}>
-                                <EstadisticasGTRWidget stats={dashboardStats} user={user} />
-                            </Col>
-                        )}
+
+    {/* WIDGET DE REGISTRO (Incidencias) - Para todos o según prefieras */}
+    <Col lg={5}>
+        <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
+    </Col>
+
+        <Col lg={7}>
+            <Row className="g-4">
+
+                {/* --- NUEVO WIDGET DE COBERTURA --- */}
+                {/* Solo visible para supervisores/responsables */}
+                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                    <Col md={12}>
+                        <CoberturaWidget />
+                    </Col>
+                )}
+
+                {/* Widgets existentes de estadísticas... */}
+                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                    <Col md={12}>
+                        <EstadisticasGTRWidget stats={dashboardStats} user={user} />
+                    </Col>
+                )}
                         {user.role === 'ANALISTA' && (
                             <>
                                 <Col md={12}>
