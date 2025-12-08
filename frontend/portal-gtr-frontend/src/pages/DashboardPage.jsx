@@ -25,6 +25,8 @@ function DashboardPage() {
     // Estados para el Selector Dinámico
     const [showCampaignModal, setShowCampaignModal] = useState(false);
     const [misSesiones, setMisSesiones] = useState([]);
+    const [refreshing, setRefreshing] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0); // Señal para hijos
 
     // Callbacks estables
     const fetchDashboardStats = useCallback(async () => {
@@ -61,6 +63,32 @@ function DashboardPage() {
             console.error("Error cargando sesiones", err);
         }
     }, [user?.role]);
+
+    const handleManualRefresh = async () => {
+        setRefreshing(true);
+        try {
+            // 1. Disparamos todas las cargas del Dashboard (Padre)
+            const promises = [
+                fetchDashboardStats(),
+                fetchMisSesiones() // Actualizar la barrita de sesiones activas
+            ];
+
+            if (user.role === 'ANALISTA') {
+                promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
+            }
+
+            await Promise.all(promises);
+
+            // 2. Enviamos la señal a los hijos independientes (como CoberturaWidget)
+            setRefreshTrigger(prev => prev + 1);
+
+        } catch (error) {
+            console.error("Error al actualizar:", error);
+        } finally {
+            // Pequeño timeout visual para que se note que hizo algo (opcional)
+            setTimeout(() => setRefreshing(false), 500);
+        }
+    };
 
     useEffect(() => {
         if (authLoading || !user) {
@@ -132,7 +160,18 @@ function DashboardPage() {
 
     return (
         <Container fluid className="p-4">
-            <h1 className="mb-4">Bitácora y Centro de Comando GTR</h1>
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <h1 className="mb-0">Bitácora y Centro de Comando GTR</h1>
+                <Button 
+                    variant="light" 
+                    className="border shadow-sm d-flex align-items-center gap-2"
+                    onClick={handleManualRefresh}
+                    disabled={refreshing}
+                >
+                    {refreshing ? <Spinner size="sm" animation="border" /> : '🔄'}
+                    {refreshing ? 'Actualizando...' : 'Actualizar Todo'}
+                </Button>
+            </div>
             
 
             <Card className="mb-4 shadow-sm border-primary">
@@ -178,7 +217,7 @@ function DashboardPage() {
                 {/* Solo visible para supervisores/responsables */}
                 {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
                     <Col md={12}>
-                        <CoberturaWidget />
+                        <CoberturaWidget refreshTrigger={refreshTrigger} />
                     </Col>
                 )}
 

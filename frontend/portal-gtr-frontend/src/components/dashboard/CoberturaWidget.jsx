@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Row, Col, Badge, Spinner, Alert, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { API_BASE_URL, fetchWithAuth } from '../../api';
 
-const CoberturaWidget = () => {
+const CoberturaWidget = ({ refreshTrigger }) => {
     const [cobertura, setCobertura] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -26,6 +26,13 @@ const CoberturaWidget = () => {
         const interval = setInterval(fetchCobertura, 30000);
         return () => clearInterval(interval);
     }, []);
+
+    // Escuchar el botón manual del padre
+    useEffect(() => {
+        if (refreshTrigger) {
+            fetchCobertura();
+        }
+    }, [refreshTrigger]);
 
     if (loading) return <div className="text-center py-3"><Spinner size="sm" /> Cargando monitoreo...</div>;
     if (error) return <Alert variant="danger">Error monitoreo: {error}</Alert>;
