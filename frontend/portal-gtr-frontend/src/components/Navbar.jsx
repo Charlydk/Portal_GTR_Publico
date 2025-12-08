@@ -34,27 +34,31 @@ function NavbarComponent() {
                     <Nav className="me-auto">
                         {user && <Nav.Link as={Link} to="/dashboard" onClick={() => setExpanded(false)}>Dashboard</Nav.Link>}
                         
+                        {/* --- ENLACE DIRECTO RÁPIDO PARA ANALISTAS (NUEVO) --- */}
+                        {user && user.role === 'ANALISTA' && (
+                             <Nav.Link as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)} className="fw-bold text-warning">
+                                📋 Mis Tareas
+                             </Nav.Link>
+                        )}
+
                         {isGtrUser && (
                             <NavDropdown title="Gestión GTR" id="gtr-nav-dropdown">
                                 
-                                {/* --- INICIO DEL CAMBIO --- */}
-                                {/* Estos enlaces ahora solo son visibles para Supervisores y Responsables */}
+                                {/* --- CAMBIO: Enlaces para Supervisores --- */}
                                 {isGtrAdmin && (
                                     <>
-                                        {/* <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>Avisos</NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>Tareas</NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/tareas/disponibles" onClick={() => setExpanded(false)}>Tareas Disponibles</NavDropdown.Item>*/}
+                                        <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>
+                                            Tareas Equipo
+                                        </NavDropdown.Item>
+                                        <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>
+                                            Avisos
+                                        </NavDropdown.Item>
+                                        <NavDropdown.Divider />
                                     </>
                                 )}
-                                {/* --- FIN DEL CAMBIO --- */}
-
-                                {/* Estos enlaces siguen siendo visibles para todos los roles GTR (incluyendo Analista) */}
+                                
                                 <NavDropdown.Item as={Link} to="/campanas" onClick={() => setExpanded(false)}>Campañas</NavDropdown.Item>
                                 <NavDropdown.Item as={Link} to="/control-incidencias" onClick={() => setExpanded(false)}>Control Incidencias</NavDropdown.Item>
-                                
-                                {/* aqui va el de tareas disponibles cuando este activo */}
-                                
-                                
                                 <NavDropdown.Item as={Link} to="/control-eventos" onClick={() => setExpanded(false)}>Control Eventos</NavDropdown.Item>
                             </NavDropdown>
                         )}
@@ -62,7 +66,7 @@ function NavbarComponent() {
                         {isGtrAdmin && (
                              <NavDropdown title="Admin GTR" id="admin-gtr-nav-dropdown">
                                 <NavDropdown.Item as={Link} to="/analistas" onClick={() => setExpanded(false)}>Analistas</NavDropdown.Item>
-                                <NavDropdown.Item as={Link} to="/asignar-campanas" onClick={() => setExpanded(false)}>Asignar Campañas</NavDropdown.Item>
+                                {/* Asignar Campañas eliminado porque ahora es dinámico */}
                                 <NavDropdown.Item as={Link} to="/plantillas-checklist" onClick={() => setExpanded(false)}>Plantillas de Tareas</NavDropdown.Item>
                             </NavDropdown>
                         )}

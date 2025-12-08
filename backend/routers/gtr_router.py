@@ -14,7 +14,7 @@ from sqlalchemy import or_
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Union
 from datetime import datetime, date, time
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from sqlalchemy import case, text, select, delete
 from ..database import get_db
 from ..sql_app import models
@@ -3064,7 +3064,7 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Verificar si ya está activo
+    # 1. Verificar si ya está activo (Lógica existente...)
     query = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.campana_id == datos.campana_id,
@@ -3074,11 +3074,10 @@ async def check_in_campana(
     sesion_existente = result.scalars().first()
 
     if sesion_existente:
-        # Recargamos FULL para devolver
+        # (Lógica existente de retorno...)
         result_full = await db.execute(
             select(models.SesionCampana).options(
-                selectinload(models.SesionCampana.campana)
-                .options(
+                selectinload(models.SesionCampana.campana).options(
                     selectinload(models.Campana.lobs),
                     selectinload(models.Campana.analistas_asignados)
                 )
@@ -3086,20 +3085,75 @@ async def check_in_campana(
         )
         return result_full.scalars().first()
 
-    # 2. Crear nueva sesión
+    # 2. Crear nueva sesión (Lógica existente...)
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
         campana_id=datos.campana_id
     )
     db.add(nueva_sesion)
+    
+    # --- 🤖 NUEVA LÓGICA: AUTO-GENERACIÓN DE TAREA (RUTINA) ---
+    
+    # A. Buscamos la campaña para ver si tiene plantilla asignada
+    q_campana = select(models.Campana).options(
+        selectinload(models.Campana.plantilla_defecto).options(
+            selectinload(models.PlantillaChecklist.items) # Cargar items de la plantilla
+        )
+    ).filter(models.Campana.id == datos.campana_id)
+    
+    res_campana = await db.execute(q_campana)
+    campana_obj = res_campana.scalars().first()
+
+    if campana_obj and campana_obj.plantilla_defecto:
+        # B. Verificamos si YA existe una tarea de rutina para HOY y para este ANALISTA
+        # (Para no crear duplicados si hace check-out y check-in varias veces al día)
+        hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        q_tarea_hoy = select(models.Tarea).filter(
+            models.Tarea.analista_id == current_analista.id,
+            models.Tarea.campana_id == datos.campana_id,
+            models.Tarea.es_generada_automaticamente == True, # Asumiendo que agregaremos este flag o filtramos por título
+            models.Tarea.fecha_creacion >= hoy_inicio
+        )
+        res_tarea = await db.execute(q_tarea_hoy)
+        tarea_existente = res_tarea.scalars().first()
+
+        if not tarea_existente:
+            # C. Crear la Tarea Maestra
+            nueva_tarea = models.Tarea(
+                titulo=f"Rutina Diaria - {campana_obj.nombre}",
+                descripcion=f"Checklist generado automáticamente por inicio de sesión en {campana_obj.nombre}.",
+                fecha_vencimiento=datetime.now().replace(hour=23, minute=59), # Vence hoy
+                prioridad=campana_obj.plantilla_defecto.prioridad or "MEDIA",
+                progreso=ProgresoTarea.PENDIENTE,
+                analista_id=current_analista.id,
+                campana_id=datos.campana_id,
+                # Sería ideal tener un campo 'es_generada_automaticamente' en el modelo Tarea
+            )
+            db.add(nueva_tarea)
+            await db.flush() # Para obtener el ID de la nueva tarea antes del commit final
+
+            # D. Copiar los Items de la Plantilla a la Tarea
+            for item_plantilla in campana_obj.plantilla_defecto.items:
+                nuevo_checklist_item = models.ChecklistItem(
+                    tarea_id=nueva_tarea.id,
+                    texto=item_plantilla.texto,
+                    completado=False,
+                    orden=item_plantilla.orden
+                )
+                db.add(nuevo_checklist_item)
+            
+            print(f"✅ Tarea automática generada para {current_analista.email} en {campana_obj.nombre}")
+
+    # -----------------------------------------------------------
+
     await db.commit()
     await db.refresh(nueva_sesion)
 
-    # 3. Devolver con carga profunda
+    # 3. Devolver (Lógica existente...)
     result_final = await db.execute(
         select(models.SesionCampana).options(
-            selectinload(models.SesionCampana.campana)
-            .options(
+            selectinload(models.SesionCampana.campana).options(
                 selectinload(models.Campana.lobs),
                 selectinload(models.Campana.analistas_asignados)
             )
