@@ -193,12 +193,6 @@ function TareasPage() {
             </Card>
             {/* --- FIN DE CAMBIOS --- */}
 
-            <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4>{loading ? 'Cargando...' : `Mostrando ${allTasks.length} tareas`}</h4>
-                <Button variant="primary" onClick={() => navigate('/tareas/crear')}>
-                    Crear Nueva Tarea
-                </Button>
-            </div>
 
             {loading ? (
                 <div className="text-center"><Spinner /></div>

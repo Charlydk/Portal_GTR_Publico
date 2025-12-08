@@ -369,6 +369,29 @@ class PlantillaChecklistItem(PlantillaChecklistItemBase):
     class Config:
         from_attributes = True
 
+# Esquema para recibir la petición de entrada
+class CheckInCreate(BaseModel):
+    campana_id: int
+
+# Esquema para responder (mostrando detalles de la campaña)
+class SesionActiva(BaseModel):
+    id: int
+    fecha_inicio: datetime
+    campana: Campana
+    
+    class Config:
+        from_attributes = True
+
+class SesionCampanaSchema(BaseModel):
+    id: int
+    analista_id: int
+    campana_id: int
+    fecha_inicio: datetime
+    active: bool = True
+    
+    class Config:
+        from_attributes = True
+
 
 class Aviso(AvisoBase):
     id: int

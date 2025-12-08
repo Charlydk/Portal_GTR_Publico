@@ -41,7 +41,9 @@ from ..schemas.models import (
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
     TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,
-    DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana
+    DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana,
+    CheckInCreate,
+    SesionActiva
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
 
@@ -657,16 +659,24 @@ async def crear_campana(
 
 
 
-@router.get("/campanas/", response_model=List[Campana], summary="Obtener todas las Campañas (Protegido)")
+@router.get("/campanas/", response_model=List[Campana], summary="Listar todas las campañas activas")
 async def obtener_campanas(
+    skip: int = 0, 
+    limit: int = 100, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
-    # Añadimos skip y limit si quieres paginación
-    # skip: int = 0,
-    # limit: int = 100
 ):
-    # ¡Mucho más limpio! Solo llamamos a la función del CRUD
-    campanas = await crud.get_campanas(db=db) # Pasamos skip y limit si los añadimos arriba
+    """
+    Devuelve todas las campañas del sistema con sus relaciones cargadas.
+    """
+    # Consulta con carga explícita de relaciones para evitar MissingGreenlet
+    query = select(models.Campana).options(
+        selectinload(models.Campana.lobs),
+        selectinload(models.Campana.analistas_asignados) # Cargamos esta relación también
+    ).order_by(models.Campana.nombre.asc()).offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    campanas = result.scalars().all()
     return campanas
 
 
@@ -783,152 +793,36 @@ async def eliminar_campana(
     return
 
 
-# --- Endpoints para Tareas (Protegidos) ---
+# --- Endpoints para Tareas ---
 
-@router.post("/tareas/", response_model=Tarea, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Tarea (Protegido)")
-async def crear_tarea(
-    tarea: TareaBase,
+
+@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
+async def obtener_tareas(
+    skip: int = 0, 
+    limit: int = 100, 
+    estado: Optional[ProgresoTarea] = None, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Crea una nueva tarea.
-    - Supervisor/Responsable: Pueden crear tareas asignadas o sin asignar (estas últimas deben tener campaña).
-    - Analista: Solo puede crear tareas para sí mismo y en campañas a las que esté asignado.
+    Muestra las tareas de cualquier campaña.
     """
-    current_analista_id = current_analista.id
-    current_analista_role_value = current_analista.role.value # Usamos .value para la comparación de strings
-
-    # --- VALIDACIÓN DE EXISTENCIA (MODIFICADA PARA SER OPCIONAL) ---
-    # 1. Si se proporciona un analista, verificar que existe.
-    if tarea.analista_id:
-        analista_result = await db.execute(select(models.Analista).filter(models.Analista.id == tarea.analista_id))
-        if not analista_result.scalars().first():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Analista con ID {tarea.analista_id} no encontrado.")
-
-    # 2. Si se proporciona una campaña, verificar que existe.
-    if tarea.campana_id:
-        campana_result = await db.execute(select(models.Campana).filter(models.Campana.id == tarea.campana_id))
-        if not campana_result.scalars().first():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Campaña con ID {tarea.campana_id} no encontrada.")
-
-    # --- LÓGICA DE PERMISOS (FUSIONADA) ---
-    # 3. Mantenemos tu lógica original para el rol ANALISTA
-    if current_analista_role_value == UserRole.ANALISTA.value:
-        # Un analista DEBE asignarse la tarea a sí mismo
-        if not tarea.analista_id or tarea.analista_id != current_analista_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Analista solo puede crear tareas para sí mismo.")
-        
-        # Si la tarea tiene campana_id, el analista debe estar asignado a esa campaña (TU LÓGICA ORIGINAL)
-        if tarea.campana_id:
-            is_assigned_to_campaign_result = await db.execute(
-                select(models.analistas_campanas.c.campana_id)
-                .where(models.analistas_campanas.c.analista_id == current_analista_id)
-                .where(models.analistas_campanas.c.campana_id == tarea.campana_id)
-            )
-            if not is_assigned_to_campaign_result.scalars().first():
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para crear tareas en esta campaña. No estás asignado a ella.")
-    
-    # 4. Agregamos la nueva regla para SUPERVISOR/RESPONSABLE
-    elif current_analista_role_value in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
-        # Si crean una tarea sin analista, DEBE tener una campaña.
-        if not tarea.analista_id and not tarea.campana_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Una tarea sin analista asignado debe estar asociada a una campaña.")
-
-    # --- El resto de la función se mantiene igual que la tuya ---
-    tarea_data_dict = tarea.model_dump()
-    
-    db_tarea = models.Tarea(**tarea_data_dict)
-    db.add(db_tarea)
-    
-    try:
-        await db.commit()
-        await db.refresh(db_tarea)
-        new_tarea_id = db_tarea.id
-        new_tarea_progreso = db_tarea.progreso
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error inesperado al crear tarea: {e}")
-
-    # Registrar el estado inicial de la tarea
-    historial_entry = models.HistorialEstadoTarea(
-        old_progreso=None,
-        new_progreso=new_tarea_progreso,
-        changed_by_analista_id=current_analista_id,
-        tarea_campana_id=new_tarea_id
-    )
-    db.add(historial_entry)
-    
-    try:
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al registrar el historial de la tarea: {e}")
-
-    result = await db.execute(
-        select(models.Tarea)
-        .options(
-            selectinload(models.Tarea.analista),
-            selectinload(models.Tarea.campana),
-            selectinload(models.Tarea.checklist_items),
-            selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
-            selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
-
-        )
-        .filter(models.Tarea.id == new_tarea_id)
-    )
-    tarea_to_return = result.scalars().first()
-    if not tarea_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar la tarea después de la creación.")
-    
-    return tarea_to_return
-
-
-@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener Tareas (con filtros opcionales) (Protegido)")
-async def obtener_tareas(
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista),
-    analista_id: Optional[int] = None,
-    campana_id: Optional[int] = None,
-    estado: Optional[ProgresoTarea] = None,
-    fecha_desde: Optional[date] = None,
-    fecha_hasta: Optional[date] = None
-):
-    """
-    Obtiene todas las tareas, o filtra por analista y/o campaña.
-    Requiere autenticación.
-    Un analista normal solo ve sus propias tareas.
-    """
+    # Consulta base: Traer tareas con sus relaciones
     query = select(models.Tarea).options(
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.campana)
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista)
     )
 
-    if current_analista.role == UserRole.ANALISTA.value:
-        query = query.where(models.Tarea.analista_id == current_analista.id)
-    elif analista_id is not None:
-        if analista_id == 0:  # Señal para tareas sin asignar
-            query = query.where(models.Tarea.analista_id.is_(None))
-        else:
-            query = query.where(models.Tarea.analista_id == analista_id)
-
-    if campana_id is not None:
-        if campana_id == 0:  # Señal para tareas sin campaña
-            query = query.where(models.Tarea.campana_id.is_(None))
-        else:
-            query = query.where(models.Tarea.campana_id == campana_id)
+    # Filtro opcional por estado
     if estado:
-        query = query.where(models.Tarea.progreso == estado)
-    if fecha_desde:
-        query = query.where(models.Tarea.fecha_vencimiento >= fecha_desde)
-    if fecha_hasta:
-        # Añadimos un día para que la fecha 'hasta' sea inclusiva
-        query = query.where(models.Tarea.fecha_vencimiento < (fecha_hasta + timedelta(days=1)))
-    # --- FIN DE CAMBIOS ---
-   
+        query = query.filter(models.Tarea.progreso == estado)
 
-    tareas = await db.execute(query)
-    return tareas.scalars().unique().all()
+    # Ordenamos por vencimiento más próximo o creación
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/tareas/{tarea_id}", response_model=Tarea, summary="Obtener Tarea por ID (Protegido)")
@@ -1474,43 +1368,29 @@ async def crear_aviso(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el aviso después de la creación.")
     return aviso_to_return
 
-@router.get("/avisos/", response_model=List[AvisoListOutput], summary="Obtener Avisos (con filtros opcionales) (Protegido)")
+@router.get("/avisos/", response_model=List[Aviso], summary="Ver tablón de anuncios global")
 async def obtener_avisos(
+    skip: int = 0, 
+    limit: int = 100, 
     db: AsyncSession = Depends(get_db),
-    creador_id: Optional[int] = None,
-    campana_id: Optional[int] = None,
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Obtiene todos los avisos, o filtra por ID del creador (analista) y/o ID de campaña.
-    Requiere autenticación. Un analista normal solo ve avisos creados por él o asociados a sus campañas,
-    o avisos que no tienen campaña asociada (generales).
+    Muestra los avisos vigentes.
+    Visibilidad total.
     """
+    hoy = datetime.now()
+    
+    # Traemos avisos que no hayan vencido (o que no tengan fecha de vencimiento)
     query = select(models.Aviso).options(
         selectinload(models.Aviso.creador),
         selectinload(models.Aviso.campana)
-    )
+    ).filter(
+        (models.Aviso.fecha_vencimiento >= hoy) | (models.Aviso.fecha_vencimiento == None)
+    ).order_by(models.Aviso.fecha_creacion.desc()).offset(skip).limit(limit)
 
-    if current_analista.role == UserRole.ANALISTA.value:
-        # Un analista puede ver:
-        # 1. Avisos creados por él
-        # 2. Avisos sin campaña asociada (generales)
-        # 3. Avisos asociados a campañas a las que está asignado
-        query = query.filter(
-            (models.Aviso.creador_id == current_analista.id) |
-            (models.Aviso.campana_id.is_(None)) | # AHORA INCLUYE AVISOS GENERALES
-            (models.Aviso.campana_id.in_(
-                select(models.analistas_campanas.c.campana_id).where(models.analistas_campanas.c.analista_id == current_analista.id)
-            ))
-        )
-    else: # Supervisores y Responsables ven todos los avisos
-        if creador_id:
-            query = query.where(models.Aviso.creador_id == creador_id)
-        if campana_id:
-            query = query.where(models.Aviso.campana_id == campana_id)
-
-    avisos = await db.execute(query)
-    return avisos.scalars().unique().all()
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/avisos/{aviso_id}", response_model=Aviso, summary="Obtener Aviso por ID (Protegido)")
@@ -3173,3 +3053,107 @@ async def exportar_bitacora(
     
     headers = {'Content-Disposition': f'attachment; filename="Reporte_Eventos_{date.today().isoformat()}.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# -----------------------------------------------------------------------------
+# 📍 SISTEMA DE CHECK-IN / SESIONES ACTIVAS (GTR DINÁMICO)
+# -----------------------------------------------------------------------------
+
+@router.post("/sesiones/check-in", response_model=SesionActiva, summary="Iniciar gestión en una campaña")
+async def check_in_campana(
+    datos: CheckInCreate,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    # 1. Verificar si ya está activo
+    query = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.campana_id == datos.campana_id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    result = await db.execute(query)
+    sesion_existente = result.scalars().first()
+
+    if sesion_existente:
+        # Recargamos FULL para devolver
+        result_full = await db.execute(
+            select(models.SesionCampana).options(
+                selectinload(models.SesionCampana.campana)
+                .options(
+                    selectinload(models.Campana.lobs),
+                    selectinload(models.Campana.analistas_asignados)
+                )
+            ).filter(models.SesionCampana.id == sesion_existente.id)
+        )
+        return result_full.scalars().first()
+
+    # 2. Crear nueva sesión
+    nueva_sesion = models.SesionCampana(
+        analista_id=current_analista.id,
+        campana_id=datos.campana_id
+    )
+    db.add(nueva_sesion)
+    await db.commit()
+    await db.refresh(nueva_sesion)
+
+    # 3. Devolver con carga profunda
+    result_final = await db.execute(
+        select(models.SesionCampana).options(
+            selectinload(models.SesionCampana.campana)
+            .options(
+                selectinload(models.Campana.lobs),
+                selectinload(models.Campana.analistas_asignados)
+            )
+        ).filter(models.SesionCampana.id == nueva_sesion.id)
+    )
+    return result_final.scalars().first()
+
+
+@router.post("/sesiones/check-out", summary="Dejar de gestionar una campaña")
+async def check_out_campana(
+    datos: CheckInCreate,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Cierra la sesión activa en la campaña especificada.
+    """
+    # Buscar la sesión activa
+    query = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.campana_id == datos.campana_id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    result = await db.execute(query)
+    sesion = result.scalars().first()
+
+    if not sesion:
+        raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
+
+    # Cerrar sesión
+    sesion.fecha_fin = datetime.now()
+    await db.commit()
+    
+    return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
+
+
+@router.get("/sesiones/activas", response_model=List[SesionActiva], summary="Ver mis campañas activas")
+async def obtener_mis_sesiones_activas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Devuelve la lista de campañas donde el analista está haciendo check-in actualmente.
+    """
+    query = select(models.SesionCampana).options(
+        selectinload(models.SesionCampana.campana)
+        .options(
+            selectinload(models.Campana.lobs),
+            selectinload(models.Campana.analistas_asignados)
+        )
+    ).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    
+    result = await db.execute(query)
+    return result.scalars().all()

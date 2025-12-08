@@ -53,6 +53,8 @@ class Analista(Base):
     comentarios_tarea = relationship("ComentarioTarea", back_populates="autor")
     solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
     solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
+    sesiones = relationship("SesionCampana", back_populates="analista")
+
 
 
 
@@ -78,6 +80,7 @@ class Campana(Base):
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="campana", cascade="all, delete-orphan")
     plantilla_checklist = relationship("PlantillaChecklistItem", back_populates="campana", cascade="all, delete-orphan")
+    sesiones_activas = relationship("SesionCampana", back_populates="campana")
 
 class LOB(Base):
     __tablename__ = "lobs"
@@ -329,3 +332,16 @@ class ChecklistDiarioItem(Base):
     # Si el ítem viene de una plantilla, guardamos la referencia
     plantilla_item_id = Column(Integer, ForeignKey('plantillas_checklist_items.id'), nullable=True)
     plantilla_item = relationship("PlantillaChecklistItem")
+
+class SesionCampana(Base):
+    __tablename__ = "sesiones_campana"
+
+    id = Column(Integer, primary_key=True, index=True)
+    analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
+    fecha_inicio = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_fin = Column(DateTime(timezone=True), nullable=True) # Null = Sesión Activa
+
+    # Relaciones
+    analista = relationship("Analista", back_populates="sesiones")
+    campana = relationship("Campana", back_populates="sesiones_activas")
