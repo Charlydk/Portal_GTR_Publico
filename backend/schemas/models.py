@@ -191,6 +191,7 @@ class ChecklistItemSimple(BaseModel):
     id: int
     descripcion: str
     completado: bool
+    fecha_completado: Optional[datetime] = None
     class Config:
         from_attributes = True
 

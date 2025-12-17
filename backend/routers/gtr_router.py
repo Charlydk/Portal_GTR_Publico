@@ -1237,12 +1237,20 @@ async def actualizar_checklist_item(
 
     if current_analista.role == UserRole.ANALISTA.value:
         if item_existente.tarea.analista_id != current_analista.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar este ítem de checklist. Solo puedes actualizar ítems de tus propias tareas.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso...")
         
         if "completado" in update_data:
-            item_existente.completado = update_data["completado"]
+            # --- LÓGICA DE TRAZABILIDAD TAMBIÉN PARA SUPERVISOR ---
+            nuevo_estado = update_data["completado"]
+            if nuevo_estado and not item_existente.completado:
+                item_existente.fecha_completado = datetime.now(timezone.utc)
+            elif not nuevo_estado:
+                item_existente.fecha_completado = None
+            
+            item_existente.completado = nuevo_estado
+            # --------------------------------------
         else:
-            pass # Si el analista intenta actualizar otra cosa, simplemente no se hace
+            pass
             
     elif current_analista.role in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
         if "tarea_id" in update_data and update_data["tarea_id"] != item_existente.tarea_id:
@@ -3095,59 +3103,67 @@ async def check_in_campana(
     )
     db.add(nueva_sesion)
     
-    # --- 🤖 NUEVA LÓGICA: AUTO-GENERACIÓN DE TAREA (RUTINA) ---
+    # --- 🤖 NUEVA LÓGICA CORREGIDA: AUTO-GENERACIÓN USANDO LA TABLA QUE YA FUNCIONA ---
     
-    # A. Buscamos la campaña para ver si tiene plantilla asignada
-    q_campana = select(models.Campana).options(
-        selectinload(models.Campana.plantilla_defecto).options(
-            selectinload(models.PlantillaChecklist.items) # Cargar items de la plantilla
-        )
-    ).filter(models.Campana.id == datos.campana_id)
+    # A. Buscamos si la campaña tiene ítems configurados en la tabla 'PlantillaChecklistItem'
+    #    (Esta es la tabla que llena tu pantalla de Gestión de Plantillas)
+    q_items_plantilla = select(models.PlantillaChecklistItem).filter(
+        models.PlantillaChecklistItem.campana_id == datos.campana_id
+    ).order_by(models.PlantillaChecklistItem.orden)
     
+    res_items = await db.execute(q_items_plantilla)
+    items_plantilla = res_items.scalars().all()
+
+    # B. Buscamos el nombre de la campaña para el título de la tarea
+    q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
     res_campana = await db.execute(q_campana)
     campana_obj = res_campana.scalars().first()
 
-    if campana_obj and campana_obj.plantilla_defecto:
-        # B. Verificamos si YA existe una tarea de rutina para HOY y para este ANALISTA
-        # (Para no crear duplicados si hace check-out y check-in varias veces al día)
+    if items_plantilla and campana_obj:
+        # C. Verificamos si YA existe una tarea de rutina para HOY y para este ANALISTA
         hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
         q_tarea_hoy = select(models.Tarea).filter(
             models.Tarea.analista_id == current_analista.id,
             models.Tarea.campana_id == datos.campana_id,
-            models.Tarea.es_generada_automaticamente == True, # Asumiendo que agregaremos este flag o filtramos por título
+            models.Tarea.es_generada_automaticamente == True, 
             models.Tarea.fecha_creacion >= hoy_inicio
         )
         res_tarea = await db.execute(q_tarea_hoy)
         tarea_existente = res_tarea.scalars().first()
 
         if not tarea_existente:
-            # C. Crear la Tarea Maestra
+            # D. Crear la Tarea Maestra
+            nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
+            
             nueva_tarea = models.Tarea(
-                titulo=f"Rutina Diaria - {campana_obj.nombre}",
+                titulo=nombre_tarea,
                 descripcion=f"Checklist generado automáticamente por inicio de sesión en {campana_obj.nombre}.",
-                fecha_vencimiento=datetime.now().replace(hour=23, minute=59), # Vence hoy
-                prioridad=campana_obj.plantilla_defecto.prioridad or "MEDIA",
+                fecha_vencimiento=datetime.now().replace(hour=23, minute=59),
                 progreso=ProgresoTarea.PENDIENTE,
                 analista_id=current_analista.id,
                 campana_id=datos.campana_id,
-                # Sería ideal tener un campo 'es_generada_automaticamente' en el modelo Tarea
+                es_generada_automaticamente=True # Importante para evitar duplicados
             )
             db.add(nueva_tarea)
-            await db.flush() # Para obtener el ID de la nueva tarea antes del commit final
+            await db.flush() # Para obtener el ID de la nueva tarea
 
-            # D. Copiar los Items de la Plantilla a la Tarea
-            for item_plantilla in campana_obj.plantilla_defecto.items:
+            # E. Copiar los Items de la Plantilla a la Tarea
+            for item in items_plantilla:
+                # Si tienes hora sugerida, la agregamos al texto para que el analista la vea
+                texto_final = item.descripcion
+                if item.hora_sugerida:
+                    hora_str = item.hora_sugerida.strftime("%H:%M")
+                    texto_final = f"[{hora_str}] {item.descripcion}"
+
                 nuevo_checklist_item = models.ChecklistItem(
                     tarea_id=nueva_tarea.id,
-                    texto=item_plantilla.texto,
-                    completado=False,
-                    orden=item_plantilla.orden
+                    descripcion=texto_final, # Usamos 'descripcion' que es el campo de tu modelo ChecklistItem
+                    completado=False
                 )
                 db.add(nuevo_checklist_item)
             
-            print(f"✅ Tarea automática generada para {current_analista.email} en {campana_obj.nombre}")
-
+            print(f"✅ Tarea automática generada: {nombre_tarea}")
     # -----------------------------------------------------------
 
     await db.commit()

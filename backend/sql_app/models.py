@@ -115,6 +115,7 @@ class ChecklistItem(Base):
     descripcion = Column(String, nullable=False)
     completado = Column(Boolean, default=False)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    fecha_completado = Column(DateTime(timezone=True), nullable=True)
     tarea_id = Column(Integer, ForeignKey("tareas.id"), nullable=False)
     tarea = relationship("Tarea", back_populates="checklist_items")
 

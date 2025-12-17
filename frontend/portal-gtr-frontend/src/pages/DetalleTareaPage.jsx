@@ -1,593 +1,321 @@
-// src/pages/DetalleTareaPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+// RUTA: src/pages/DetalleTareaPage.jsx
+
+import React, { useState, useEffect } from 'react';
+import { Container, Card, Row, Col, Badge, ProgressBar, Button, Form, Spinner, ListGroup, Alert, InputGroup } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, Modal, Form } from 'react-bootstrap';
-import { GTR_API_URL, fetchWithAuth } from '../api';
+import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
-import HistorialTarea from '../components/HistorialTarea';
-import { formatDateTime } from '../utils/dateFormatter';
 
-function DetalleTareaPage() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const { user, authToken, loading: authLoading } = useAuth();
+const DetalleTareaPage = () => {
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const { user } = useAuth();
+    
+    const [tarea, setTarea] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    
+    // Estados para comentarios
+    const [comentario, setComentario] = useState('');
+    const [enviandoComentario, setEnviandoComentario] = useState(false);
 
-  const [tarea, setTarea] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [nuevoComentario, setNuevoComentario] = useState('');
-  const [submittingComentario, setSubmittingComentario] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [submittingProgress, setSubmittingProgress] = useState(false); // Para el spinner de progreso
-  const [submittingChecklist, setSubmittingChecklist] = useState(null); // Para el spinner de checklist item
-  
-  const [historial, setHistorial] = useState([]);
-  const [showHistorial, setShowHistorial] = useState(false);
-  const [loadingHistorial, setLoadingHistorial] = useState(false);
-  const [errorHistorial, setErrorHistorial] = useState(null);
+    // Estados para item extra
+    const [showExtraInput, setShowExtraInput] = useState(false);
+    const [extraItemText, setExtraItemText] = useState('');
+    const [extraItemTime, setExtraItemTime] = useState(''); // <--- NUEVO ESTADO PARA HORA
+    const [addingItem, setAddingItem] = useState(false);
 
-  const fetchTarea = useCallback(async () => {
-    if (!authToken || !user) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Error al cargar la tarea: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setTarea(data);
-    } catch (err) {
-      console.error("Error fetching tarea:", err);
-      setError(err.message || "No se pudo cargar la tarea.");
-    } finally {
-      setLoading(false);
-    }
-  }, [id, authToken, user]);
-
-  useEffect(() => {
-    if (!authLoading && user) {
-      fetchTarea();
-    }
-  }, [authLoading, user, fetchTarea]);
-
-  const handlePostComentario = async (e) => {
-    e.preventDefault();
-    if (!nuevoComentario.trim()) return;
-
-    setSubmittingComentario(true);
-    setError(null);
-    try {
-        const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}/comentarios`, {
-            method: 'POST',
-            body: JSON.stringify({ texto: nuevoComentario }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'No se pudo publicar el comentario.');
+    // Cargar datos
+    const fetchTarea = async () => {
+        try {
+            const response = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`);
+            if (!response.ok) throw new Error("No se pudo cargar la tarea");
+            const data = await response.json();
+            
+            // Ordenar items: primero por ID para mantener orden de creación
+            if (data.checklist_items) {
+                data.checklist_items.sort((a, b) => a.id - b.id);
+            }
+            setTarea(data);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
         }
-        
-        setNuevoComentario(''); // Limpiar el campo de texto
-        await fetchTarea(); // Recargar la tarea para mostrar el nuevo comentario
-    } catch (err) {
-        setError(err.message);
-    } finally {
-        setSubmittingComentario(false);
-    }
-};
+    };
 
-   const handleFetchHistorial = async () => {
-    if (showHistorial) {
-      setShowHistorial(false);
-      return;
-    }
+    useEffect(() => {
+        fetchTarea();
+    }, [id]);
 
-    setLoadingHistorial(true);
-    setErrorHistorial(null);
-    try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${id}/historial_estados`);
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "No se pudo cargar el historial.");
-      }
-      const data = await response.json();
-      setHistorial(data);
-      setShowHistorial(true);
-    } catch (error) {
-      setErrorHistorial(error.message);
-    } finally {
-      setLoadingHistorial(false);
-    }
-  };
+    // --- ACCIONES ---
 
-  const handleUpdateProgress = async (newProgress) => {
-    if (!authToken || !user || !tarea) return;
-
-    setSubmittingProgress(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ progreso: newProgress }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Error al actualizar el progreso: ${response.statusText}`);
-      }
-
-      const updatedTarea = await response.json();
-      setTarea(updatedTarea);
-      setSuccess("Progreso de la tarea actualizado con éxito!");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      console.error("Error al actualizar progreso:", err);
-      setError(err.message || "No se pudo actualizar el progreso.");
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setSubmittingProgress(false);
-    }
-  };
-
-  const handleToggleChecklistItem = async (checklistItemId, currentCompletado) => {
-    if (!authToken || !user || !tarea) return;
-
-    setSubmittingChecklist(checklistItemId); // Set the ID of the item being submitted
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/checklist_items/${checklistItemId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ completado: !currentCompletado }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Error al actualizar checklist item: ${response.statusText}`);
-      }
-
-      // Actualizar el estado de la tarea localmente para reflejar el cambio
-      setTarea(prevTarea => {
-        const updatedChecklistItems = prevTarea.checklist_items.map(item =>
-          item.id === checklistItemId ? { ...item, completado: !currentCompletado } : item
+    // 1. Marcar / Desmarcar Checkbox
+    const toggleItem = async (itemId, estadoActual) => {
+        // Actualización optimista
+        const nuevosItems = tarea.checklist_items.map(i => 
+            i.id === itemId ? { ...i, completado: !estadoActual } : i
         );
-        return { ...prevTarea, checklist_items: updatedChecklistItems };
-      });
-      setSuccess("Checklist Item actualizado con éxito!");
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      console.error("Error al actualizar checklist item:", err);
-      setError(err.message || "No se pudo actualizar el checklist item.");
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setSubmittingChecklist(null); // Clear the submitting item ID
-    }
-  };
+        setTarea({ ...tarea, checklist_items: nuevosItems });
 
-  const handleTomarTarea = async () => {
-    if (!authToken || !user || !tarea || submittingProgress) return;
+        try {
+            await fetchWithAuth(`${API_BASE_URL}/gtr/checklist_items/${itemId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ completado: !estadoActual })
+            });
+        } catch (err) {
+            console.error("Error al marcar item:", err);
+            fetchTarea(); // Revertir si falla
+        }
+    };
 
-    setSubmittingProgress(true);
-    setError(null);
-    setSuccess(null);
+    // 2. Agregar Item Extra (MODIFICADO CON HORA)
+    const handleAddExtraItem = async () => {
+        if (!extraItemText.trim()) return;
+        setAddingItem(true);
 
-    try {
-        const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ analista_id: user.id }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || "Error al asignarse la tarea.");
+        // Formatear el texto final dependiendo de si hay hora o no
+        let descripcionFinal = `(Extra) ${extraItemText}`;
+        if (extraItemTime) {
+            descripcionFinal = `[${extraItemTime}] (Extra) ${extraItemText}`;
         }
 
-        // Actualizamos la tarea en el estado local para que se refleje inmediatamente
-        const updatedTarea = await response.json();
-        setTarea(updatedTarea);
-        setSuccess("¡Tarea asignada con éxito!");
-        setTimeout(() => setSuccess(null), 3000);
-
-    } catch (err) {
-        console.error("Error al tomar la tarea:", err);
-        setError(err.message);
-        setTimeout(() => setError(null), 5000);
-    } finally {
-        setSubmittingProgress(false);
-    }
-};
-
-const handleDejarTarea = async () => {
-  if (!authToken || !user || !tarea || submittingProgress) return;
-
-  if (!window.confirm('¿Estás seguro de que quieres liberar esta tarea? Volverá al pool de la campaña.')) {
-      return;
-  }
-
-  setSubmittingProgress(true);
-  setError(null);
-  setSuccess(null);
-
-  try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ analista_id: null }),
-      });
-
-      if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.detail || "Error al liberar la tarea.");
-      }
-
-      const updatedTarea = await response.json();
-      setTarea(updatedTarea);
-      setSuccess("¡Tarea liberada con éxito!");
-      setTimeout(() => setSuccess(null), 3000);
-
-  } catch (err) {
-      console.error("Error al dejar la tarea:", err);
-      setError(err.message);
-      setTimeout(() => setError(null), 5000);
-  } finally {
-      setSubmittingProgress(false);
-  }
-};
-
-  const handleDeleteTarea = async () => {
-    if (!authToken || !user || !tarea) return;
-
-    setShowDeleteModal(false);
-    setSubmittingProgress(true); // Reutilizamos este spinner
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await fetchWithAuth(`${GTR_API_URL}/tareas/${tarea.id}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `Error al eliminar la tarea: ${response.statusText}`);
-      }
-
-      setSuccess("Tarea eliminada con éxito!");
-      setTimeout(() => {
-        setSuccess(null);
-        navigate('/tareas'); // Redirigir a la lista de tareas
-      }, 2000);
-    } catch (err) {
-      console.error("Error al eliminar tarea:", err);
-      setError(err.message || "No se pudo eliminar la tarea.");
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setSubmittingProgress(false);
-    }
-  };
-  
-  if (authLoading || loading) {
-    return (
-      <Container className="d-flex justify-content-center align-items-center min-vh-100 bg-light">
-        <Spinner animation="border" role="status">
-          <span className="visually-hidden">Cargando...</span>
-        </Spinner>
-        <p className="ms-3 text-muted">Cargando detalles de la tarea...</p>
-      </Container>
-    );
-  }
-
-  if (error) {
-    return (
-      <Container className="mt-4">
-        <Alert variant="danger">
-          <Alert.Heading>Error al cargar la tarea</Alert.Heading>
-          <p>{error}</p>
-          <Button onClick={() => navigate('/tareas')}>Volver a Tareas</Button>
-        </Alert>
-      </Container>
-    );
-  }
-
-  if (!tarea) {
-    return (
-      <Container className="mt-4">
-        <Alert variant="info">
-          <Alert.Heading>Tarea no encontrada</Alert.Heading>
-          <p>La tarea que buscas no existe o no tienes permiso para verla.</p>
-          <Button onClick={() => navigate('/tareas')}>Volver a Tareas</Button>
-        </Alert>
-      </Container>
-    );
-  }
-
-  /// --- LÓGICA DE PERMISOS CORREGIDA ---
-
-  const isAssignedToCampaign = user?.campanas_asignadas?.some(c => c.id === tarea.campana_id);
-
-  const canViewTask = user && (
-    user.role === 'SUPERVISOR' || 
-    user.role === 'RESPONSABLE' || 
-    (user.role === 'ANALISTA' && (tarea.analista_id === user.id || (tarea.analista_id === null && isAssignedToCampaign)))
-  );
-
-  const canEditTask = user && (
-    user.role === 'SUPERVISOR' || 
-    user.role === 'RESPONSABLE' || 
-    (user.role === 'ANALISTA' && tarea.analista_id === user.id)
-  );
-  
-  const canDeleteTask = user && user.role === 'SUPERVISOR';
-
-  // CAMBIO CLAVE: Permisos para crear/editar checklist items
-  const canManageChecklist = user && (
-    user.role === 'SUPERVISOR' ||
-    user.role === 'RESPONSABLE' ||
-    // Un analista puede si la tarea es suya O si está libre en su campaña
-    (user.role === 'ANALISTA' && (tarea.analista_id === user.id || (tarea.analista_id === null && isAssignedToCampaign)))
-  );
-
-
-  if (!canViewTask) {
-    return (
-      <Container className="mt-4">
-        <Alert variant="danger">
-          <Alert.Heading>Acceso Denegado</Alert.Heading>
-          <p>No tienes los permisos necesarios para ver esta tarea.</p>
-          <Button onClick={() => navigate('/tareas')}>Ir a Tareas</Button>
-        </Alert>
-      </Container>
-    );
-  }
-  
-  // ✅ CORRECCIÓN 1: DEFINICIÓN DE LA VARIABLE ANTES DEL RETURN
-  const esTareaFinalizada = tarea.progreso === 'COMPLETADA' || tarea.progreso === 'CANCELADA';
-
-  return (
-    <Container className="py-5">
-      <Card className="shadow-lg p-4">
-        <h2 className="text-center mb-4 text-primary">Detalles de la Tarea</h2>
-
-        {success && <Alert variant="success">{success}</Alert>}
-        {error && <Alert variant="danger">{error}</Alert>}
-
-        <Card.Body>
-          <Card.Title className="mb-3">{tarea.titulo}</Card.Title>
-          <Card.Text>
-            <strong>Descripción:</strong> {tarea.descripcion || 'N/A'}
-          </Card.Text>
-          <Card.Text>
-            <strong>Asignado a:</strong> {tarea.analista?.nombre} {tarea.analista?.apellido} (BMS ID: {tarea.analista?.bms_id})
-          </Card.Text>
-          {tarea.campana && (
-            <Card.Text>
-              <strong>Campaña:</strong> <a href={`/campanas/${tarea.campana.id}`}>{tarea.campana.nombre}</a>
-            </Card.Text>
-          )}
-          <Card.Text>
-            <strong>Estado:</strong> <Badge bg={tarea.progreso === 'PENDIENTE' ? 'danger' : tarea.progreso === 'EN_PROGRESO' ? 'warning' : 'success'}>{tarea.progreso}</Badge>
-          </Card.Text>
-          <Card.Text>
-            <strong>Fecha de Creación:</strong> {formatDateTime(tarea.fecha_creacion)}
-          </Card.Text>
-          <Card.Text>
-            <strong>Fecha de Vencimiento:</strong> {formatDateTime(tarea.fecha_vencimiento)}
-          </Card.Text>
-
-          {esTareaFinalizada && tarea.fecha_finalizacion && (
-            <Card.Text><strong>Fecha de Finalización:</strong> {formatDateTime(tarea.fecha_finalizacion)}</Card.Text>
-          )}
-
-          {/* Opciones de progreso para analistas asignados */}
-          {user.role === 'ANALISTA' && tarea.analista_id === user.id && tarea.progreso !== 'COMPLETADA' && (
-            <Form.Group className="mb-3">
-              <Form.Label>Actualizar Progreso</Form.Label>
-              <Form.Select
-                value={tarea.progreso}
-                onChange={(e) => handleUpdateProgress(e.target.value)}
-                disabled={submittingProgress}
-              >
-                <option value="PENDIENTE">PENDIENTE</option>
-                <option value="EN_PROGRESO">EN_PROGRESO</option>
-                <option value="COMPLETADA">COMPLETADA</option>
-                <option value="CANCELADA">CANCELADA</option>
-              </Form.Select>
-              {submittingProgress && <Spinner animation="border" size="sm" className="ms-2" />}
-            </Form.Group>
-          )}
-          {/* Opciones de progreso para Supervisores/Responsables */}
-          {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-            <Form.Group className="mb-3">
-              <Form.Label>Actualizar Progreso</Form.Label>
-              <Form.Select
-                value={tarea.progreso}
-                onChange={(e) => handleUpdateProgress(e.target.value)}
-                disabled={submittingProgress}
-              >
-                <option value="PENDIENTE">PENDIENTE</option>
-                <option value="EN_PROGRESO">EN_PROGRESO</option>
-                <option value="COMPLETADA">COMPLETADA</option>
-                <option value="CANCELADA">CANCELADA</option>
-              </Form.Select>
-              {submittingProgress && <Spinner animation="border" size="sm" className="ms-2" />}
-            </Form.Group>
-          )}
-
-          <h4 className="mt-4 mb-3">Checklist Items</h4>
-          {/* CAMBIO: Usamos la nueva variable de permisos 'canManageChecklist' */}
-          {canManageChecklist && (
-            <div className="d-flex justify-content-end mb-3">
-              <Button
-                variant="success"
-                size="sm"
-                onClick={() => navigate(`/tareas/${tarea.id}/checklist_items/crear`)}
-              >
-                Crear Nuevo Checklist Item
-              </Button>
-            </div>
-          )}
-          
-          {tarea.checklist_items && tarea.checklist_items.length > 0 ? (
-            <ListGroup>
-              {tarea.checklist_items.map(item => (
-                <ListGroup.Item key={item.id} className="d-flex justify-content-between align-items-center">
-                  <Form.Check
-                    type="checkbox"
-                    label={item.descripcion}
-                    checked={item.completado}
-                    onChange={() => handleToggleChecklistItem(item.id, item.completado)}
-                    disabled={submittingChecklist === item.id || !canManageChecklist}
-                  />
-                  {submittingChecklist === item.id && <Spinner animation="border" size="sm" />}
-                  {canManageChecklist && (
-                    <Button
-                      variant="outline-secondary"
-                      size="sm"
-                      onClick={() => navigate(`/tareas/${tarea.id}/checklist_items/editar/${item.id}`)}
-                      className="ms-3"
-                    >
-                      Editar
-                    </Button>
-                  )}
-                </ListGroup.Item>
-              ))}
-            </ListGroup>
-          ) : (
-            <Alert variant="info">No hay checklist items para esta tarea.</Alert>
-          )}
-
-          {/* ✅ CORRECCIÓN 2: BOTÓN AÑADIDO AL GRUPO DE ACCIONES */}
-          {user.role === 'ANALISTA' && !tarea.analista && isAssignedToCampaign && (
-          <div className="d-grid gap-2 mb-3">
-              <Button
-                  variant="success"
-                  onClick={handleTomarTarea}
-                  disabled={submittingProgress}
-              >
-                  {submittingProgress ? 'Asignando...' : 'Tomar Tarea'}
-              </Button>
-          </div>
-            )}
-
-          {user.role === 'ANALISTA' && tarea.analista?.id === user.id && !esTareaFinalizada && (
-          <div className="d-grid gap-2 mb-3">
-            <Button
-                variant="warning"
-                onClick={handleDejarTarea}
-                disabled={submittingProgress}
-            >
-                {submittingProgress ? 'Liberando...' : 'Liberar Tarea'}
-            </Button>
-          </div>
-            )} 
-          
-          
-          <div className="d-grid gap-2 mt-4">
-            {canEditTask && (
-              <Button variant="secondary" onClick={() => navigate(`/tareas/editar/${tarea.id}`)}>
-                Editar Tarea
-              </Button>
-            )}
-            {canDeleteTask && (
-              <Button variant="danger" onClick={() => setShowDeleteModal(true)}>
-                Eliminar Tarea
-              </Button>
-            )}
-            <Button variant="info" onClick={handleFetchHistorial} disabled={loadingHistorial}>
-              {loadingHistorial ? 'Cargando...' : showHistorial ? 'Ocultar Historial' : 'Ver Historial'}
-            </Button>
-            <Button variant="outline-secondary" onClick={() => navigate('/tareas')}>
-              Volver a la Lista de Tareas
-            </Button>
-          </div>
-
-           {showHistorial && (
-            <HistorialTarea historial={historial} isLoading={loadingHistorial} error={errorHistorial} />
-          )}
-
-        </Card.Body>
-      </Card>
-
-      <Card className="shadow-lg mt-4">
-    <Card.Header as="h4">Comentarios</Card.Header>
-    <Card.Body>
-        <ListGroup variant="flush" className="mb-3">
-            {tarea.comentarios && tarea.comentarios.length > 0 ? (
-                
-                tarea.comentarios.map(comentario => {
-                    // --- PRUEBA DE DIAGNÓSTICO ---
-                    console.log("Valor de fecha_creacion del comentario:", comentario.fecha_creacion);
-                    // -----------------------------
-                    
-                    return (
-                        <ListGroup.Item key={comentario.id} className="px-0">
-                            <p className="mb-1">{comentario.texto}</p>
-                            <small className="text-muted">
-                                Por: <strong>{comentario.autor.nombre} {comentario.autor.apellido}</strong>
-                            </small>
-                            <small className="text-muted" style={{ float: 'right' }}>
-                                {formatDateTime(comentario.fecha_creacion)}
-                            </small>
-                        </ListGroup.Item>
-                    );
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/gtr/checklist_items/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    descripcion: descripcionFinal,
+                    tarea_id: parseInt(id),
+                    completado: false
                 })
+            });
 
-            ) : (
-                <p className="text-muted">No hay comentarios en esta tarea. ¡Sé el primero en añadir uno!</p>
-            )}
-        </ListGroup>
+            if (res.ok) {
+                setExtraItemText('');
+                setExtraItemTime(''); // Limpiar hora
+                setShowExtraInput(false);
+                fetchTarea(); 
+            }
+        } catch (err) {
+            alert("Error al agregar ítem extra");
+        } finally {
+            setAddingItem(false);
+        }
+    };
 
-        <Form onSubmit={handlePostComentario}>
-            <Form.Group>
-                <Form.Label>Añadir un nuevo comentario</Form.Label>
-                <Form.Control 
-                    as="textarea" 
-                    rows={3}
-                    value={nuevoComentario}
-                    onChange={(e) => setNuevoComentario(e.target.value)}
-                    placeholder="Escribe tu comentario aquí..."
-                    required
-                    disabled={submittingComentario}
-                />
-            </Form.Group>
-            <Button variant="primary" type="submit" className="mt-2" disabled={submittingComentario}>
-                {submittingComentario ? <Spinner as="span" size="sm" /> : 'Publicar Comentario'}
-            </Button>
-        </Form>
-    </Card.Body>
-</Card>
+    // 3. Completar Tarea
+    const finalizarTarea = async () => {
+        if (!window.confirm("¿Confirmas que has terminado la rutina?")) return;
+        try {
+            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ progreso: 'COMPLETADA' })
+            });
+            navigate('/tareas/disponibles'); 
+        } catch (err) {
+            alert("Error al finalizar tarea");
+        }
+    };
 
-      {/* Modal de Confirmación de Eliminación (esto se queda al final) */}
-      <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Confirmar Eliminación</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          ¿Estás seguro de que quieres eliminar la tarea "{tarea.titulo}"? Esta acción no se puede deshacer.
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowDeleteModal(false)}>
-            Cancelar
-          </Button>
-          <Button variant="danger" onClick={handleDeleteTarea} disabled={submittingProgress}>
-            {submittingProgress ? (
-              <><Spinner as="span" animation="border" size="sm" />{' '}Eliminando...</>
-            ) : (
-              'Eliminar'
-            )}
-          </Button>
-        </Modal.Footer>
-      </Modal>
-    </Container>
-  );
-}
+    // 4. Enviar Comentario
+    const handleComentario = async (e) => {
+        e.preventDefault();
+        if (!comentario.trim()) return;
+        setEnviandoComentario(true);
+        try {
+            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ texto: comentario })
+            });
+            setComentario('');
+            fetchTarea(); 
+        } catch (err) {
+            alert("Error enviando comentario");
+        } finally {
+            setEnviandoComentario(false);
+        }
+    };
+
+    // --- RENDER ---
+    if (loading) return <Container className="py-5 text-center"><Spinner animation="border" /></Container>;
+    if (error) return <Container className="py-5"><Alert variant="danger">{error}</Alert></Container>;
+    if (!tarea) return null;
+
+    const totalItems = tarea.checklist_items.length;
+    const completados = tarea.checklist_items.filter(i => i.completado).length;
+    const progreso = totalItems === 0 ? 0 : Math.round((completados / totalItems) * 100);
+    const esAnalista = user.role === 'ANALISTA';
+    const tareaCerrada = tarea.progreso === 'COMPLETADA';
+
+    return (
+        <Container className="py-4">
+            {/* ENCABEZADO */}
+            <div className="mb-4">
+                <Button variant="link" className="text-muted ps-0 mb-2" onClick={() => navigate(-1)}>← Volver</Button>
+                <div className="d-flex justify-content-between align-items-start">
+                    <div>
+                        <Badge bg="primary" className="mb-2">{tarea.campana?.nombre}</Badge>
+                        <h2 className="mb-1">{tarea.titulo}</h2>
+                        <p className="text-muted mb-0">{tarea.descripcion}</p>
+                    </div>
+                    <div className="text-end">
+                        <h3 className={`mb-0 ${progreso === 100 ? 'text-success' : 'text-primary'}`}>{progreso}%</h3>
+                        <small className="text-muted">Progreso</small>
+                    </div>
+                </div>
+                <ProgressBar now={progreso} variant={progreso === 100 ? 'success' : 'primary'} className="mt-3" style={{ height: '10px' }} />
+            </div>
+
+            <Row className="g-4">
+                {/* COLUMNA IZQUIERDA: CHECKLIST */}
+                <Col lg={8}>
+                    <Card className="shadow-sm border-0 mb-4">
+                        <Card.Header className="bg-white py-3 d-flex justify-content-between align-items-center">
+                            <h5 className="mb-0">✅ Lista de Actividades</h5>
+                        </Card.Header>
+                        <ListGroup variant="flush">
+                            {tarea.checklist_items.map(item => (
+                                <ListGroup.Item key={item.id} className="py-3 action-hover">
+                                    <Form.Check type="checkbox" id={`check-${item.id}`}>
+                                        <Form.Check.Input 
+                                            type="checkbox" 
+                                            checked={item.completado}
+                                            onChange={() => toggleItem(item.id, item.completado)}
+                                            style={{ transform: 'scale(1.3)', cursor: 'pointer' }}
+                                            disabled={!esAnalista && tareaCerrada}
+                                        />
+                                        <Form.Check.Label 
+                                            style={{ 
+                                                marginLeft: '10px', 
+                                                cursor: 'pointer',
+                                                textDecoration: item.completado ? 'line-through' : 'none',
+                                                color: item.completado ? '#adb5bd' : '#212529'
+                                            }}
+                                        >
+                                            {item.descripcion}
+                                        </Form.Check.Label>
+                                    </Form.Check>
+                                </ListGroup.Item>
+                            ))}
+                        </ListGroup>
+                        
+                        {/* --- SECCIÓN AGREGAR ITEM EXTRA (CON HORA) --- */}
+                        {!tareaCerrada && esAnalista && (
+                            <Card.Footer className="bg-white border-top-0 pt-0 pb-3">
+                                {showExtraInput ? (
+                                    <div className="mt-2">
+                                        <InputGroup>
+                                            {/* Selector de hora opcional */}
+                                            <Form.Control 
+                                                type="time"
+                                                style={{ maxWidth: '130px' }}
+                                                value={extraItemTime}
+                                                onChange={(e) => setExtraItemTime(e.target.value)}
+                                                title="Hora (Opcional)"
+                                            />
+                                            {/* Texto de la tarea */}
+                                            <Form.Control 
+                                                placeholder="Describe la actividad extra..." 
+                                                value={extraItemText}
+                                                onChange={(e) => setExtraItemText(e.target.value)}
+                                                autoFocus
+                                                onKeyPress={(e) => e.key === 'Enter' && handleAddExtraItem()}
+                                            />
+                                            <Button variant="outline-secondary" onClick={() => setShowExtraInput(false)}>✕</Button>
+                                            <Button variant="primary" onClick={handleAddExtraItem} disabled={addingItem}>
+                                                {addingItem ? <Spinner size="sm"/> : 'Guardar'}
+                                            </Button>
+                                        </InputGroup>
+                                    </div>
+                                ) : (
+                                    <Button 
+                                        variant="link" 
+                                        className="text-decoration-none ps-0 mt-2 text-muted" 
+                                        onClick={() => setShowExtraInput(true)}
+                                    >
+                                        + Agregar actividad extra no listada
+                                    </Button>
+                                )}
+                            </Card.Footer>
+                        )}
+                    </Card>
+
+                    {/* BOTÓN DE ACCIÓN FINAL */}
+                    {esAnalista && !tareaCerrada && (
+                        <div className="d-grid gap-2">
+                            <Button 
+                                variant={progreso === 100 ? "success" : "secondary"} 
+                                size="lg"
+                                onClick={finalizarTarea}
+                            >
+                                {progreso === 100 ? '🎉 Finalizar Rutina' : 'Finalizar Rutina'}
+                            </Button>
+                        </div>
+                    )}
+                </Col>
+
+                {/* COLUMNA DERECHA: COMENTARIOS */}
+                <Col lg={4}>
+                    <Card className="shadow-sm border-0 mb-3 bg-light">
+                        <Card.Body>
+                            <small className="text-muted d-block">Estado Actual</small>
+                            <Badge bg={tareaCerrada ? 'success' : 'warning'} className="mb-3">
+                                {tarea.progreso}
+                            </Badge>
+                            
+                            <small className="text-muted d-block">Vence hoy a las:</small>
+                            <strong>{new Date(tarea.fecha_vencimiento).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</strong>
+                        </Card.Body>
+                    </Card>
+
+                    <Card className="shadow-sm border-0">
+                        <Card.Header className="bg-white">
+                            <h6 className="mb-0">💬 Bitácora / Comentarios</h6>
+                        </Card.Header>
+                        <Card.Body style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                            {tarea.comentarios.length === 0 ? (
+                                <p className="text-muted small text-center my-3">No hay comentarios.</p>
+                            ) : (
+                                tarea.comentarios.map(c => (
+                                    <div key={c.id} className="mb-3 border-bottom pb-2">
+                                        <div className="d-flex justify-content-between">
+                                            <strong style={{fontSize: '0.9rem'}}>{c.autor?.nombre}</strong>
+                                            <small className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                {new Date(c.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                            </small>
+                                        </div>
+                                        <p className="mb-0 small text-secondary">{c.texto}</p>
+                                    </div>
+                                ))
+                            )}
+                        </Card.Body>
+                        <Card.Footer className="bg-white">
+                            <Form onSubmit={handleComentario}>
+                                <Form.Group className="mb-2">
+                                    <Form.Control 
+                                        as="textarea" rows={2} 
+                                        placeholder="Reportar novedad..." 
+                                        value={comentario}
+                                        onChange={e => setComentario(e.target.value)}
+                                        style={{fontSize: '0.9rem'}}
+                                    />
+                                </Form.Group>
+                                <div className="text-end">
+                                    <Button type="submit" size="sm" variant="outline-primary" disabled={enviandoComentario}>
+                                        Enviar
+                                    </Button>
+                                </div>
+                            </Form>
+                        </Card.Footer>
+                    </Card>
+                </Col>
+            </Row>
+        </Container>
+    );
+};
 
 export default DetalleTareaPage;
