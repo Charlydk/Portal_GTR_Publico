@@ -805,12 +805,15 @@ async def obtener_tareas(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Muestra las tareas de cualquier campaña.
+    Muestra las tareas de cualquier campaña con TODA su información cargada.
     """
-    # Consulta base: Traer tareas con sus relaciones
+    # Consulta base con carga PROFUNDA de relaciones
     query = select(models.Tarea).options(
         selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista)
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
     )
 
     # Filtro opcional por estado

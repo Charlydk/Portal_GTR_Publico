@@ -1,102 +1,103 @@
-
-// src/pages/TareasDisponiblesPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Container, Card, ListGroup, Button, Spinner, Alert, Badge } from 'react-bootstrap';
-import { GTR_API_URL, fetchWithAuth } from '../api';
+import React, { useState, useEffect } from 'react';
+import { Container, Row, Col, Card, ProgressBar, Badge, Button, Spinner, Alert } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
-import { formatDateTime } from '../utils/dateFormatter';
 
-function TareasDisponiblesPage() {
+const TareasDisponiblesPage = () => {
+    const { user } = useAuth();
     const navigate = useNavigate();
-    const { authToken } = useAuth();
     const [tareas, setTareas] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    /*const formatDateTime = (utcIsoString) => {
-        if (!utcIsoString) return 'N/A';
-        const date = new Date(utcIsoString + 'Z');
-        if (isNaN(date.getTime())) return 'Fecha inválida';
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${day}/${month}/${year}, ${hours}:${minutes}`;
-    };*/
-
-    const fetchTareasDisponibles = useCallback(async () => {
-        if (!authToken) {
-            setLoading(false);
-            return;
-        }
-        try {
-            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/tareas_disponibles/`);
-            if (!response.ok) {
-                throw new Error('No se pudieron cargar las tareas disponibles.');
-            }
-            const data = await response.json();
-            setTareas(data);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    }, [authToken]);
-
     useEffect(() => {
-        fetchTareasDisponibles();
-    }, [fetchTareasDisponibles]);
+        const cargarMisTareas = async () => {
+            try {
+                // Traemos todas las tareas (el backend ya es global)
+                const response = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/`);
+                if (!response.ok) throw new Error("Error cargando tareas");
+                const data = await response.json();
 
-    if (loading) {
-        return <Container className="text-center py-5"><Spinner animation="border" /></Container>;
-    }
+                // FILTRO FRONTEND: Solo mostramos las que son DE ESTE USUARIO
+                const misTareas = data.filter(t => t.analista_id === user.id && t.progreso !== 'COMPLETADA');
+                
+                setTareas(misTareas);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
 
-    if (error) {
-        return <Container className="mt-4"><Alert variant="danger">{error}</Alert></Container>;
-    }
+        if (user) cargarMisTareas();
+    }, [user]);
+
+    // Función auxiliar para calcular progreso
+    const calcularProgreso = (items) => {
+        if (!items || items.length === 0) return 0;
+        const completados = items.filter(i => i.completado).length;
+        return Math.round((completados / items.length) * 100);
+    };
+
+    if (loading) return <Container className="text-center py-5"><Spinner animation="border" variant="primary" /></Container>;
 
     return (
-        <Container className="py-5">
-            <Card className="shadow-lg">
-                <Card.Header as="h2" className="text-center">Tareas de Campaña Disponibles</Card.Header>
-                <Card.Body>
-                    {tareas.length > 0 ? (
-                        <ListGroup variant="flush">
-                            {tareas.map(tarea => (
-                                <ListGroup.Item 
-                                    key={tarea.id} 
-                                    action 
-                                    as={Link} 
-                                    to={`/tareas/${tarea.id}`}
-                                    className="d-flex justify-content-between align-items-center"
-                                >
-                                    <div>
-                                        <strong>{tarea.titulo}</strong>
-                                        <br />
-                                        <small className="text-muted">
-                                            Campaña: {tarea.campana.nombre} | Vence: {formatDateTime(tarea.fecha_vencimiento)}
-                                        </small>
-                                    </div>
-                                    <Badge bg="info">Ver y Asignar</Badge>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    ) : (
-                        <Alert variant="success" className="text-center">
-                            ¡Felicidades! No hay tareas disponibles en tus campañas asignadas.
-                        </Alert>
-                    )}
-                </Card.Body>
-                <Card.Footer className="text-end">
-                    <Button variant="secondary" onClick={() => navigate('/dashboard')}>
-                        Volver al Dashboard
-                    </Button>
-                </Card.Footer>
-            </Card>
+        <Container className="py-4">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 className="mb-1">📋 Mis Rutinas Activas</h2>
+                    <p className="text-muted">Aquí aparecen las tareas generadas por tus Check-in.</p>
+                </div>
+                <Button variant="outline-secondary" onClick={() => window.location.reload()}>🔄 Actualizar</Button>
+            </div>
+
+            {error && <Alert variant="danger">{error}</Alert>}
+
+            {tareas.length === 0 ? (
+                <div className="text-center py-5 bg-light rounded border border-dashed">
+                    <h4 className="text-muted">No tienes tareas pendientes</h4>
+                    <p>Haz <b>Check-in</b> en una campaña desde el Dashboard para generar tu rutina diaria.</p>
+                    <Button variant="primary" onClick={() => navigate('/dashboard')}>Ir al Dashboard</Button>
+                </div>
+            ) : (
+                <Row xs={1} md={2} lg={3} className="g-4">
+                    {tareas.map(tarea => {
+                        const progreso = calcularProgreso(tarea.checklist_items);
+                        const variant = progreso === 100 ? 'success' : progreso > 50 ? 'info' : 'warning';
+
+                        return (
+                            <Col key={tarea.id}>
+                                <Card className="h-100 shadow-sm border-0 hover-shadow" style={{ transition: '0.3s' }}>
+                                    <Card.Header className="bg-white border-bottom-0 d-flex justify-content-between align-items-center pt-3">
+                                        <Badge bg="primary">{tarea.campana?.nombre || 'General'}</Badge>
+                                        <small className="text-muted">Vence: {new Date(tarea.fecha_vencimiento).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+                                    </Card.Header>
+                                    <Card.Body>
+                                        <Card.Title className="h5 mb-3">{tarea.titulo}</Card.Title>
+                                        
+                                        <div className="mb-3">
+                                            <div className="d-flex justify-content-between small mb-1">
+                                                <span>Progreso</span>
+                                                <span className="fw-bold">{progreso}%</span>
+                                            </div>
+                                            <ProgressBar now={progreso} variant={variant} style={{ height: '8px' }} />
+                                        </div>
+
+                                        <div className="d-grid">
+                                            <Button variant={progreso === 100 ? "success" : "primary"} onClick={() => navigate(`/tareas/${tarea.id}`)}>
+                                                {progreso === 0 ? '🚀 Comenzar' : progreso === 100 ? '✅ Revisar' : '▶️ Continuar'}
+                                            </Button>
+                                        </div>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                        );
+                    })}
+                </Row>
+            )}
         </Container>
     );
-}
+};
 
 export default TareasDisponiblesPage;
