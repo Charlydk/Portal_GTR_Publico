@@ -1,7 +1,7 @@
 // RUTA: src/pages/DetalleTareaPage.jsx
 
 import React, { useState, useEffect } from 'react';
-import { Container, Card, Row, Col, Badge, ProgressBar, Button, Form, Spinner, ListGroup, Alert, InputGroup } from 'react-bootstrap';
+import { Container, Card, Row, Col, Badge, ProgressBar, Button, Form, Spinner, ListGroup, Alert, InputGroup, Modal } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
@@ -15,15 +15,18 @@ const DetalleTareaPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     
-    // Estados para comentarios
+    // Estados para comentarios y extras
     const [comentario, setComentario] = useState('');
     const [enviandoComentario, setEnviandoComentario] = useState(false);
-
-    // Estados para item extra
     const [showExtraInput, setShowExtraInput] = useState(false);
     const [extraItemText, setExtraItemText] = useState('');
-    const [extraItemTime, setExtraItemTime] = useState(''); // <--- NUEVO ESTADO PARA HORA
+    const [extraItemTime, setExtraItemTime] = useState('');
     const [addingItem, setAddingItem] = useState(false);
+
+    // Estados para FINALIZAR / RETOMAR
+    const [showModalFinalizar, setShowModalFinalizar] = useState(false);
+    const [comentarioFinal, setComentarioFinal] = useState('');
+    const [procesandoEstado, setProcesandoEstado] = useState(false);
 
     // Cargar datos
     const fetchTarea = async () => {
@@ -32,7 +35,6 @@ const DetalleTareaPage = () => {
             if (!response.ok) throw new Error("No se pudo cargar la tarea");
             const data = await response.json();
             
-            // Ordenar items: primero por ID para mantener orden de creación
             if (data.checklist_items) {
                 data.checklist_items.sort((a, b) => a.id - b.id);
             }
@@ -50,9 +52,8 @@ const DetalleTareaPage = () => {
 
     // --- ACCIONES ---
 
-    // 1. Marcar / Desmarcar Checkbox
     const toggleItem = async (itemId, estadoActual) => {
-        // Actualización optimista
+        // Optimistic UI update
         const nuevosItems = tarea.checklist_items.map(i => 
             i.id === itemId ? { ...i, completado: !estadoActual } : i
         );
@@ -66,16 +67,14 @@ const DetalleTareaPage = () => {
             });
         } catch (err) {
             console.error("Error al marcar item:", err);
-            fetchTarea(); // Revertir si falla
+            fetchTarea(); 
         }
     };
 
-    // 2. Agregar Item Extra (MODIFICADO CON HORA)
     const handleAddExtraItem = async () => {
         if (!extraItemText.trim()) return;
         setAddingItem(true);
 
-        // Formatear el texto final dependiendo de si hay hora o no
         let descripcionFinal = `(Extra) ${extraItemText}`;
         if (extraItemTime) {
             descripcionFinal = `[${extraItemTime}] (Extra) ${extraItemText}`;
@@ -94,7 +93,7 @@ const DetalleTareaPage = () => {
 
             if (res.ok) {
                 setExtraItemText('');
-                setExtraItemTime(''); // Limpiar hora
+                setExtraItemTime('');
                 setShowExtraInput(false);
                 fetchTarea(); 
             }
@@ -105,22 +104,6 @@ const DetalleTareaPage = () => {
         }
     };
 
-    // 3. Completar Tarea
-    const finalizarTarea = async () => {
-        if (!window.confirm("¿Confirmas que has terminado la rutina?")) return;
-        try {
-            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ progreso: 'COMPLETADA' })
-            });
-            navigate('/tareas/disponibles'); 
-        } catch (err) {
-            alert("Error al finalizar tarea");
-        }
-    };
-
-    // 4. Enviar Comentario
     const handleComentario = async (e) => {
         e.preventDefault();
         if (!comentario.trim()) return;
@@ -137,6 +120,63 @@ const DetalleTareaPage = () => {
             alert("Error enviando comentario");
         } finally {
             setEnviandoComentario(false);
+        }
+    };
+
+    // --- LÓGICA DE CIERRE Y REAPERTURA ---
+
+    const confirmarFinalizacion = async () => {
+        setProcesandoEstado(true);
+        try {
+            // 1. Si escribió un comentario final, lo enviamos primero
+            if (comentarioFinal.trim()) {
+                await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ texto: `[CIERRE] ${comentarioFinal}` })
+                });
+            }
+
+            // 2. Cerramos la tarea
+            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ progreso: 'COMPLETADA' })
+            });
+
+            setShowModalFinalizar(false);
+            navigate('/tareas/disponibles'); // Volver al listado
+        } catch (err) {
+            alert("Error al finalizar tarea");
+        } finally {
+            setProcesandoEstado(false);
+        }
+    };
+
+    const retomarTarea = async () => {
+        if(!window.confirm("¿Deseas reabrir esta rutina para continuar editándola?")) return;
+        
+        setProcesandoEstado(true);
+        try {
+            // Ponemos en EN_PROGRESO (o PENDIENTE, según prefieras)
+            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ progreso: 'EN_PROGRESO' })
+            });
+            
+            // Agregamos un log automático
+            await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ texto: `[SISTEMA] Tarea reabierta por el usuario.` })
+            });
+
+            fetchTarea(); // Recargar en la misma pantalla
+        } catch (err) {
+            alert("Error al retomar tarea");
+        } finally {
+            setProcesandoEstado(false);
         }
     };
 
@@ -158,7 +198,9 @@ const DetalleTareaPage = () => {
                 <Button variant="link" className="text-muted ps-0 mb-2" onClick={() => navigate(-1)}>← Volver</Button>
                 <div className="d-flex justify-content-between align-items-start">
                     <div>
-                        <Badge bg="primary" className="mb-2">{tarea.campana?.nombre}</Badge>
+                        <Badge bg={tareaCerrada ? 'success' : 'primary'} className="mb-2">
+                            {tarea.campana?.nombre} {tareaCerrada && '✓ Completada'}
+                        </Badge>
                         <h2 className="mb-1">{tarea.titulo}</h2>
                         <p className="text-muted mb-0">{tarea.descripcion}</p>
                     </div>
@@ -173,25 +215,29 @@ const DetalleTareaPage = () => {
             <Row className="g-4">
                 {/* COLUMNA IZQUIERDA: CHECKLIST */}
                 <Col lg={8}>
-                    <Card className="shadow-sm border-0 mb-4">
+                    <Card className={`shadow-sm border-0 mb-4 ${tareaCerrada ? 'bg-light border-success' : ''}`}>
                         <Card.Header className="bg-white py-3 d-flex justify-content-between align-items-center">
                             <h5 className="mb-0">✅ Lista de Actividades</h5>
+                            {tareaCerrada && <Badge bg="success">Finalizado</Badge>}
                         </Card.Header>
-                        <ListGroup variant="flush">
+                        <ListGroup variant="flush" className={tareaCerrada ? 'opacity-75' : ''}>
                             {tarea.checklist_items.map(item => (
-                                <ListGroup.Item key={item.id} className="py-3 action-hover">
+                                <ListGroup.Item key={item.id} className="py-3 action-hover bg-transparent">
                                     <Form.Check type="checkbox" id={`check-${item.id}`}>
                                         <Form.Check.Input 
                                             type="checkbox" 
                                             checked={item.completado}
                                             onChange={() => toggleItem(item.id, item.completado)}
                                             style={{ transform: 'scale(1.3)', cursor: 'pointer' }}
-                                            disabled={!esAnalista && tareaCerrada}
+                                            // IMPORTANTE: Permitimos editar incluso si está cerrada, 
+                                            // o si prefieres bloquearlo, usa: disabled={tareaCerrada}
+                                            // Según tu requerimiento de "retomar", lo ideal es bloquear hasta que de "Retomar".
+                                            disabled={tareaCerrada} 
                                         />
                                         <Form.Check.Label 
                                             style={{ 
                                                 marginLeft: '10px', 
-                                                cursor: 'pointer',
+                                                cursor: tareaCerrada ? 'default' : 'pointer',
                                                 textDecoration: item.completado ? 'line-through' : 'none',
                                                 color: item.completado ? '#adb5bd' : '#212529'
                                             }}
@@ -203,57 +249,47 @@ const DetalleTareaPage = () => {
                             ))}
                         </ListGroup>
                         
-                        {/* --- SECCIÓN AGREGAR ITEM EXTRA (CON HORA) --- */}
+                        {/* INPUT EXTRA (Solo si no está cerrada) */}
                         {!tareaCerrada && esAnalista && (
                             <Card.Footer className="bg-white border-top-0 pt-0 pb-3">
                                 {showExtraInput ? (
                                     <div className="mt-2">
                                         <InputGroup>
-                                            {/* Selector de hora opcional */}
-                                            <Form.Control 
-                                                type="time"
-                                                style={{ maxWidth: '130px' }}
-                                                value={extraItemTime}
-                                                onChange={(e) => setExtraItemTime(e.target.value)}
-                                                title="Hora (Opcional)"
-                                            />
-                                            {/* Texto de la tarea */}
-                                            <Form.Control 
-                                                placeholder="Describe la actividad extra..." 
-                                                value={extraItemText}
-                                                onChange={(e) => setExtraItemText(e.target.value)}
-                                                autoFocus
-                                                onKeyPress={(e) => e.key === 'Enter' && handleAddExtraItem()}
-                                            />
+                                            <Form.Control type="time" style={{ maxWidth: '130px' }} value={extraItemTime} onChange={(e) => setExtraItemTime(e.target.value)} />
+                                            <Form.Control placeholder="Describe la actividad..." value={extraItemText} onChange={(e) => setExtraItemText(e.target.value)} autoFocus onKeyPress={(e) => e.key === 'Enter' && handleAddExtraItem()} />
                                             <Button variant="outline-secondary" onClick={() => setShowExtraInput(false)}>✕</Button>
-                                            <Button variant="primary" onClick={handleAddExtraItem} disabled={addingItem}>
-                                                {addingItem ? <Spinner size="sm"/> : 'Guardar'}
-                                            </Button>
+                                            <Button variant="primary" onClick={handleAddExtraItem} disabled={addingItem}>{addingItem ? <Spinner size="sm"/> : 'Guardar'}</Button>
                                         </InputGroup>
                                     </div>
                                 ) : (
-                                    <Button 
-                                        variant="link" 
-                                        className="text-decoration-none ps-0 mt-2 text-muted" 
-                                        onClick={() => setShowExtraInput(true)}
-                                    >
-                                        + Agregar actividad extra no listada
-                                    </Button>
+                                    <Button variant="link" className="text-decoration-none ps-0 mt-2 text-muted" onClick={() => setShowExtraInput(true)}>+ Agregar actividad extra</Button>
                                 )}
                             </Card.Footer>
                         )}
                     </Card>
 
-                    {/* BOTÓN DE ACCIÓN FINAL */}
-                    {esAnalista && !tareaCerrada && (
-                        <div className="d-grid gap-2">
-                            <Button 
-                                variant={progreso === 100 ? "success" : "secondary"} 
-                                size="lg"
-                                onClick={finalizarTarea}
-                            >
-                                {progreso === 100 ? '🎉 Finalizar Rutina' : 'Finalizar Rutina'}
-                            </Button>
+                    {/* BOTONES DE ACCIÓN (FINALIZAR / RETOMAR) */}
+                    {esAnalista && (
+                        <div className="d-grid gap-2 mb-5">
+                            {!tareaCerrada ? (
+                                <Button 
+                                    variant={progreso === 100 ? "success" : "secondary"} 
+                                    size="lg"
+                                    onClick={() => setShowModalFinalizar(true)}
+                                >
+                                    {progreso === 100 ? '🎉 Finalizar Rutina' : 'Finalizar Rutina'}
+                                </Button>
+                            ) : (
+                                <Button 
+                                    variant="warning" 
+                                    className="text-white fw-bold"
+                                    size="lg"
+                                    onClick={retomarTarea}
+                                    disabled={procesandoEstado}
+                                >
+                                    {procesandoEstado ? <Spinner size="sm"/> : '↩ Retomar Tarea (Reabrir)'}
+                                </Button>
+                            )}
                         </div>
                     )}
                 </Col>
@@ -262,31 +298,22 @@ const DetalleTareaPage = () => {
                 <Col lg={4}>
                     <Card className="shadow-sm border-0 mb-3 bg-light">
                         <Card.Body>
-                            <small className="text-muted d-block">Estado Actual</small>
-                            <Badge bg={tareaCerrada ? 'success' : 'warning'} className="mb-3">
-                                {tarea.progreso}
-                            </Badge>
-                            
+                            <small className="text-muted d-block">Estado</small>
+                            <Badge bg={tareaCerrada ? 'success' : 'warning'} className="mb-3">{tarea.progreso}</Badge>
                             <small className="text-muted d-block">Vence hoy a las:</small>
                             <strong>{new Date(tarea.fecha_vencimiento).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</strong>
                         </Card.Body>
                     </Card>
 
                     <Card className="shadow-sm border-0">
-                        <Card.Header className="bg-white">
-                            <h6 className="mb-0">💬 Bitácora / Comentarios</h6>
-                        </Card.Header>
+                        <Card.Header className="bg-white"><h6 className="mb-0">💬 Bitácora</h6></Card.Header>
                         <Card.Body style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                            {tarea.comentarios.length === 0 ? (
-                                <p className="text-muted small text-center my-3">No hay comentarios.</p>
-                            ) : (
+                            {tarea.comentarios.length === 0 ? <p className="text-muted small text-center my-3">Sin comentarios.</p> : (
                                 tarea.comentarios.map(c => (
                                     <div key={c.id} className="mb-3 border-bottom pb-2">
                                         <div className="d-flex justify-content-between">
                                             <strong style={{fontSize: '0.9rem'}}>{c.autor?.nombre}</strong>
-                                            <small className="text-muted" style={{fontSize: '0.75rem'}}>
-                                                {new Date(c.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                            </small>
+                                            <small className="text-muted" style={{fontSize: '0.75rem'}}>{new Date(c.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
                                         </div>
                                         <p className="mb-0 small text-secondary">{c.texto}</p>
                                     </div>
@@ -296,24 +323,40 @@ const DetalleTareaPage = () => {
                         <Card.Footer className="bg-white">
                             <Form onSubmit={handleComentario}>
                                 <Form.Group className="mb-2">
-                                    <Form.Control 
-                                        as="textarea" rows={2} 
-                                        placeholder="Reportar novedad..." 
-                                        value={comentario}
-                                        onChange={e => setComentario(e.target.value)}
-                                        style={{fontSize: '0.9rem'}}
-                                    />
+                                    <Form.Control as="textarea" rows={2} placeholder="Escribir..." value={comentario} onChange={e => setComentario(e.target.value)} style={{fontSize: '0.9rem'}} />
                                 </Form.Group>
-                                <div className="text-end">
-                                    <Button type="submit" size="sm" variant="outline-primary" disabled={enviandoComentario}>
-                                        Enviar
-                                    </Button>
-                                </div>
+                                <div className="text-end"><Button type="submit" size="sm" variant="outline-primary" disabled={enviandoComentario}>Enviar</Button></div>
                             </Form>
                         </Card.Footer>
                     </Card>
                 </Col>
             </Row>
+
+            {/* MODAL PARA COMENTARIO FINAL */}
+            <Modal show={showModalFinalizar} onHide={() => setShowModalFinalizar(false)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title>Finalizar Rutina</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p>¿Has completado todas las actividades requeridas para <strong>{tarea.campana?.nombre}</strong>?</p>
+                    <Form.Group className="mt-3">
+                        <Form.Label>Comentario de cierre (Opcional):</Form.Label>
+                        <Form.Control 
+                            as="textarea" 
+                            rows={3} 
+                            placeholder="Ej: Todo normal, sin incidencias..." 
+                            value={comentarioFinal}
+                            onChange={(e) => setComentarioFinal(e.target.value)}
+                        />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowModalFinalizar(false)}>Cancelar</Button>
+                    <Button variant="success" onClick={confirmarFinalizacion} disabled={procesandoEstado}>
+                        {procesandoEstado ? <Spinner size="sm"/> : 'Confirmar y Cerrar'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </Container>
     );
 };
