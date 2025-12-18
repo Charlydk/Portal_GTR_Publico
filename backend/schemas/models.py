@@ -330,6 +330,7 @@ class Tarea(TareaBase):
     id: int
     fecha_creacion: datetime
     fecha_finalizacion: Optional[datetime] = None
+    es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
     campana: Optional[CampanaSimple] = None
     checklist_items: List[ChecklistItemSimple] = []
@@ -379,6 +380,8 @@ class SesionActiva(BaseModel):
     id: int
     fecha_inicio: datetime
     campana: Campana
+    campana_id: int
+    campana: CampanaSimple
     
     class Config:
         from_attributes = True

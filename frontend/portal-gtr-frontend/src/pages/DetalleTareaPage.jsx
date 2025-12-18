@@ -15,7 +15,7 @@ const DetalleTareaPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     
-    // Estados para comentarios y extras
+    // Estados para UI local
     const [comentario, setComentario] = useState('');
     const [enviandoComentario, setEnviandoComentario] = useState(false);
     const [showExtraInput, setShowExtraInput] = useState(false);
@@ -23,16 +23,22 @@ const DetalleTareaPage = () => {
     const [extraItemTime, setExtraItemTime] = useState('');
     const [addingItem, setAddingItem] = useState(false);
 
-    // Estados para FINALIZAR / RETOMAR
+    // Estados Modales
     const [showModalFinalizar, setShowModalFinalizar] = useState(false);
     const [comentarioFinal, setComentarioFinal] = useState('');
     const [procesandoEstado, setProcesandoEstado] = useState(false);
+    const [showModalReasignar, setShowModalReasignar] = useState(false);
+    const [analistas, setAnalistas] = useState([]);
+    const [nuevoResponsableId, setNuevoResponsableId] = useState('');
+    const [reasignando, setReasignando] = useState(false);
 
-    // Cargar datos
-    const fetchTarea = async () => {
+    // --- CARGA DE DATOS ---
+
+    const fetchTarea = async (isSilent = false) => {
+        if (!isSilent) setLoading(true);
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`);
-            if (!response.ok) throw new Error("No se pudo cargar la tarea");
+            if (!response.ok) throw new Error("Error de conexión");
             const data = await response.json();
             
             if (data.checklist_items) {
@@ -40,20 +46,41 @@ const DetalleTareaPage = () => {
             }
             setTarea(data);
         } catch (err) {
-            setError(err.message);
+            console.error(err);
+            if (!isSilent) setError(err.message);
         } finally {
-            setLoading(false);
+            if (!isSilent) setLoading(false);
         }
     };
 
+    const fetchAnalistas = async () => {
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`);
+            if (res.ok) setAnalistas(await res.json());
+        } catch (err) { console.error(err); }
+    };
+
+    // --- SINCRONIZACIÓN AUTOMÁTICA (POLLING) ---
     useEffect(() => {
-        fetchTarea();
+        fetchTarea(); // Primera carga
+
+        const interval = setInterval(() => {
+            // Refrescar cada 2 segundos si la pestaña está activa
+            if (!document.hidden) fetchTarea(true); 
+        }, 10000);
+
+        return () => clearInterval(interval);
     }, [id]);
+
+    useEffect(() => {
+        if (showModalReasignar && analistas.length === 0) fetchAnalistas();
+    }, [showModalReasignar]);
 
     // --- ACCIONES ---
 
     const toggleItem = async (itemId, estadoActual) => {
-        // Optimistic UI update
+        // Optimistic UI: Cambiamos visualmente antes de esperar al servidor
+        // para que se sienta instantáneo para quien hace click.
         const nuevosItems = tarea.checklist_items.map(i => 
             i.id === itemId ? { ...i, completado: !estadoActual } : i
         );
@@ -65,23 +92,21 @@ const DetalleTareaPage = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ completado: !estadoActual })
             });
+            // No hacemos fetchTarea() aquí porque el Polling lo hará en breve
+            // y ya actualizamos la UI localmente.
         } catch (err) {
             console.error("Error al marcar item:", err);
-            fetchTarea(); 
+            fetchTarea(); // Revertir si falló
         }
     };
 
     const handleAddExtraItem = async () => {
         if (!extraItemText.trim()) return;
         setAddingItem(true);
-
-        let descripcionFinal = `(Extra) ${extraItemText}`;
-        if (extraItemTime) {
-            descripcionFinal = `[${extraItemTime}] (Extra) ${extraItemText}`;
-        }
+        let descripcionFinal = extraItemTime ? `[${extraItemTime}] (Extra) ${extraItemText}` : `(Extra) ${extraItemText}`;
 
         try {
-            const res = await fetchWithAuth(`${API_BASE_URL}/gtr/checklist_items/`, {
+            await fetchWithAuth(`${API_BASE_URL}/gtr/checklist_items/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -90,15 +115,12 @@ const DetalleTareaPage = () => {
                     completado: false
                 })
             });
-
-            if (res.ok) {
-                setExtraItemText('');
-                setExtraItemTime('');
-                setShowExtraInput(false);
-                fetchTarea(); 
-            }
+            setExtraItemText('');
+            setExtraItemTime('');
+            setShowExtraInput(false);
+            fetchTarea(true); // Forzar recarga inmediata
         } catch (err) {
-            alert("Error al agregar ítem extra");
+            alert("Error al agregar ítem");
         } finally {
             setAddingItem(false);
         }
@@ -115,69 +137,68 @@ const DetalleTareaPage = () => {
                 body: JSON.stringify({ texto: comentario })
             });
             setComentario('');
-            fetchTarea(); 
-        } catch (err) {
-            alert("Error enviando comentario");
-        } finally {
-            setEnviandoComentario(false);
-        }
+            fetchTarea(true);
+        } catch (err) { alert("Error enviando comentario"); } 
+        finally { setEnviandoComentario(false); }
     };
 
-    // --- LÓGICA DE CIERRE Y REAPERTURA ---
-
+    // ... (El resto de funciones confirmarFinalizacion, retomarTarea, handleReasignar se mantienen igual) ...
     const confirmarFinalizacion = async () => {
         setProcesandoEstado(true);
         try {
-            // 1. Si escribió un comentario final, lo enviamos primero
             if (comentarioFinal.trim()) {
                 await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ texto: `[CIERRE] ${comentarioFinal}` })
                 });
             }
-
-            // 2. Cerramos la tarea
             await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ progreso: 'COMPLETADA' })
             });
-
             setShowModalFinalizar(false);
-            navigate('/tareas/disponibles'); // Volver al listado
-        } catch (err) {
-            alert("Error al finalizar tarea");
-        } finally {
-            setProcesandoEstado(false);
-        }
+            navigate('/tareas/disponibles'); 
+        } catch (err) { alert("Error al finalizar"); } 
+        finally { setProcesandoEstado(false); }
     };
 
     const retomarTarea = async () => {
-        if(!window.confirm("¿Deseas reabrir esta rutina para continuar editándola?")) return;
-        
+        if(!window.confirm("¿Reabrir rutina?")) return;
         setProcesandoEstado(true);
         try {
-            // Ponemos en EN_PROGRESO (o PENDIENTE, según prefieras)
             await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ progreso: 'EN_PROGRESO' })
             });
-            
-            // Agregamos un log automático
             await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ texto: `[SISTEMA] Tarea reabierta por el usuario.` })
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ texto: `[SISTEMA] Tarea reabierta.` })
             });
+            fetchTarea(); 
+        } catch (err) { alert("Error al retomar"); } 
+        finally { setProcesandoEstado(false); }
+    };
 
-            fetchTarea(); // Recargar en la misma pantalla
-        } catch (err) {
-            alert("Error al retomar tarea");
-        } finally {
-            setProcesandoEstado(false);
-        }
+    const handleReasignar = async () => {
+        if (!nuevoResponsableId) return;
+        setReasignando(true);
+        try {
+            const res = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ analista_id: parseInt(nuevoResponsableId) })
+            });
+            if (res.ok) {
+                const analistaNombre = analistas.find(a => a.id === parseInt(nuevoResponsableId))?.nombre || 'Otro';
+                await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ texto: `[SISTEMA] Reasignado a: ${analistaNombre}` })
+                });
+                alert("Reasignado correctamente.");
+                setShowModalReasignar(false);
+                fetchTarea();
+            } else throw new Error();
+        } catch (error) { alert("Error al reasignar."); } 
+        finally { setReasignando(false); }
     };
 
     // --- RENDER ---
@@ -189,37 +210,36 @@ const DetalleTareaPage = () => {
     const completados = tarea.checklist_items.filter(i => i.completado).length;
     const progreso = totalItems === 0 ? 0 : Math.round((completados / totalItems) * 100);
     const esAnalista = user.role === 'ANALISTA';
+    const esSupervisor = ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
     const tareaCerrada = tarea.progreso === 'COMPLETADA';
 
     return (
         <Container className="py-4">
-            {/* ENCABEZADO */}
             <div className="mb-4">
                 <Button variant="link" className="text-muted ps-0 mb-2" onClick={() => navigate(-1)}>← Volver</Button>
                 <div className="d-flex justify-content-between align-items-start">
                     <div>
-                        <Badge bg={tareaCerrada ? 'success' : 'primary'} className="mb-2">
-                            {tarea.campana?.nombre} {tareaCerrada && '✓ Completada'}
-                        </Badge>
+                        <Badge bg={tareaCerrada ? 'success' : 'primary'} className="mb-2">{tarea.campana?.nombre} {tareaCerrada && '✓'}</Badge>
                         <h2 className="mb-1">{tarea.titulo}</h2>
                         <p className="text-muted mb-0">{tarea.descripcion}</p>
+                        {/* Indicador de Modo Colaborativo */}
+                        <div className="mt-2 text-success small">
+                            <span className="spinner-grow spinner-grow-sm me-2" role="status" style={{width:'8px', height:'8px'}}></span>
+                            Sincronización en vivo activa
+                        </div>
                     </div>
                     <div className="text-end">
                         <h3 className={`mb-0 ${progreso === 100 ? 'text-success' : 'text-primary'}`}>{progreso}%</h3>
-                        <small className="text-muted">Progreso</small>
+                        <small className="text-muted">Progreso Global</small>
                     </div>
                 </div>
                 <ProgressBar now={progreso} variant={progreso === 100 ? 'success' : 'primary'} className="mt-3" style={{ height: '10px' }} />
             </div>
 
             <Row className="g-4">
-                {/* COLUMNA IZQUIERDA: CHECKLIST */}
                 <Col lg={8}>
                     <Card className={`shadow-sm border-0 mb-4 ${tareaCerrada ? 'bg-light border-success' : ''}`}>
-                        <Card.Header className="bg-white py-3 d-flex justify-content-between align-items-center">
-                            <h5 className="mb-0">✅ Lista de Actividades</h5>
-                            {tareaCerrada && <Badge bg="success">Finalizado</Badge>}
-                        </Card.Header>
+                        <Card.Header className="bg-white py-3"><h5 className="mb-0">✅ Lista de Actividades</h5></Card.Header>
                         <ListGroup variant="flush" className={tareaCerrada ? 'opacity-75' : ''}>
                             {tarea.checklist_items.map(item => (
                                 <ListGroup.Item key={item.id} className="py-3 action-hover bg-transparent">
@@ -229,9 +249,6 @@ const DetalleTareaPage = () => {
                                             checked={item.completado}
                                             onChange={() => toggleItem(item.id, item.completado)}
                                             style={{ transform: 'scale(1.3)', cursor: 'pointer' }}
-                                            // IMPORTANTE: Permitimos editar incluso si está cerrada, 
-                                            // o si prefieres bloquearlo, usa: disabled={tareaCerrada}
-                                            // Según tu requerimiento de "retomar", lo ideal es bloquear hasta que de "Retomar".
                                             disabled={tareaCerrada} 
                                         />
                                         <Form.Check.Label 
@@ -248,67 +265,56 @@ const DetalleTareaPage = () => {
                                 </ListGroup.Item>
                             ))}
                         </ListGroup>
-                        
-                        {/* INPUT EXTRA (Solo si no está cerrada) */}
-                        {!tareaCerrada && esAnalista && (
+                        {/* Footer input extra... (mismo código anterior) */}
+                        {!tareaCerrada && (esAnalista || esSupervisor) && (
                             <Card.Footer className="bg-white border-top-0 pt-0 pb-3">
                                 {showExtraInput ? (
                                     <div className="mt-2">
                                         <InputGroup>
-                                            <Form.Control type="time" style={{ maxWidth: '130px' }} value={extraItemTime} onChange={(e) => setExtraItemTime(e.target.value)} />
-                                            <Form.Control placeholder="Describe la actividad..." value={extraItemText} onChange={(e) => setExtraItemText(e.target.value)} autoFocus onKeyPress={(e) => e.key === 'Enter' && handleAddExtraItem()} />
-                                            <Button variant="outline-secondary" onClick={() => setShowExtraInput(false)}>✕</Button>
-                                            <Button variant="primary" onClick={handleAddExtraItem} disabled={addingItem}>{addingItem ? <Spinner size="sm"/> : 'Guardar'}</Button>
+                                            <Form.Control type="time" style={{maxWidth:'130px'}} value={extraItemTime} onChange={(e)=>setExtraItemTime(e.target.value)}/>
+                                            <Form.Control placeholder="Actividad extra..." value={extraItemText} onChange={(e)=>setExtraItemText(e.target.value)} onKeyPress={(e)=>e.key==='Enter' && handleAddExtraItem()}/>
+                                            <Button variant="outline-secondary" onClick={()=>setShowExtraInput(false)}>✕</Button>
+                                            <Button variant="primary" onClick={handleAddExtraItem} disabled={addingItem}>{addingItem?<Spinner size="sm"/>:'Guardar'}</Button>
                                         </InputGroup>
                                     </div>
                                 ) : (
-                                    <Button variant="link" className="text-decoration-none ps-0 mt-2 text-muted" onClick={() => setShowExtraInput(true)}>+ Agregar actividad extra</Button>
+                                    <Button variant="link" className="text-decoration-none ps-0 mt-2 text-muted" onClick={()=>setShowExtraInput(true)}>+ Agregar extra</Button>
                                 )}
                             </Card.Footer>
                         )}
                     </Card>
-
-                    {/* BOTONES DE ACCIÓN (FINALIZAR / RETOMAR) */}
+                    
+                    {/* Botones de acción finales... (mismo código anterior) */}
                     {esAnalista && (
                         <div className="d-grid gap-2 mb-5">
                             {!tareaCerrada ? (
-                                <Button 
-                                    variant={progreso === 100 ? "success" : "secondary"} 
-                                    size="lg"
-                                    onClick={() => setShowModalFinalizar(true)}
-                                >
-                                    {progreso === 100 ? '🎉 Finalizar Rutina' : 'Finalizar Rutina'}
-                                </Button>
+                                <Button variant="success" size="lg" onClick={() => setShowModalFinalizar(true)}>Finalizar Rutina</Button>
                             ) : (
-                                <Button 
-                                    variant="warning" 
-                                    className="text-white fw-bold"
-                                    size="lg"
-                                    onClick={retomarTarea}
-                                    disabled={procesandoEstado}
-                                >
-                                    {procesandoEstado ? <Spinner size="sm"/> : '↩ Retomar Tarea (Reabrir)'}
+                                <Button variant="warning" className="text-white fw-bold" size="lg" onClick={retomarTarea} disabled={procesandoEstado}>
+                                    {procesandoEstado ? <Spinner size="sm"/> : '↩ Retomar Tarea'}
                                 </Button>
                             )}
                         </div>
                     )}
                 </Col>
 
-                {/* COLUMNA DERECHA: COMENTARIOS */}
+                {/* Columna Derecha (Info y Chat)... (mismo código anterior) */}
                 <Col lg={4}>
                     <Card className="shadow-sm border-0 mb-3 bg-light">
                         <Card.Body>
                             <small className="text-muted d-block">Estado</small>
                             <Badge bg={tareaCerrada ? 'success' : 'warning'} className="mb-3">{tarea.progreso}</Badge>
-                            <small className="text-muted d-block">Vence hoy a las:</small>
+                            <small className="text-muted d-block">Vencimiento</small>
                             <strong>{new Date(tarea.fecha_vencimiento).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</strong>
+                            {esSupervisor && !tareaCerrada && (
+                                <div className="mt-3 d-grid"><Button size="sm" variant="outline-dark" onClick={() => setShowModalReasignar(true)}>👤 Reasignar Responsable</Button></div>
+                            )}
                         </Card.Body>
                     </Card>
-
                     <Card className="shadow-sm border-0">
-                        <Card.Header className="bg-white"><h6 className="mb-0">💬 Bitácora</h6></Card.Header>
+                        <Card.Header className="bg-white"><h6 className="mb-0">💬 Chat de Equipo</h6></Card.Header>
                         <Card.Body style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                            {tarea.comentarios.length === 0 ? <p className="text-muted small text-center my-3">Sin comentarios.</p> : (
+                            {tarea.comentarios.length === 0 ? <p className="text-muted small text-center my-3">Sin mensajes.</p> : (
                                 tarea.comentarios.map(c => (
                                     <div key={c.id} className="mb-3 border-bottom pb-2">
                                         <div className="d-flex justify-content-between">
@@ -322,39 +328,39 @@ const DetalleTareaPage = () => {
                         </Card.Body>
                         <Card.Footer className="bg-white">
                             <Form onSubmit={handleComentario}>
-                                <Form.Group className="mb-2">
-                                    <Form.Control as="textarea" rows={2} placeholder="Escribir..." value={comentario} onChange={e => setComentario(e.target.value)} style={{fontSize: '0.9rem'}} />
-                                </Form.Group>
-                                <div className="text-end"><Button type="submit" size="sm" variant="outline-primary" disabled={enviandoComentario}>Enviar</Button></div>
+                                <InputGroup>
+                                    <Form.Control size="sm" placeholder="Escribir mensaje..." value={comentario} onChange={e => setComentario(e.target.value)} />
+                                    <Button type="submit" size="sm" variant="outline-primary" disabled={enviandoComentario}>Enviar</Button>
+                                </InputGroup>
                             </Form>
                         </Card.Footer>
                     </Card>
                 </Col>
             </Row>
 
-            {/* MODAL PARA COMENTARIO FINAL */}
+            {/* Modales Finalizar y Reasignar... (igual que antes) */}
             <Modal show={showModalFinalizar} onHide={() => setShowModalFinalizar(false)} centered>
-                <Modal.Header closeButton>
-                    <Modal.Title>Finalizar Rutina</Modal.Title>
-                </Modal.Header>
+                <Modal.Header closeButton><Modal.Title>Finalizar</Modal.Title></Modal.Header>
                 <Modal.Body>
-                    <p>¿Has completado todas las actividades requeridas para <strong>{tarea.campana?.nombre}</strong>?</p>
-                    <Form.Group className="mt-3">
-                        <Form.Label>Comentario de cierre (Opcional):</Form.Label>
-                        <Form.Control 
-                            as="textarea" 
-                            rows={3} 
-                            placeholder="Ej: Todo normal, sin incidencias..." 
-                            value={comentarioFinal}
-                            onChange={(e) => setComentarioFinal(e.target.value)}
-                        />
-                    </Form.Group>
+                    <p>¿Confirmas el cierre de la rutina?</p>
+                    <Form.Control as="textarea" rows={3} placeholder="Comentario opcional..." value={comentarioFinal} onChange={(e) => setComentarioFinal(e.target.value)} />
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowModalFinalizar(false)}>Cancelar</Button>
-                    <Button variant="success" onClick={confirmarFinalizacion} disabled={procesandoEstado}>
-                        {procesandoEstado ? <Spinner size="sm"/> : 'Confirmar y Cerrar'}
-                    </Button>
+                    <Button variant="success" onClick={confirmarFinalizacion} disabled={procesandoEstado}>{procesandoEstado ? <Spinner size="sm"/> : 'Confirmar'}</Button>
+                </Modal.Footer>
+            </Modal>
+
+            <Modal show={showModalReasignar} onHide={() => setShowModalReasignar(false)} centered>
+                <Modal.Header closeButton><Modal.Title>Reasignar Tarea</Modal.Title></Modal.Header>
+                <Modal.Body>
+                    <Form.Select value={nuevoResponsableId} onChange={(e) => setNuevoResponsableId(e.target.value)}>
+                        <option value="">-- Seleccionar --</option>
+                        {analistas.map(a => <option key={a.id} value={a.id}>{a.nombre} {a.apellido}</option>)}
+                    </Form.Select>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="primary" onClick={handleReasignar} disabled={!nuevoResponsableId || reasignando}>{reasignando ? <Spinner size="sm"/> : 'Guardar'}</Button>
                 </Modal.Footer>
             </Modal>
         </Container>

@@ -118,6 +118,8 @@ class ChecklistItem(Base):
     fecha_completado = Column(DateTime(timezone=True), nullable=True)
     tarea_id = Column(Integer, ForeignKey("tareas.id"), nullable=False)
     tarea = relationship("Tarea", back_populates="checklist_items")
+    realizado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    realizado_por = relationship("Analista")
 
 class ComentarioGeneralBitacora(Base):
     __tablename__ = "comentarios_generales_bitacora"

@@ -10,21 +10,50 @@ const TareasDisponiblesPage = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [tareas, setTareas] = useState([]);
+    const [sesionesActivas, setSesionesActivas] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        const cargarMisTareas = async () => {
+        const cargarDatos = async () => {
+            console.log("🔄 Iniciando carga de tareas y sesiones..."); // DEBUG
             try {
-                // Traemos todas las tareas
-                const response = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/`);
-                if (!response.ok) throw new Error("Error cargando tareas");
-                const data = await response.json();
-
-                // 1. FILTRO: Solo mis tareas (pero incluimos las COMPLETADAS)
-                let misTareas = data.filter(t => t.analista_id === user.id);
+                setLoading(true);
                 
-                // 2. ORDEN: Pendientes primero, Completadas al final
+                // 1. PETICIÓN PARALELA: Pedimos Tareas y Sesiones al mismo tiempo
+                const [resTareas, resSesiones] = await Promise.all([
+                    fetchWithAuth(`${API_BASE_URL}/gtr/tareas/`),
+                    fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/activas`) 
+                ]);
+
+                if (!resTareas.ok || !resSesiones.ok) throw new Error("Error de conexión con el servidor");
+
+                const dataTareas = await resTareas.json();
+                const dataSesiones = await resSesiones.json();
+                
+                console.log("📥 Sesiones Activas recibidas:", dataSesiones); // DEBUG
+                setSesionesActivas(dataSesiones);
+
+                // 2. Extraer IDs de campañas donde tengo Check-in activo
+                const idsCampanasActivas = dataSesiones.map(s => s.campana_id);
+                console.log("🔑 IDs de Campañas Activas:", idsCampanasActivas); // DEBUG
+
+                // 3. FILTRO COLABORATIVO
+                const misTareas = dataTareas.filter(t => {
+                    // A. Soy el creador/dueño original
+                    const soyElDuenio = t.analista_id === user.id;
+                    
+                    // B. O estoy trabajando en esa campaña AHORA (Check-in activo)
+                    //    Esto permite ver tareas creadas por OTROS en mi campaña actual.
+                    const esDeSesionActiva = idsCampanasActivas.includes(t.campana_id);
+                    
+                    // Condición Final:
+                    return soyElDuenio || (t.es_generada_automaticamente && esDeSesionActiva);
+                });
+                
+                console.log("📋 Tareas filtradas para mostrar:", misTareas.length); // DEBUG
+
+                // 4. Ordenar: Pendientes primero
                 misTareas.sort((a, b) => {
                     if (a.progreso === 'COMPLETADA' && b.progreso !== 'COMPLETADA') return 1;
                     if (a.progreso !== 'COMPLETADA' && b.progreso === 'COMPLETADA') return -1;
@@ -33,13 +62,14 @@ const TareasDisponiblesPage = () => {
                 
                 setTareas(misTareas);
             } catch (err) {
+                console.error("❌ Error:", err);
                 setError(err.message);
             } finally {
                 setLoading(false);
             }
         };
 
-        if (user) cargarMisTareas();
+        if (user) cargarDatos();
     }, [user]);
 
     const calcularProgreso = (items) => {
@@ -57,7 +87,16 @@ const TareasDisponiblesPage = () => {
                     <h2 className="mb-1">📋 Mis Rutinas</h2>
                     <p className="text-muted">Gestión de actividades diarias.</p>
                 </div>
-                <Button variant="outline-secondary" onClick={() => window.location.reload()}>🔄 Actualizar</Button>
+                <div className="d-flex gap-2">
+                    {/* Indicador visual de conexión a campañas */}
+                    {sesionesActivas.length > 0 && (
+                        <div className="d-none d-md-flex align-items-center me-3 text-success small border px-2 py-1 rounded bg-white">
+                            <span className="spinner-grow spinner-grow-sm me-2 text-success"></span>
+                            Conectado a: <strong>{sesionesActivas.map(s => s.campana.nombre).join(', ')}</strong>
+                        </div>
+                    )}
+                    <Button variant="outline-secondary" onClick={() => window.location.reload()}>🔄 Actualizar</Button>
+                </div>
             </div>
 
             {error && <Alert variant="danger">{error}</Alert>}
@@ -65,7 +104,7 @@ const TareasDisponiblesPage = () => {
             {tareas.length === 0 ? (
                 <div className="text-center py-5 bg-light rounded border border-dashed">
                     <h4 className="text-muted">No tienes tareas asignadas</h4>
-                    <p>Haz <b>Check-in</b> en una campaña desde el Dashboard para generar tu rutina diaria.</p>
+                    <p>Haz <b>Check-in</b> en una campaña desde el Dashboard para ver las tareas compartidas del equipo.</p>
                     <Button variant="primary" onClick={() => navigate('/dashboard')}>Ir al Dashboard</Button>
                 </div>
             ) : (
@@ -74,7 +113,6 @@ const TareasDisponiblesPage = () => {
                         const progreso = calcularProgreso(tarea.checklist_items);
                         const esCompletada = tarea.progreso === 'COMPLETADA';
                         
-                        // Diseño visual según estado
                         const borderClass = esCompletada ? 'border-success' : 'border-0';
                         const bgHeader = esCompletada ? 'bg-success text-white' : 'bg-white';
                         const badgeBg = esCompletada ? 'light' : 'primary';
@@ -114,7 +152,7 @@ const TareasDisponiblesPage = () => {
                                                 variant={esCompletada ? "outline-success" : "primary"} 
                                                 onClick={() => navigate(`/tareas/${tarea.id}`)}
                                             >
-                                                {esCompletada ? '👁️ Ver / Retomar' : (progreso === 0 ? '🚀 Comenzar' : '▶️ Continuar')}
+                                                {esCompletada ? '👁️ Ver / Retomar' : (progreso === 0 ? '🚀 Unirse / Comenzar' : '▶️ Continuar')}
                                             </Button>
                                         </div>
                                     </Card.Body>
