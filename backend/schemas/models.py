@@ -48,6 +48,7 @@ class ChecklistItemBase(BaseModel):
     descripcion: str
     completado: Optional[bool] = False
     tarea_id: int
+    hora_sugerida: Optional[time] = None
 
 class ChecklistItemUpdate(BaseModel):
     descripcion: Optional[str] = None
@@ -192,6 +193,7 @@ class ChecklistItemSimple(BaseModel):
     descripcion: str
     completado: bool
     fecha_completado: Optional[datetime] = None
+    hora_sugerida: Optional[time] = None
     class Config:
         from_attributes = True
 

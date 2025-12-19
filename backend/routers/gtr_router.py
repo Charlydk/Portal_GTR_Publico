@@ -2983,6 +2983,96 @@ async def get_dashboard_stats(
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard GTR definido.")
 
+@router.get("/dashboard/alertas-operativas", summary="Obtener alertas de tareas vencidas o próximas")
+async def get_alertas_operativas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Semáforo Inteligente:
+    - AMARILLO (Atención): Faltan 45 min o menos.
+    - AZUL (En Curso): Es la hora exacta o pasaron hasta 15 min (Gracia).
+    - ROJO (Crítico): Pasaron más de 15 min del horario.
+    """
+    
+    # 1. Definir AHORA en Argentina
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    
+    # 2. Buscar sesión activa
+    q_sesion = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    res_sesion = await db.execute(q_sesion)
+    sesion = res_sesion.scalars().first()
+
+    if not sesion:
+        return [] 
+
+    # 3. Buscar la Tarea del día (Cargando la Campaña para obtener el nombre)
+    inicio_dia = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    q_tarea = select(models.Tarea).options(
+        selectinload(models.Tarea.campana) # <--- CARGAMOS LA CAMPAÑA AQUÍ
+    ).filter(
+        models.Tarea.campana_id == sesion.campana_id,
+        models.Tarea.es_generada_automaticamente == True,
+        models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
+    )
+    res_tarea = await db.execute(q_tarea)
+    tarea = res_tarea.scalars().first()
+
+    if not tarea:
+        return []
+
+    # 4. Traer ítems pendientes con hora
+    q_items = select(models.ChecklistItem).filter(
+        models.ChecklistItem.tarea_id == tarea.id,
+        models.ChecklistItem.completado == False,
+        models.ChecklistItem.hora_sugerida.is_not(None)
+    ).order_by(models.ChecklistItem.hora_sugerida)
+    
+    res_items = await db.execute(q_items)
+    items = res_items.scalars().all()
+
+    alertas = []
+    
+    # 5. MOTOR DE REGLAS MATEMÁTICO
+    # Usamos una fecha dummy para poder restar horas fácilmente
+    dummy_date = datetime(2000, 1, 1)
+    dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
+
+    for item in items:
+        hora_item = item.hora_sugerida
+        dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
+        
+        # Calculamos diferencia en minutos: (Hora Actual - Hora Tarea)
+        # Positivo = Ya pasó la hora de la tarea.
+        # Negativo = Aún no llega la hora.
+        diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
+        
+        estado = None
+        
+        # LÓGICA DEL SEMÁFORO
+        if diferencia_minutos > 15:
+            estado = "CRITICO" # Rojo (+15 min tarde)
+        elif 0 <= diferencia_minutos <= 15:
+            estado = "EN_CURSO" # Azul (Estamos en la ventana de envío)
+        elif -45 <= diferencia_minutos < 0:
+            estado = "ATENCION" # Amarillo (Faltan menos de 45 min)
+        
+        if estado:
+            alertas.append({
+                "id": item.id,
+                "descripcion": item.descripcion,
+                "hora": hora_item.strftime("%H:%M"),
+                "tipo": estado,
+                "tarea_id": tarea.id,
+                "campana_nombre": tarea.campana.nombre # <--- ENVIAMOS EL NOMBRE
+            })
+
+    return alertas
 
 @router.post("/incidencias/exportar/", summary="Exporta incidencias filtradas a Excel")
 async def exportar_incidencias(
@@ -3234,6 +3324,7 @@ async def check_in_campana(
 
             for item in items_plantilla:
                 texto_final = item.descripcion
+                # Mantenemos la hora en el texto por ahora para referencia visual
                 if item.hora_sugerida:
                     hora_str = item.hora_sugerida.strftime("%H:%M")
                     texto_final = f"[{hora_str}] {item.descripcion}"
@@ -3241,7 +3332,8 @@ async def check_in_campana(
                 nuevo_item = models.ChecklistItem(
                     tarea_id=nueva_tarea.id,
                     descripcion=texto_final,
-                    completado=False
+                    completado=False,
+                    hora_sugerida=item.hora_sugerida # <--- ¡AQUÍ GUARDAMOS EL DATO CLAVE!
                 )
                 db.add(nuevo_item)
             

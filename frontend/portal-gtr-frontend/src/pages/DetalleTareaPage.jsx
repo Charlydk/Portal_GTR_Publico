@@ -103,6 +103,8 @@ const DetalleTareaPage = () => {
     const handleAddExtraItem = async () => {
         if (!extraItemText.trim()) return;
         setAddingItem(true);
+        
+        // Mantenemos esto visual por si acaso
         let descripcionFinal = extraItemTime ? `[${extraItemTime}] (Extra) ${extraItemText}` : `(Extra) ${extraItemText}`;
 
         try {
@@ -112,13 +114,15 @@ const DetalleTareaPage = () => {
                 body: JSON.stringify({
                     descripcion: descripcionFinal,
                     tarea_id: parseInt(id),
-                    completado: false
+                    completado: false,
+                    // 👇 ¡AQUÍ ESTABA EL ERROR! AGREGAMOS ESTA LÍNEA 👇
+                    hora_sugerida: extraItemTime || null 
                 })
             });
             setExtraItemText('');
             setExtraItemTime('');
             setShowExtraInput(false);
-            fetchTarea(true); // Forzar recarga inmediata
+            fetchTarea(true); 
         } catch (err) {
             alert("Error al agregar ítem");
         } finally {

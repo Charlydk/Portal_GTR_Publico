@@ -1,7 +1,7 @@
 // RUTA: src/pages/DashboardPage.jsx
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert, Button, Badge } from 'react-bootstrap'; // Agregamos Button y Badge
+import { Container, Row, Col, Card, Spinner, Alert, Button, Badge } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { GTR_API_URL, API_BASE_URL, fetchWithAuth } from '../api'; 
 import { Link } from 'react-router-dom';
@@ -12,6 +12,7 @@ import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget';
 import CoberturaWidget from '../components/dashboard/CoberturaWidget';
+import WidgetAlertas from '../components/dashboard/WidgetAlertas';
 
 function DashboardPage() {
     const { user, loading: authLoading } = useAuth();
@@ -26,9 +27,9 @@ function DashboardPage() {
     const [showCampaignModal, setShowCampaignModal] = useState(false);
     const [misSesiones, setMisSesiones] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
-    const [refreshTrigger, setRefreshTrigger] = useState(0); // Señal para hijos
+    const [refreshTrigger, setRefreshTrigger] = useState(0); 
 
-    // Callbacks estables
+    // --- Callbacks de Carga ---
     const fetchDashboardStats = useCallback(async () => {
         const response = await fetchWithAuth(`${GTR_API_URL}/dashboard/stats`);
         if (!response.ok) throw new Error('Error al cargar estadísticas.');
@@ -47,11 +48,8 @@ function DashboardPage() {
         setTareasDisponibles(await response.json());
     }, []);
 
-    // --- EFECTO PARA CARGAR SESIONES ACTIVAS ---
-    // Usamos useCallback para poder pasarlo al hijo (CampaignSelector)
     const fetchMisSesiones = useCallback(async () => {
         try {
-            // Solo si es rol operativo
             if (['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user?.role)) {
                 const res = await fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/activas`);
                 if (res.ok) {
@@ -67,10 +65,9 @@ function DashboardPage() {
     const handleManualRefresh = async () => {
         setRefreshing(true);
         try {
-            // 1. Disparamos todas las cargas del Dashboard (Padre)
             const promises = [
                 fetchDashboardStats(),
-                fetchMisSesiones() // Actualizar la barrita de sesiones activas
+                fetchMisSesiones() 
             ];
 
             if (user.role === 'ANALISTA') {
@@ -78,24 +75,19 @@ function DashboardPage() {
             }
 
             await Promise.all(promises);
-
-            // 2. Enviamos la señal a los hijos independientes (como CoberturaWidget)
             setRefreshTrigger(prev => prev + 1);
 
         } catch (error) {
             console.error("Error al actualizar:", error);
         } finally {
-            // Pequeño timeout visual para que se note que hizo algo (opcional)
             setTimeout(() => setRefreshing(false), 500);
         }
     };
 
+    // --- Efecto Inicial ---
     useEffect(() => {
-        if (authLoading || !user) {
-            return; 
-        }
+        if (authLoading || !user) return; 
 
-        // Si es Supervisor de Operaciones, carga rápida
         if (user.role === 'SUPERVISOR_OPERACIONES') {
             setLoading(false);
             return;
@@ -104,10 +96,7 @@ function DashboardPage() {
         const fetchInitialData = async () => {
             setError(null);
             try {
-                const promises = [fetchDashboardStats()];
-                
-
-                promises.push(fetchMisSesiones());
+                const promises = [fetchDashboardStats(), fetchMisSesiones()];
 
                 if (user.role === 'ANALISTA') {
                     promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
@@ -116,9 +105,7 @@ function DashboardPage() {
             } catch (err) {
                 setError(err.message);
             } finally {
-                if (loading) {
-                    setLoading(false);
-                }
+                setLoading(false);
             }
         };
 
@@ -133,7 +120,7 @@ function DashboardPage() {
             promisesToRun.push(fetchMisIncidencias());
         }
         Promise.all(promisesToRun).catch(err => {
-            console.error("Error al actualizar widgets del dashboard:", err);
+            console.error("Error al actualizar widgets:", err);
             setError(err.message);
         });
     }, [user, fetchDashboardStats, fetchMisIncidencias]);
@@ -150,8 +137,7 @@ function DashboardPage() {
                 <Card className="shadow-lg p-4 mx-auto" style={{maxWidth: '600px'}}>
                     <Card.Body>
                         <Card.Title as="h2">¡Bienvenido, {user.nombre}!</Card.Title>
-                        <Card.Text className="my-4">Accede al portal para la gestión de Horas Extras.</Card.Text>
-                        <Link to="/hhee/portal" className="btn btn-primary btn-lg">Ir al Portal de HHEE</Link>
+                        <Link to="/hhee/portal" className="btn btn-primary btn-lg mt-4">Ir al Portal de HHEE</Link>
                     </Card.Body>
                 </Card>
             </Container>
@@ -160,6 +146,7 @@ function DashboardPage() {
 
     return (
         <Container fluid className="p-4">
+            {/* --- CABECERA --- */}
             <div className="d-flex justify-content-between align-items-center mb-4">
                 <h1 className="mb-0">Bitácora y Centro de Comando GTR</h1>
                 <Button 
@@ -173,7 +160,7 @@ function DashboardPage() {
                 </Button>
             </div>
             
-
+            {/* --- BARRA DE CAMPAÑAS --- */}
             <Card className="mb-4 shadow-sm border-primary">
                 <Card.Body className="d-flex justify-content-between align-items-center flex-wrap">
                     <div>
@@ -200,49 +187,52 @@ function DashboardPage() {
                 </Card.Body>
             </Card>
 
-
             {error && <Alert variant="danger">{error}</Alert>}
 
+            {/* --- ZONA PRINCIPAL DE TRABAJO --- */}
             <Row className="g-4">
+                
+                {/* COLUMNA IZQUIERDA (66%): GESTIÓN DE INCIDENCIAS (Stats + Carga) */}
+                <Col lg={8}>
+                    {/* 1. Estadísticas (Budgets) */}
+                    <div className="mb-4">
+                        {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                            <EstadisticasGTRWidget stats={dashboardStats} user={user} />
+                        )}
+                        {user.role === 'ANALISTA' && (
+                            <EstadisticasGTRWidget 
+                                stats={dashboardStats} 
+                                user={user} 
+                                tareasDisponibles={tareasDisponibles.length} 
+                            />
+                        )}
+                    </div>
 
-    {/* WIDGET DE REGISTRO (Incidencias) - Para todos o según prefieras */}
-    <Col lg={5}>
-        <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
-    </Col>
+                    {/* 2. Registro Rápido (Pegado abajo de los budgets) */}
+                    <div>
+                        <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
+                    </div>
+                </Col>
 
-        <Col lg={7}>
-            <Row className="g-4">
+                {/* COLUMNA DERECHA (33%): AGENDA DE ACTIVIDADES (Suelto) */}
+                <Col lg={4}>
+                     <WidgetAlertas />
+                </Col>
+            </Row>
 
-                {/* --- NUEVO WIDGET DE COBERTURA --- */}
-                {/* Solo visible para supervisores/responsables */}
+            {/* --- ZONA INFERIOR: TABLAS Y LISTADOS --- */}
+            <Row className="g-4 mt-2">
+                {user.role === 'ANALISTA' && (
+                    <Col md={12}>
+                        <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
+                    </Col>
+                )}
+
                 {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
                     <Col md={12}>
                         <CoberturaWidget refreshTrigger={refreshTrigger} />
                     </Col>
                 )}
-
-                {/* Widgets existentes de estadísticas... */}
-                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                    <Col md={12}>
-                        <EstadisticasGTRWidget stats={dashboardStats} user={user} />
-                    </Col>
-                )}
-                        {user.role === 'ANALISTA' && (
-                            <>
-                                <Col md={12}>
-                                    <EstadisticasGTRWidget 
-                                        stats={dashboardStats} 
-                                        user={user} 
-                                        tareasDisponibles={tareasDisponibles.length} 
-                                    />
-                                </Col>
-                                <Col md={12}>
-                                    <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
-                                </Col>
-                            </>
-                        )}
-                    </Row>
-                </Col>
             </Row>
 
             <CampaignSelector 
