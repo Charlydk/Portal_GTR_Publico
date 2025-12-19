@@ -1081,36 +1081,56 @@ async def crear_comentario_tarea(
 ):
     """
     Crea un nuevo comentario para una tarea específica.
+    Permite comentarios colaborativos si hay sesión activa en la campaña.
     """
-    # Primero, verificamos que la tarea existe
+    # 1. Verificar que la tarea existe
     tarea_result = await db.execute(select(models.Tarea).filter(models.Tarea.id == tarea_id))
     db_tarea = tarea_result.scalars().first()
     if not db_tarea:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
 
-    # (Opcional pero recomendado) Verificar permisos: El usuario puede ver la tarea?
+    # 2. Verificar permisos (LÓGICA COLABORATIVA)
     if current_analista.role == UserRole.ANALISTA.value:
-        if db_tarea.analista_id != current_analista.id:
+        # A. Soy el dueño
+        es_dueno = db_tarea.analista_id == current_analista.id
+        
+        # B. Tengo sesión activa en la campaña
+        tiene_acceso_colaborativo = False
+        if db_tarea.es_generada_automaticamente and db_tarea.campana_id:
+            session_q = select(models.SesionCampana).filter(
+                models.SesionCampana.analista_id == current_analista.id,
+                models.SesionCampana.campana_id == db_tarea.campana_id,
+                models.SesionCampana.fecha_fin.is_(None)
+            )
+            session_res = await db.execute(session_q)
+            if session_res.scalars().first():
+                tiene_acceso_colaborativo = True
+
+        if not es_dueno and not tiene_acceso_colaborativo:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para comentar en esta tarea.")
 
-    # Creamos el objeto del comentario
+    # 3. Guardar el comentario
     db_comentario = models.ComentarioTarea(
         texto=comentario.texto,
         tarea_id=tarea_id,
         autor_id=current_analista.id
     )
     db.add(db_comentario)
-    await db.commit()
-    await db.refresh(db_comentario)
+    
+    try:
+        await db.commit()
+        await db.refresh(db_comentario)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar comentario: {e}")
 
-    # Recargamos el comentario con la relación del autor para la respuesta
+    # 4. Recargar para devolver con datos del autor (para mostrar nombre en el chat)
     result = await db.execute(
         select(models.ComentarioTarea)
         .options(selectinload(models.ComentarioTarea.autor))
         .filter(models.ComentarioTarea.id == db_comentario.id)
     )
     return result.scalars().first()
-
 # --- Endpoints para checklist tareas (Protegidos) ---
 
 @router.post("/checklist_items/", response_model=ChecklistItem, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo ChecklistItem (Protegido)")
