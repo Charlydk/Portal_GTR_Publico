@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Union
 from datetime import datetime, date, time
 from sqlalchemy import func, and_
-from sqlalchemy import case, text, select, delete
+from sqlalchemy import case, text, select, delete, update
 from ..database import get_db
 from ..sql_app import models
 from ..enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
@@ -54,31 +54,61 @@ router = APIRouter(
 )
 
 
-@router.get("/campanas/tareas_disponibles/", response_model=List[TareaListOutput], summary="Obtener Tareas de Campaña sin Asignar (Protegido)")
-async def obtener_tareas_disponibles(
+@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
+async def obtener_tareas(
+    skip: int = 0, 
+    limit: int = 100, 
+    estado: Optional[ProgresoTarea] = None, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Obtiene las tareas de las campañas a las que el analista está asignado,
-    pero que aún no tienen un analista asignado (analista_id es NULL).
+    Muestra las tareas de cualquier campaña con TODA su información cargada.
+    Incluye una LIMPIEZA AUTOMÁTICA de tareas vencidas.
     """
-    # Obtener los IDs de las campañas asignadas al analista actual
-    assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
+    
+    # --- 🧹 BARRENDERO AUTOMÁTICO ---
+    # Si una tarea ya venció (fecha_vencimiento < ahora) y sigue PENDIENTE o EN_PROGRESO,
+    # la cerramos automáticamente como CANCELADA para que no moleste hoy.
+    now = datetime.now()
+    
+    # Nota: Asegúrate de que tu servidor tenga la hora correcta o usa datetime.utcnow() si guardas en UTC.
+    # Aquí asumimos que fecha_vencimiento es "naive" o compatible con 'now'.
+    
+    query_limpieza = (
+        update(models.Tarea)
+        .where(
+            models.Tarea.fecha_vencimiento < now,
+            models.Tarea.progreso.in_([ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO])
+        )
+        .values(progreso=ProgresoTarea.CANCELADA)
+        .execution_options(synchronize_session=False)
+    )
+    
+    # Ejecutamos la limpieza (es muy rápida)
+    await db.execute(query_limpieza)
+    await db.commit()
+    # -------------------------------
 
-    if not assigned_campaign_ids:
-        return [] # Si no tiene campañas, no hay tareas disponibles
-
+    # Consulta base con carga PROFUNDA de relaciones (Código original sigue aquí...)
     query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.campana)
-    ).where(
-        models.Tarea.campana_id.in_(assigned_campaign_ids),
-        models.Tarea.analista_id.is_(None) # La condición clave: tareas sin analista
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
     )
 
-    tareas = await db.execute(query)
-    return tareas.scalars().unique().all()
+    # Filtro opcional por estado
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # Ordenamos por vencimiento más próximo o creación
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/campanas/listado-simple/", response_model=List[CampanaSimple], summary="Obtener una lista simple de campañas para selectores")
@@ -679,6 +709,29 @@ async def obtener_campanas(
     campanas = result.scalars().all()
     return campanas
 
+@router.get("/campanas/tareas_disponibles", response_model=List[Tarea], summary="Endpoint específico para tareas disponibles")
+async def obtener_tareas_disponibles_campana(
+    skip: int = 0, 
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Endpoint específico para evitar conflicto con rutas dinámicas.
+    Redirige a la lógica general de obtener tareas.
+    """
+    # Reutilizamos la misma lógica que /tareas/
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
+    ).order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
 async def obtener_campana_por_id(

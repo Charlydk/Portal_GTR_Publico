@@ -304,8 +304,6 @@ const DetalleTareaPage = () => {
                         <Card.Body>
                             <small className="text-muted d-block">Estado</small>
                             <Badge bg={tareaCerrada ? 'success' : 'warning'} className="mb-3">{tarea.progreso}</Badge>
-                            <small className="text-muted d-block">Vencimiento</small>
-                            <strong>{new Date(tarea.fecha_vencimiento).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</strong>
                             {esSupervisor && !tareaCerrada && (
                                 <div className="mt-3 d-grid"><Button size="sm" variant="outline-dark" onClick={() => setShowModalReasignar(true)}>👤 Reasignar Responsable</Button></div>
                             )}

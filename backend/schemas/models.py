@@ -344,10 +344,13 @@ class TareaListOutput(BaseModel):
     titulo: str
     progreso: ProgresoTarea
     fecha_vencimiento: datetime
+    es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
     campana: Optional[CampanaSimple] = None
+    checklist_items: List[ChecklistItemSimple] = []
     class Config:
-        from_attributes = True
+        from_attributes = True  # Para Pydantic V2
+        orm_mode = True         # Para Pydantic V1
 
 class ChecklistItem(ChecklistItemBase):
     id: int
