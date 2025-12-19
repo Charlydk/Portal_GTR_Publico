@@ -8,7 +8,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- LÍNEA DE VERIFICACIÓN ---
-print("--- [VERSIÓN NUEVA DEL CÓDIGO] Iniciando configuración de base de datos ---")
+print("--- [CONFIGURACIÓN PRO] Iniciando DB optimizada para concurrencia ---")
 # -----------------------------
 
 if not DATABASE_URL:
@@ -16,12 +16,20 @@ if not DATABASE_URL:
 
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,
-    pool_size=5,             # Número de conexiones a mantener en el pool.
-    max_overflow=10,         # Conexiones extra que se pueden abrir si el pool está lleno.
-    pool_timeout=30,         # Tiempo en segundos para esperar una conexión del pool.
-    pool_recycle=1800,       # Recicla conexiones cada 30 minutos (1800s), antes de que Supabase las cierre.
-    pool_pre_ping=True       # Verifica que la conexión esté viva antes de usarla.
+    # 1. APAGAR ECHO: En producción esto debe ser False para que sea más rápido
+    echo=False, 
+    
+    # 2. AUMENTAR POOL: Ideal para ~50 usuarios concurrentes
+    # Mantiene 20 conexiones siempre listas para usar.
+    pool_size=20,             
+    
+    # 3. OVERFLOW: Permite abrir hasta 20 más en momentos de "pico" (ej: entrada de turno)
+    # Total máximo teórico: 40 conexiones simultáneas reales.
+    max_overflow=20,         
+    
+    pool_timeout=30,         # Tiempo de espera antes de dar error (30s es correcto)
+    pool_recycle=1800,       # Recicla cada 30 min (correcto para Supabase)
+    pool_pre_ping=True       # Mantiene la salud de la conexión (vital en la nube)
 )
 
 AsyncSessionLocal = sessionmaker(
