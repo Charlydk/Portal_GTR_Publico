@@ -24,10 +24,24 @@ class PasswordUpdate(BaseModel):
 class CampanaBase(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
+    hora_inicio_operacion: Optional[time] = None
+    hora_fin_operacion: Optional[time] = None
     fecha_inicio: Optional[datetime] = None
     fecha_fin: Optional[datetime] = None
     lobs_nombres: Optional[List[str]] = None
+    hora_inicio_semana: Optional[time] = None
+    hora_fin_semana: Optional[time] = None
+    hora_inicio_sabado: Optional[time] = None
+    hora_fin_sabado: Optional[time] = None
+    hora_inicio_domingo: Optional[time] = None
+    hora_fin_domingo: Optional[time] = None
 
+class CampanaUpdate(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    hora_inicio_operacion: Optional[time] = None
+    hora_fin_operacion: Optional[time] = None
+    
 class TareaBase(BaseModel):
     titulo: str
     descripcion: Optional[str] = None
@@ -352,7 +366,6 @@ class TareaListOutput(BaseModel):
     checklist_items: List[ChecklistItemSimple] = []
     class Config:
         from_attributes = True  # Para Pydantic V2
-        orm_mode = True         # Para Pydantic V1
 
 class ChecklistItem(ChecklistItemBase):
     id: int
@@ -574,6 +587,14 @@ class DashboardIncidenciaWidget(BaseModel):
     class Config:
         from_attributes = True
 
+class CoberturaCampana(BaseModel):
+    campana_id: int
+    nombre_campana: str
+    estado: str  # "CUBIERTA", "DESCUBIERTA", "CERRADA", "SIN_HORARIO"
+    analistas_activos: int
+    hora_inicio_hoy: Optional[time] = None
+    hora_fin_hoy: Optional[time] = None
+    nombres_analistas: List[str] = []
 
 
 # --- Forward References Update ---

@@ -63,18 +63,25 @@ class Campana(Base):
     descripcion = Column(String, nullable=True)
     fecha_inicio = Column(DateTime(timezone=True), nullable=True)
     fecha_fin = Column(DateTime(timezone=True), nullable=True)
+    hora_inicio_semana = Column(Time, nullable=True)
+    hora_fin_semana = Column(Time, nullable=True)
+    hora_inicio_sabado = Column(Time, nullable=True)
+    hora_fin_sabado = Column(Time, nullable=True)
+    hora_inicio_domingo = Column(Time, nullable=True)
+    hora_fin_domingo = Column(Time, nullable=True)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     plantilla_defecto_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
     lobs = relationship("LOB", back_populates="campana", cascade="all, delete-orphan")
     analistas_asignados = relationship("Analista", secondary=analistas_campanas, back_populates="campanas_asignadas")
     tareas = relationship("Tarea", back_populates="campana", cascade="all, delete-orphan")
     avisos = relationship("Aviso", back_populates="campana", cascade="all, delete-orphan")
+    sesiones = relationship("SesionCampana", back_populates="campana")
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="campana", cascade="all, delete-orphan")
     plantilla_checklist = relationship("PlantillaChecklistItem", back_populates="campana", cascade="all, delete-orphan")
-    sesiones_activas = relationship("SesionCampana", back_populates="campana")
     plantilla_defecto = relationship("PlantillaChecklist")
+    
 
 class LOB(Base):
     __tablename__ = "lobs"
@@ -369,4 +376,4 @@ class SesionCampana(Base):
 
     # Relaciones
     analista = relationship("Analista", back_populates="sesiones")
-    campana = relationship("Campana", back_populates="sesiones_activas")
+    campana = relationship("Campana", back_populates="sesiones")

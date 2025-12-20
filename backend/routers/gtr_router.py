@@ -43,7 +43,8 @@ from ..schemas.models import (
     TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,
     DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana,
     CheckInCreate,
-    SesionActiva
+    SesionActiva,
+    CoberturaCampana
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
 
@@ -3382,15 +3383,106 @@ async def check_out_campana(
     
     return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
 
+@router.get("/sesiones/cobertura", response_model=List[CoberturaCampana], summary="Radar de Cobertura (Con Nombres y Horarios)")
+async def obtener_cobertura_operativa(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    # 1. Datos de tiempo (Argentina)
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    hora_actual = ahora_arg.time()
+    dia_semana = ahora_arg.weekday() # 0=Lun ... 5=Sáb, 6=Dom
 
-@router.get("/sesiones/activas", response_model=List[SesionActiva], summary="Ver mis campañas activas")
+    # 2. Query: Cargamos Campaña -> Sesiones -> Analista (Para obtener los nombres)
+    query = select(models.Campana).options(
+        selectinload(models.Campana.sesiones).selectinload(models.SesionCampana.analista)
+    )
+    result = await db.execute(query)
+    campanas = result.scalars().all()
+    
+    reporte_cobertura = []
+
+    for campana in campanas:
+        # Filtramos solo las sesiones activas (sin fecha_fin)
+        sesiones_activas = [s for s in campana.sesiones if s.fecha_fin is None]
+        
+        # A. Contamos activos
+        analistas_online = len(sesiones_activas)
+        
+        # B. Generamos la lista de nombres (Ej: "Juan Perez", "Maria Gomez")
+        lista_nombres = [f"{s.analista.nombre} {s.analista.apellido}" for s in sesiones_activas if s.analista]
+
+        # C. Seleccionamos el horario que corresponde al DÍA DE HOY
+        inicio = None
+        fin = None
+        
+        if dia_semana == 5:   # Sábado
+            inicio = campana.hora_inicio_sabado
+            fin = campana.hora_fin_sabado
+        elif dia_semana == 6: # Domingo
+            inicio = campana.hora_inicio_domingo
+            fin = campana.hora_fin_domingo
+        else:                 # Lunes a Viernes
+            inicio = campana.hora_inicio_semana
+            fin = campana.hora_fin_semana
+        
+        # D. Lógica de Estado (Semáforo)
+        estado = "DESCONOCIDO"
+
+        if not inicio or not fin:
+            if analistas_online > 0:
+                estado = "CUBIERTA" # Raro pero positivo
+            else:
+                estado = "CERRADA"
+        else:
+            # Validar si estamos dentro del horario operativo
+            esta_operativa = False
+            if inicio <= fin:
+                esta_operativa = inicio <= hora_actual <= fin
+            else:
+                esta_operativa = hora_actual >= inicio or hora_actual <= fin
+            
+            if not esta_operativa:
+                estado = "CERRADA"
+            else:
+                if analistas_online > 0:
+                    estado = "CUBIERTA"
+                else:
+                    estado = "DESCUBIERTA" # 🚨 Alerta
+
+        # E. Armamos el objeto final
+        reporte_cobertura.append(CoberturaCampana(
+            campana_id=campana.id,
+            nombre_campana=campana.nombre,
+            estado=estado,
+            analistas_activos=analistas_online,
+            hora_inicio_hoy=inicio,       # Enviamos el horario correcto de hoy
+            hora_fin_hoy=fin,
+            nombres_analistas=lista_nombres # Enviamos la lista de personas
+        ))
+
+    return reporte_cobertura
+
+@router.get("/sesiones/activas", response_model=List[SesionActiva], summary="Ver mis campañas activas (con limpieza automática)")
 async def obtener_mis_sesiones_activas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
     Devuelve la lista de campañas donde el analista está haciendo check-in actualmente.
+    
+    Si detecta que hay una sesión abierta pero su fecha de inicio no es de HOY,
+    la cierra automáticamente. Esto obliga al usuario a volver a elegir campaña
+    para generar la rutina del nuevo día.
     """
+    
+    # 1. Definir "Hoy" en Argentina (para evitar problemas de UTC)
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 2. Obtener todas las sesiones "supuestamente" abiertas
     query = select(models.SesionCampana).options(
         selectinload(models.SesionCampana.campana)
         .options(
@@ -3403,52 +3495,33 @@ async def obtener_mis_sesiones_activas(
     )
     
     result = await db.execute(query)
-    return result.scalars().all()
-
-@router.get("/sesiones/cobertura", summary="Ver estado de cobertura de todas las campañas")
-async def obtener_cobertura_campanas(
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
-):
-    """
-    Retorna un listado de todas las campañas con la lista de analistas que están activos en ellas.
-    Ideal para el tablero de control del supervisor.
-    """
-    # 1. Traer todas las campañas
-    result_campanas = await db.execute(select(models.Campana).order_by(models.Campana.nombre.asc()))
-    campanas = result_campanas.scalars().all()
-
-    # 2. Traer todas las sesiones activas actuales (donde fecha_fin es NULL)
-    result_sesiones = await db.execute(
-        select(models.SesionCampana)
-        .options(selectinload(models.SesionCampana.analista)) # Cargar nombre del analista
-        .filter(models.SesionCampana.fecha_fin.is_(None))
-    )
-    sesiones_activas = result_sesiones.scalars().all()
-
-    # 3. Cruzar datos en memoria (Más rápido y simple que una query compleja de SQL para este caso)
-    # Creamos un diccionario: { campana_id: [lista_de_analistas] }
-    mapa_cobertura = {c.id: [] for c in campanas}
+    sesiones_abiertas = result.scalars().all()
     
-    for sesion in sesiones_activas:
-        if sesion.campana_id in mapa_cobertura:
-            mapa_cobertura[sesion.campana_id].append({
-                "nombre": f"{sesion.analista.nombre} {sesion.analista.apellido}",
-                "inicio": sesion.fecha_inicio
-            })
+    sesiones_validas = []
+    hubo_cierre_automatico = False
 
-    # 4. Formatear respuesta final
-    reporte = []
-    for c in campanas:
-        analistas_activos = mapa_cobertura[c.id]
-        estado = "CUBIERTA" if analistas_activos else "DESCUBIERTA"
-        
-        reporte.append({
-            "id": c.id,
-            "nombre": c.nombre,
-            "estado": estado,
-            "cantidad_activos": len(analistas_activos),
-            "analistas": analistas_activos
-        })
+    for sesion in sesiones_abiertas:
+        # Convertimos la fecha de inicio de la sesión a la zona horaria local para comparar
+        # Asumimos que la fecha en BD es naive o UTC. Ajusta según tu configuración.
+        # Si guardas en UTC, conviértela a Argentina primero.
+        if sesion.fecha_inicio.tzinfo is None:
+            # Si viene sin zona horaria, asumimos UTC y convertimos
+            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(tz_argentina)
+        else:
+            inicio_sesion_aware = sesion.fecha_inicio.astimezone(tz_argentina)
 
-    return reporte
+        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
+        if inicio_sesion_aware < inicio_dia_hoy:
+            # ¡Es una sesión Zombie de ayer! La cerramos.
+            sesion.fecha_fin = datetime.now() # Check-out forzado
+            hubo_cierre_automatico = True
+            print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer para {current_analista.email} en campaña {sesion.campana.nombre}")
+        else:
+            # Es de hoy, es válida.
+            sesiones_validas.append(sesion)
+
+    # 3. Si cerramos algo, guardamos los cambios en la BD
+    if hubo_cierre_automatico:
+        await db.commit()
+
+    return sesiones_validas
