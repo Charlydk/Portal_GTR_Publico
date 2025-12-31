@@ -40,11 +40,11 @@ from ..schemas.models import (
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
-    TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,
+    TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,TareaListOutput,
     DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana,
     CheckInCreate,
     SesionActiva,
-    CoberturaCampana
+    CoberturaCampana,
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
 
@@ -2789,10 +2789,27 @@ async def add_item_a_plantilla(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
+    # (Opcional) Calculamos el orden para que quede al final de la lista
+    result = await db.execute(
+        select(func.max(models.PlantillaChecklistItem.orden))
+        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
+    )
+    max_orden = result.scalar() or 0
+
     nuevo_item = models.PlantillaChecklistItem(
         descripcion=item_data.descripcion,
         campana_id=campana_id,
-        hora_sugerida=item_data.hora_sugerida 
+        hora_sugerida=item_data.hora_sugerida,
+        orden=max_orden + 1, # Asignamos el siguiente número
+
+        lunes=item_data.lunes,
+        martes=item_data.martes,
+        miercoles=item_data.miercoles,
+        jueves=item_data.jueves,
+        viernes=item_data.viernes,
+        sabado=item_data.sabado,
+        domingo=item_data.domingo
+
     )
 
     db.add(nuevo_item)
@@ -3296,14 +3313,33 @@ async def check_in_campana(
         
     # CASO B: No existe (Soy el primero) -> LA CREAMOS
     else:
-        # A. Buscamos ítems de la plantilla
+        # 1. Detectar qué día es HOY en Argentina
+        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+        ahora_arg = datetime.now(tz_argentina)
+        dia_semana_int = ahora_arg.weekday() # 0=Lunes, ... 6=Domingo
+
+        # 2. Mapeo dinámico de columnas
+        mapa_dias = {
+            0: models.PlantillaChecklistItem.lunes,
+            1: models.PlantillaChecklistItem.martes,
+            2: models.PlantillaChecklistItem.miercoles,
+            3: models.PlantillaChecklistItem.jueves,
+            4: models.PlantillaChecklistItem.viernes,
+            5: models.PlantillaChecklistItem.sabado,
+            6: models.PlantillaChecklistItem.domingo
+        }
+        columna_dia_hoy = mapa_dias[dia_semana_int]
+
+        # 3. Traer items activos para HOY
         q_items_plantilla = select(models.PlantillaChecklistItem).filter(
-            models.PlantillaChecklistItem.campana_id == datos.campana_id
+            models.PlantillaChecklistItem.campana_id == datos.campana_id,
+            columna_dia_hoy == True  # <--- FILTRO DE DÍA
         ).order_by(models.PlantillaChecklistItem.orden)
+        
         res_items = await db.execute(q_items_plantilla)
         items_plantilla = res_items.scalars().all()
 
-        # B. Buscamos datos de la campaña
+        # Buscamos datos de la campaña
         q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
         res_campana = await db.execute(q_campana)
         campana_obj = res_campana.scalars().first()
@@ -3311,37 +3347,45 @@ async def check_in_campana(
         if items_plantilla and campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
             
+            # Vencimiento: Final del día Argentina
+            vencimiento_local = ahora_arg.replace(hour=23, minute=59, second=59)
+            vencimiento_naive = vencimiento_local.replace(tzinfo=None)
+
             nueva_tarea = models.Tarea(
                 titulo=nombre_tarea,
-                descripcion=f"Rutina operativa compartida del día.",
-                fecha_vencimiento=datetime.now().replace(hour=23, minute=59),
+                descripcion="Rutina operativa compartida del día.",
+                fecha_vencimiento=vencimiento_naive,
+                fecha_creacion=datetime.now(),
                 progreso=ProgresoTarea.PENDIENTE,
-                analista_id=current_analista.id, # El primero queda como "dueño" nominal
+                analista_id=None, # Tarea compartida
                 campana_id=datos.campana_id,
                 es_generada_automaticamente=True
             )
             db.add(nueva_tarea)
-            await db.flush()
+            await db.flush() # Obtenemos el ID de la tarea
 
+            # Copiar items de plantilla a items reales
             for item in items_plantilla:
-                texto_final = item.descripcion
-                # Mantenemos la hora en el texto por ahora para referencia visual
-                if item.hora_sugerida:
-                    hora_str = item.hora_sugerida.strftime("%H:%M")
-                    texto_final = f"[{hora_str}] {item.descripcion}"
-
-                nuevo_item = models.ChecklistItem(
-                    tarea_id=nueva_tarea.id,
-                    descripcion=texto_final,
+                nuevo_checklist_item = models.ChecklistItem(
+                    descripcion=item.descripcion,
                     completado=False,
-                    hora_sugerida=item.hora_sugerida # <--- ¡AQUÍ GUARDAMOS EL DATO CLAVE!
+                    tarea_id=nueva_tarea.id,
+                    hora_sugerida=item.hora_sugerida # <--- AQUÍ COPIAMOS LA HORA
                 )
-                db.add(nuevo_item)
-            
-            print(f"✅ Rutina compartida INICIADA por: {current_analista.email}")
-    # -----------------------------------------------------------
+                db.add(nuevo_checklist_item)
 
-    await db.commit()
+            await db.commit()
+            
+            # Crear evento en historial
+            historial = models.HistorialEstadoTarea(
+                old_progreso=None,
+                new_progreso=ProgresoTarea.PENDIENTE,
+                changed_by_analista_id=current_analista.id,
+                tarea_generada_id=nueva_tarea.id,
+                timestamp=datetime.now()
+            )
+            db.add(historial)
+            await db.commit()
     await db.refresh(nueva_sesion)
 
     # 3. Devolver (Lógica existente...)
@@ -3354,6 +3398,69 @@ async def check_in_campana(
         ).filter(models.SesionCampana.id == nueva_sesion.id)
     )
     return result_final.scalars().first()
+
+
+@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Propias + Campaña Activa)")
+async def read_tareas(
+    skip: int = 0,
+    limit: int = 100,
+    estado: Optional[ProgresoTarea] = None,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista) 
+):
+    # Consulta Base: Cargamos relaciones necesarias
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+    )
+
+    # --- LÓGICA DE VISIBILIDAD (EL CORAZÓN DEL SISTEMA) ---
+    if current_analista.role == UserRole.ANALISTA:
+        # 1. Campañas donde estoy asignado FIJO
+        ids_mis_campanas = [c.id for c in current_analista.campanas_asignadas]
+
+        # 2. Campañas donde tengo Check-in ACTIVO (Sesión temporal)
+        q_sesiones = select(models.SesionCampana.campana_id).filter(
+            models.SesionCampana.analista_id == current_analista.id,
+            models.SesionCampana.fecha_fin.is_(None)
+        )
+        res_sesiones = await db.execute(q_sesiones)
+        ids_sesiones = res_sesiones.scalars().all()
+
+        # 3. Unimos ambas listas (sin duplicados)
+        ids_totales_acceso = list(set(ids_mis_campanas + ids_sesiones))
+
+        # El analista ve tareas si:
+        # A. Son suyas directas (analista_id == mi_id)
+        # B. Son de una campaña a la que tiene acceso (Check-in o Asignado)
+        # C. Son GLOBALES (campana_id IS NULL)
+        query = query.filter(
+            or_(
+                models.Tarea.analista_id == current_analista.id,
+                models.Tarea.campana_id.in_(ids_totales_acceso),
+                models.Tarea.campana_id.is_(None)
+            )
+        )
+    
+    # (Si es Supervisor o Admin, ve todo, así que no aplicamos el filtro anterior)
+
+    # --- Filtros Adicionales ---
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # Ordenar: Prioridad a las vencidas o pendientes
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc())
+
+    # Paginación
+    query = query.offset(skip).limit(limit)
+
+    # Ejecutar
+    result = await db.execute(query)
+    tareas = result.scalars().all()
+    
+    return tareas
 
 
 @router.post("/sesiones/check-out", summary="Dejar de gestionar una campaña")

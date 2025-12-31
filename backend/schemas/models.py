@@ -377,6 +377,13 @@ class ChecklistItem(ChecklistItemBase):
 class PlantillaChecklistItemBase(BaseModel):
     descripcion: str
     hora_sugerida: Optional[time] = None
+    lunes: bool = True
+    martes: bool = True
+    miercoles: bool = True
+    jueves: bool = True
+    viernes: bool = True
+    sabado: bool = True
+    domingo: bool = True
 
 class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
     pass

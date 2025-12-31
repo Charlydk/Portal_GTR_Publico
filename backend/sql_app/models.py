@@ -323,6 +323,14 @@ class PlantillaChecklistItem(Base):
     campana_id = Column(Integer, ForeignKey('campanas.id'), nullable=False)
     campana = relationship("Campana", back_populates="plantilla_checklist")
 
+    lunes = Column(Boolean, default=True)
+    martes = Column(Boolean, default=True)
+    miercoles = Column(Boolean, default=True)
+    jueves = Column(Boolean, default=True)
+    viernes = Column(Boolean, default=True)
+    sabado = Column(Boolean, default=True)
+    domingo = Column(Boolean, default=True)
+
 class ChecklistDiarioItem(Base):
     __tablename__ = 'checklist_diario_items'
 
