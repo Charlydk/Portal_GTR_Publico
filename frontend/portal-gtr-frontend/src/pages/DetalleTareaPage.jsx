@@ -65,7 +65,7 @@ const DetalleTareaPage = () => {
         fetchTarea(); // Primera carga
 
         const interval = setInterval(() => {
-            // Refrescar cada 2 segundos si la pestaña está activa
+            // Refrescar cada 10 segundos si la pestaña está activa
             if (!document.hidden) fetchTarea(true); 
         }, 10000);
 
@@ -80,7 +80,6 @@ const DetalleTareaPage = () => {
 
     const toggleItem = async (itemId, estadoActual) => {
         // Optimistic UI: Cambiamos visualmente antes de esperar al servidor
-        // para que se sienta instantáneo para quien hace click.
         const nuevosItems = tarea.checklist_items.map(i => 
             i.id === itemId ? { ...i, completado: !estadoActual } : i
         );
@@ -92,8 +91,6 @@ const DetalleTareaPage = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ completado: !estadoActual })
             });
-            // No hacemos fetchTarea() aquí porque el Polling lo hará en breve
-            // y ya actualizamos la UI localmente.
         } catch (err) {
             console.error("Error al marcar item:", err);
             fetchTarea(); // Revertir si falló
@@ -104,7 +101,6 @@ const DetalleTareaPage = () => {
         if (!extraItemText.trim()) return;
         setAddingItem(true);
         
-        // Mantenemos esto visual por si acaso
         let descripcionFinal = extraItemTime ? `[${extraItemTime}] (Extra) ${extraItemText}` : `(Extra) ${extraItemText}`;
 
         try {
@@ -115,7 +111,6 @@ const DetalleTareaPage = () => {
                     descripcion: descripcionFinal,
                     tarea_id: parseInt(id),
                     completado: false,
-                    // 👇 ¡AQUÍ ESTABA EL ERROR! AGREGAMOS ESTA LÍNEA 👇
                     hora_sugerida: extraItemTime || null 
                 })
             });
@@ -146,7 +141,8 @@ const DetalleTareaPage = () => {
         finally { setEnviandoComentario(false); }
     };
 
-    // ... (El resto de funciones confirmarFinalizacion, retomarTarea, handleReasignar se mantienen igual) ...
+    // --- ACCIONES DE ESTADO ---
+
     const confirmarFinalizacion = async () => {
         setProcesandoEstado(true);
         try {
@@ -183,6 +179,38 @@ const DetalleTareaPage = () => {
         finally { setProcesandoEstado(false); }
     };
 
+    // --- NUEVA FUNCIÓN PARA SUPERVISORES ---
+    const handleReabrirTarea = async () => {
+        if (!window.confirm("¿Seguro que deseas reabrir esta rutina? El analista podrá volver a editarla.")) {
+            return;
+        }
+
+        try {
+            const response = await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    progreso: 'EN_PROGRESO',
+                    fecha_finalizacion: null // Importante: Limpiamos fecha fin
+                })
+            });
+
+            if (response.ok) {
+                // Log de auditoría automático
+                await fetchWithAuth(`${API_BASE_URL}/gtr/tareas/${id}/comentarios`, {
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ texto: `[SUPERVISOR] 🔓 Rutina reabierta para gestión.` })
+                });
+                fetchTarea(); // Recargamos para ver el cambio
+            } else {
+                alert("Error al reabrir la tarea");
+            }
+        } catch (error) {
+            console.error("Error:", error);
+        }
+    };
+
     const handleReasignar = async () => {
         if (!nuevoResponsableId) return;
         setReasignando(true);
@@ -215,7 +243,7 @@ const DetalleTareaPage = () => {
     const progreso = totalItems === 0 ? 0 : Math.round((completados / totalItems) * 100);
     const esAnalista = user.role === 'ANALISTA';
     const esSupervisor = ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
-    const tareaCerrada = tarea.progreso === 'COMPLETADA';
+    const tareaCerrada = tarea.progreso === 'COMPLETADA' || tarea.progreso === 'CANCELADA';
 
     return (
         <Container className="py-4">
@@ -238,6 +266,20 @@ const DetalleTareaPage = () => {
                     </div>
                 </div>
                 <ProgressBar now={progreso} variant={progreso === 100 ? 'success' : 'primary'} className="mt-3" style={{ height: '10px' }} />
+                
+                {/* --- BOTÓN DE REAPERTURA (Solo Supervisores cuando está cerrada) --- */}
+                {esSupervisor && tareaCerrada && (
+                    <div className="mt-3 text-end">
+                        <Button 
+                            variant="outline-warning" 
+                            onClick={handleReabrirTarea}
+                            className="d-flex align-items-center gap-2 ms-auto"
+                        >
+                            <i className="bi bi-unlock-fill"></i>
+                            Reabrir Rutina para Gestión
+                        </Button>
+                    </div>
+                )}
             </div>
 
             <Row className="g-4">
@@ -246,7 +288,7 @@ const DetalleTareaPage = () => {
                         <Card.Header className="bg-white py-3 d-flex justify-content-between align-items-center flex-wrap">
                             <h5 className="mb-0">✅ Lista de Actividades</h5>
                             
-                            {/* --- REFERENCIA VISUAL CORREGIDA --- */}
+                            {/* --- REFERENCIA VISUAL --- */}
                             <div className="d-flex align-items-center bg-light px-3 py-2 rounded" style={{ fontSize: '0.75rem' }}>
                                 <span className="fw-bold me-3 text-muted text-uppercase" style={{fontSize:'0.7rem'}}>Referencias:</span>
                                 
@@ -271,21 +313,17 @@ const DetalleTareaPage = () => {
                         </Card.Header>
                         <ListGroup variant="flush" className={tareaCerrada ? 'opacity-75' : ''}>
                         {tarea.checklist_items.map(item => {
-                            // --- 1. LIMPIEZA DE TEXTO Y DETECCIÓN DE EXTRA ---
+                            // --- LIMPIEZA DE TEXTO ---
                             let descripcionLimpia = item.descripcion;
-                            // Detectamos si es extra antes de limpiar
                             const esExtra = descripcionLimpia.includes('(Extra)');
                             
-                            // Borramos [HH:MM] del inicio y la palabra (Extra)
                             descripcionLimpia = descripcionLimpia
-                                .replace(/^\[.*?\]\s*/, '') // Quita [10:30]
-                                .replace(/\(Extra\)\s*/, ''); // Quita (Extra)
-                            // ------------------------------------------------
+                                .replace(/^\[.*?\]\s*/, '') 
+                                .replace(/\(Extra\)\s*/, ''); 
 
-                            // --- 2. LÓGICA DE SEMÁFORO (COLORES) ---
+                            // --- LÓGICA DE SEMÁFORO ---
                             let badgeBg = 'warning'; 
                             let badgeIcon = 'bi-clock';
-                            // Ya no usamos badgeText (Atrasado/En curso)
                             
                             if (item.hora_sugerida && !item.completado) {
                                 const now = new Date();
@@ -295,13 +333,13 @@ const DetalleTareaPage = () => {
                                 const diff = currentMinutes - taskMinutes;
 
                                 if (diff > 15) {
-                                    badgeBg = 'danger'; // Rojo
+                                    badgeBg = 'danger';
                                     badgeIcon = 'bi-alarm-fill';
                                 } else if (diff >= 0 && diff <= 15) {
-                                    badgeBg = 'primary'; // Azul
+                                    badgeBg = 'primary';
                                     badgeIcon = 'bi-rocket-takeoff-fill';
                                 } else {
-                                    badgeBg = 'warning'; // Amarillo
+                                    badgeBg = 'warning';
                                     badgeIcon = 'bi-clock';
                                 }
                             } else if (item.completado) {
@@ -332,7 +370,6 @@ const DetalleTareaPage = () => {
                                                     flexWrap: 'wrap'
                                                 }}
                                             >
-                                                {/* --- BADGE DE HORA (SOLO ICONO + HORA) --- */}
                                                 {item.hora_sugerida && (
                                                     <Badge 
                                                         bg={badgeBg} 
@@ -353,7 +390,6 @@ const DetalleTareaPage = () => {
                                                     </OverlayTrigger>
                                                 )}
                                                 
-                                                {/* --- DESCRIPCIÓN LIMPIA --- */}
                                                 <span style={{ paddingTop: '2px' }}>
                                                     {descripcionLimpia}
                                                 </span>
@@ -364,7 +400,8 @@ const DetalleTareaPage = () => {
                             );
                         })}
                     </ListGroup>
-                        {/* Footer input extra... (mismo código anterior) */}
+                        
+                        {/* Agregar Extra (Solo si NO está cerrada) */}
                         {!tareaCerrada && (esAnalista || esSupervisor) && (
                             <Card.Footer className="bg-white border-top-0 pt-0 pb-3">
                                 {showExtraInput ? (
@@ -383,7 +420,7 @@ const DetalleTareaPage = () => {
                         )}
                     </Card>
                     
-                    {/* Botones de acción finales... (mismo código anterior) */}
+                    {/* Botones de acción del Analista */}
                     {esAnalista && (
                         <div className="d-grid gap-2 mb-5">
                             {!tareaCerrada ? (
@@ -397,7 +434,7 @@ const DetalleTareaPage = () => {
                     )}
                 </Col>
 
-                {/* Columna Derecha (Info y Chat)... (mismo código anterior) */}
+                {/* Columna Derecha (Info y Chat) */}
                 <Col lg={4}>
                     <Card className="shadow-sm border-0 mb-3 bg-light">
                         <Card.Body>
@@ -435,7 +472,7 @@ const DetalleTareaPage = () => {
                 </Col>
             </Row>
 
-            {/* Modales Finalizar y Reasignar... (igual que antes) */}
+            {/* Modales Finalizar y Reasignar */}
             <Modal show={showModalFinalizar} onHide={() => setShowModalFinalizar(false)} centered>
                 <Modal.Header closeButton><Modal.Title>Finalizar</Modal.Title></Modal.Header>
                 <Modal.Body>
