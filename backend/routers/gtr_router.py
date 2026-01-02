@@ -2927,7 +2927,7 @@ async def get_recientes_incidencias_activas(
     return response_list
 
 
-@router.get("/analistas/me/incidencias_asignadas", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
+@router.get("/incidencias/mis-incidencias", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
 async def get_mis_incidencias_asignadas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA]))
@@ -3506,8 +3506,11 @@ async def read_tareas(
     query = select(models.Tarea).options(
         selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),
-        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.checklist_items),  
+
+        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+        
+        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
     )
 
     # --- LÓGICA DE VISIBILIDAD (EL CORAZÓN DEL SISTEMA) ---
@@ -3587,7 +3590,7 @@ async def check_out_campana(
 @router.get("/sesiones/cobertura", response_model=List[CoberturaCampana], summary="Radar de Cobertura (Con Nombres y Horarios)")
 async def obtener_cobertura_operativa(
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
     # 1. Datos de tiempo (Argentina)
     tz_argentina = pytz.timezone("America/Argentina/Tucuman")
