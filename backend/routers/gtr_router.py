@@ -3264,7 +3264,7 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Verificar si ya está activo (Lógica existente...)
+    # 1. Verificar si ya está activo (Misma lógica de antes...)
     query = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.campana_id == datos.campana_id,
@@ -3274,7 +3274,7 @@ async def check_in_campana(
     sesion_existente = result.scalars().first()
 
     if sesion_existente:
-        # (Lógica existente de retorno...)
+        # (Misma lógica de retorno de sesión existente...)
         result_full = await db.execute(
             select(models.SesionCampana).options(
                 selectinload(models.SesionCampana.campana).options(
@@ -3285,20 +3285,21 @@ async def check_in_campana(
         )
         return result_full.scalars().first()
 
-    # 2. Crear nueva sesión (Lógica existente...)
+    # 2. Crear nueva sesión Y GUARDARLA DE INMEDIATO (Corrección del error 500)
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
         campana_id=datos.campana_id
     )
     db.add(nueva_sesion)
+    await db.commit()          # <--- ¡ESTO FALTABA EN EL CASO A!
+    await db.refresh(nueva_sesion) # Ahora es seguro refrescar porque ya existe en BD
     
-    # --- 🤖 LÓGICA COLABORATIVA: RUTINA COMPARTIDA POR CAMPAÑA ---
+    # --- 🤖 LÓGICA COLABORATIVA ---
     
-    # 1. Definir "Hoy" (Inicio del día)
+    # 1. Definir "Hoy"
     hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # 2. Buscar si YA existe una Rutina Automática para esta campaña HOY (sin importar el analista)
-    #    NOTA: Quitamos el filtro de 'analista_id' para encontrar la de cualquiera.
+    # 2. Buscar Rutina existente
     q_tarea_existente = select(models.Tarea).filter(
         models.Tarea.campana_id == datos.campana_id,
         models.Tarea.es_generada_automaticamente == True,
@@ -3307,18 +3308,17 @@ async def check_in_campana(
     result_tarea = await db.execute(q_tarea_existente)
     tarea_compartida = result_tarea.scalars().first()
 
-    # CASO A: Ya existe la rutina (Ej: Analista A ya la creó) -> NOS UNIMOS
+    # CASO A: Ya existe -> Solo imprimimos (La sesión ya se guardó arriba)
     if tarea_compartida:
-        print(f"🔄 Check-in de {current_analista.email}: Se une a la Rutina ID {tarea_compartida.id} existente.")
+        print(f"🔄 Check-in de {current_analista.email}: Se une a la Rutina ID {tarea_compartida.id}.")
         
-    # CASO B: No existe (Soy el primero) -> LA CREAMOS
+    # CASO B: No existe -> LA CREAMOS
     else:
-        # 1. Detectar qué día es HOY en Argentina
+        # ... (Toda tu lógica de creación de tarea, filtro de días, etc.) ...
         tz_argentina = pytz.timezone("America/Argentina/Tucuman")
         ahora_arg = datetime.now(tz_argentina)
-        dia_semana_int = ahora_arg.weekday() # 0=Lunes, ... 6=Domingo
+        dia_semana_int = ahora_arg.weekday() 
 
-        # 2. Mapeo dinámico de columnas
         mapa_dias = {
             0: models.PlantillaChecklistItem.lunes,
             1: models.PlantillaChecklistItem.martes,
@@ -3330,24 +3330,21 @@ async def check_in_campana(
         }
         columna_dia_hoy = mapa_dias[dia_semana_int]
 
-        # 3. Traer items activos para HOY
         q_items_plantilla = select(models.PlantillaChecklistItem).filter(
             models.PlantillaChecklistItem.campana_id == datos.campana_id,
-            columna_dia_hoy == True  # <--- FILTRO DE DÍA
+            columna_dia_hoy == True
         ).order_by(models.PlantillaChecklistItem.orden)
         
         res_items = await db.execute(q_items_plantilla)
         items_plantilla = res_items.scalars().all()
 
-        # Buscamos datos de la campaña
         q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
         res_campana = await db.execute(q_campana)
         campana_obj = res_campana.scalars().first()
 
+        # Solo creamos si hay items y campaña
         if items_plantilla and campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
-            
-            # Vencimiento: Final del día Argentina
             vencimiento_local = ahora_arg.replace(hour=23, minute=59, second=59)
             vencimiento_naive = vencimiento_local.replace(tzinfo=None)
 
@@ -3357,38 +3354,36 @@ async def check_in_campana(
                 fecha_vencimiento=vencimiento_naive,
                 fecha_creacion=datetime.now(),
                 progreso=ProgresoTarea.PENDIENTE,
-                analista_id=None, # Tarea compartida
+                analista_id=None,
                 campana_id=datos.campana_id,
                 es_generada_automaticamente=True
             )
             db.add(nueva_tarea)
-            await db.flush() # Obtenemos el ID de la tarea
+            await db.flush() 
 
-            # Copiar items de plantilla a items reales
             for item in items_plantilla:
                 nuevo_checklist_item = models.ChecklistItem(
                     descripcion=item.descripcion,
                     completado=False,
                     tarea_id=nueva_tarea.id,
-                    hora_sugerida=item.hora_sugerida # <--- AQUÍ COPIAMOS LA HORA
+                    hora_sugerida=item.hora_sugerida
                 )
                 db.add(nuevo_checklist_item)
 
-            await db.commit()
+            await db.commit() # Guardamos la tarea y sus items
             
-            # Crear evento en historial
+            # Historial
             historial = models.HistorialEstadoTarea(
                 old_progreso=None,
                 new_progreso=ProgresoTarea.PENDIENTE,
                 changed_by_analista_id=current_analista.id,
-                tarea_generada_id=nueva_tarea.id,
+                tarea_id=nueva_tarea.id,
                 timestamp=datetime.now()
             )
             db.add(historial)
             await db.commit()
-    await db.refresh(nueva_sesion)
 
-    # 3. Devolver (Lógica existente...)
+    # 3. Devolver la sesión (Ya guardada y lista)
     result_final = await db.execute(
         select(models.SesionCampana).options(
             selectinload(models.SesionCampana.campana).options(

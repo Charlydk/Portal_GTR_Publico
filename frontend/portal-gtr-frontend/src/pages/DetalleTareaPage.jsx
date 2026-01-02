@@ -245,30 +245,64 @@ const DetalleTareaPage = () => {
                     <Card className={`shadow-sm border-0 mb-4 ${tareaCerrada ? 'bg-light border-success' : ''}`}>
                         <Card.Header className="bg-white py-3"><h5 className="mb-0">✅ Lista de Actividades</h5></Card.Header>
                         <ListGroup variant="flush" className={tareaCerrada ? 'opacity-75' : ''}>
-                            {tarea.checklist_items.map(item => (
+                        {tarea.checklist_items.map(item => {
+                            // --- 🧠 LÓGICA DEL SEMÁFORO ---
+                            // 1. Obtenemos la hora actual en formato "HH:MM" para comparar
+                            const now = new Date();
+                            const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+                            
+                            // 2. Preparamos la hora de la tarea (si existe)
+                            const taskTime = item.hora_sugerida ? item.hora_sugerida.toString().substring(0, 5) : null;
+
+                            // 3. ¿Está atrasada? (Solo si tiene hora, NO está completada, y ya pasó la hora)
+                            const isLate = taskTime && !item.completado && currentTime > taskTime;
+                            // ------------------------------
+
+                            return (
                                 <ListGroup.Item key={item.id} className="py-3 action-hover bg-transparent">
                                     <Form.Check type="checkbox" id={`check-${item.id}`}>
-                                        <Form.Check.Input 
-                                            type="checkbox" 
-                                            checked={item.completado}
-                                            onChange={() => toggleItem(item.id, item.completado)}
-                                            style={{ transform: 'scale(1.3)', cursor: 'pointer' }}
-                                            disabled={tareaCerrada} 
-                                        />
-                                        <Form.Check.Label 
-                                            style={{ 
-                                                marginLeft: '10px', 
-                                                cursor: tareaCerrada ? 'default' : 'pointer',
-                                                textDecoration: item.completado ? 'line-through' : 'none',
-                                                color: item.completado ? '#adb5bd' : '#212529'
-                                            }}
-                                        >
-                                            {item.descripcion}
-                                        </Form.Check.Label>
+                                        <div className="d-flex align-items-center">
+                                            <Form.Check.Input 
+                                                type="checkbox" 
+                                                checked={item.completado}
+                                                onChange={() => toggleItem(item.id, item.completado)}
+                                                style={{ transform: 'scale(1.3)', cursor: 'pointer', marginTop: 0 }}
+                                                disabled={tareaCerrada} 
+                                            />
+                                            <Form.Check.Label 
+                                                style={{ 
+                                                    marginLeft: '12px', 
+                                                    cursor: tareaCerrada ? 'default' : 'pointer',
+                                                    textDecoration: item.completado ? 'line-through' : 'none',
+                                                    color: item.completado ? '#adb5bd' : '#212529',
+                                                    width: '100%' 
+                                                }}
+                                            >
+                                                {/* --- BADGE INTELIGENTE --- */}
+                                                {taskTime && (
+                                                    <Badge 
+                                                        bg={item.completado ? "success" : (isLate ? "danger" : "warning")} 
+                                                        text={item.completado || isLate ? "white" : "dark"} 
+                                                        className="me-2" 
+                                                        style={{ fontSize: '0.85em' }}
+                                                    >
+                                                        {/* Ícono dinámico: Reloj normal o Alarma sonando */}
+                                                        <i className={`bi ${isLate && !item.completado ? 'bi-alarm-fill' : 'bi-clock'} me-1`}></i>
+                                                        {taskTime}
+                                                        {/* Texto explícito de atraso */}
+                                                        {isLate && !item.completado && " (Atrasado)"}
+                                                    </Badge>
+                                                )}
+                                                {/* ------------------------- */}
+                                                
+                                                {item.descripcion}
+                                            </Form.Check.Label>
+                                        </div>
                                     </Form.Check>
                                 </ListGroup.Item>
-                            ))}
-                        </ListGroup>
+                            );
+                        })}
+                    </ListGroup>
                         {/* Footer input extra... (mismo código anterior) */}
                         {!tareaCerrada && (esAnalista || esSupervisor) && (
                             <Card.Footer className="bg-white border-top-0 pt-0 pb-3">
