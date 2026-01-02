@@ -8,25 +8,67 @@ import { API_BASE_URL, fetchWithAuth } from '../api';
 const TareasPage = () => {
     const navigate = useNavigate();
     
-    // --- ESTADOS DE FILTROS ---
-    const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]); // Hoy por defecto
+    // --- ESTADOS ---
+    const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]); 
     const [campanaFiltro, setCampanaFiltro] = useState('');
     const [estadoFiltro, setEstadoFiltro] = useState('');
     
-    // --- DATOS ---
     const [tareas, setTareas] = useState([]);
     const [campanas, setCampanas] = useState([]);
+    const [rowsToDisplay, setRowsToDisplay] = useState([]); // Nueva lista combinada
     const [loading, setLoading] = useState(true);
 
-    // Carga inicial de Campañas (para el select)
+    // Carga inicial de Campañas
     useEffect(() => {
         cargarCampanas();
     }, []);
 
-    // Cada vez que cambie un filtro, recargamos las tareas
+    // Recargar tareas al cambiar filtros
     useEffect(() => {
         cargarTareas();
     }, [fechaFiltro, campanaFiltro, estadoFiltro]);
+
+    // --- LÓGICA DE FUSIÓN (EL CEREBRO NUEVO) ---
+    useEffect(() => {
+        if (loading) return;
+
+        let combinedRows = [...tareas];
+
+        // Solo agregamos las "Fantasmas" si estamos viendo el día de HOY y no hay filtros restrictivos
+        const esHoy = fechaFiltro === new Date().toISOString().split('T')[0];
+        const filtroEstadoPermiteVerPendientes = estadoFiltro === '' || estadoFiltro === 'PENDIENTE';
+
+        if (esHoy && filtroEstadoPermiteVerPendientes) {
+            // 1. Identificar qué campañas YA tienen tarea
+            const idsCampanasConTarea = new Set(tareas.map(t => t.campana_id));
+
+            // 2. Buscar campañas que FALTAN
+            const campanasFaltantes = campanas.filter(c => {
+                // Si el usuario filtró por una campaña específica, solo revisamos esa
+                if (campanaFiltro && parseInt(campanaFiltro) !== c.id) return false;
+                
+                // Si la campaña ya tiene tarea, la ignoramos (ya está en la lista 'tareas')
+                return !idsCampanasConTarea.has(c.id);
+            });
+
+            // 3. Crear objetos "Fantasma" para las faltantes
+            const filasFantasma = campanasFaltantes.map(c => ({
+                id: `ghost-${c.id}`, // ID falso
+                es_fantasma: true,   // Bandera para identificarla
+                campana: c,
+                titulo: `Rutina Diaria - ${c.nombre}`,
+                progreso: 'SIN_GESTION', // Estado especial
+                analista: null
+            }));
+
+            // 4. Agregar al principio de la lista (Son Urgentes)
+            combinedRows = [...filasFantasma, ...combinedRows];
+        }
+
+        setRowsToDisplay(combinedRows);
+
+    }, [tareas, campanas, fechaFiltro, campanaFiltro, estadoFiltro, loading]);
+
 
     const cargarCampanas = async () => {
         try {
@@ -35,50 +77,9 @@ const TareasPage = () => {
         } catch (error) { console.error("Error cargando campañas"); }
     };
 
-    // --- 🧠 CEREBRO DEL PROGRESO (Cálculo) ---
-    const analizarProgreso = (items) => {
-        if (!items || items.length === 0) {
-            return { total: 0, ok: 0, late: 0, pending: 0, pctOk: 0, pctLate: 0, pctPending: 0 };
-        }
-
-        const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        
-        let ok = 0;
-        let late = 0;
-        let pending = 0;
-
-        items.forEach(item => {
-            if (item.completado) {
-                ok++;
-            } else if (item.hora_sugerida) {
-                const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
-                const itemMinutes = h * 60 + m;
-                const diff = currentMinutes - itemMinutes;
-
-                if (diff > 15) { 
-                    late++; // Vencido
-                } else {
-                    pending++; // En tiempo
-                }
-            } else {
-                pending++;
-            }
-        });
-
-        const total = items.length;
-        return {
-            total, ok, late, pending,
-            pctOk: (ok / total) * 100,
-            pctLate: (late / total) * 100,
-            pctPending: (pending / total) * 100
-        };
-    };
-
     const cargarTareas = async () => {
         setLoading(true);
         try {
-            // Usamos el endpoint con FILTROS (/monitor/tareas)
             let url = `${API_BASE_URL}/gtr/monitor/tareas?fecha=${fechaFiltro}`;
             if (campanaFiltro) url += `&campana_id=${campanaFiltro}`;
             if (estadoFiltro) url += `&estado=${estadoFiltro}`;
@@ -86,21 +87,13 @@ const TareasPage = () => {
             const response = await fetchWithAuth(url);
             if (response.ok) {
                 const data = await response.json();
-                
-                // --- ORDENAMIENTO INTELIGENTE ---
+                // Ordenar tareas reales: Prioridad Vencidas
                 const sorted = data.sort((a, b) => {
                     const statsA = analizarProgreso(a.checklist_items);
                     const statsB = analizarProgreso(b.checklist_items);
-
-                    // 1. Prioridad: Cantidad de vencidas (Mayor a menor)
-                    if (statsB.late !== statsA.late) {
-                        return statsB.late - statsA.late;
-                    }
-                    
-                    // 2. Prioridad: Porcentaje de cumplimiento (Menor a mayor - ver los más atrasados primero)
+                    if (statsB.late !== statsA.late) return statsB.late - statsA.late;
                     return statsA.pctOk - statsB.pctOk;
                 });
-
                 setTareas(sorted);
             }
         } catch (error) {
@@ -108,6 +101,24 @@ const TareasPage = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const analizarProgreso = (items) => {
+        if (!items || items.length === 0) return { pctOk: 0, late: 0, pending: 0 };
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        let ok = 0, late = 0, pending = 0;
+
+        items.forEach(item => {
+            if (item.completado) ok++;
+            else if (item.hora_sugerida) {
+                const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
+                if ((currentMinutes - (h * 60 + m)) > 15) late++;
+                else pending++;
+            } else pending++;
+        });
+        const total = items.length;
+        return { pctOk: (ok / total) * 100, pctLate: (late / total) * 100, pctPending: (pending / total) * 100, ok, late, pending };
     };
 
     return (
@@ -119,17 +130,13 @@ const TareasPage = () => {
                 </div>
             </div>
 
-            {/* --- BARRA DE FILTROS (RECUPERADA) --- */}
+            {/* FILTROS */}
             <Card className="shadow-sm border-0 mb-4 bg-light">
                 <Card.Body className="py-3">
                     <Row className="g-3 align-items-end">
                         <Col md={3}>
                             <Form.Label className="small text-muted fw-bold">Fecha de Gestión</Form.Label>
-                            <Form.Control 
-                                type="date" 
-                                value={fechaFiltro} 
-                                onChange={(e) => setFechaFiltro(e.target.value)} 
-                            />
+                            <Form.Control type="date" value={fechaFiltro} onChange={(e) => setFechaFiltro(e.target.value)} />
                         </Col>
                         <Col md={3}>
                             <Form.Label className="small text-muted fw-bold">Campaña</Form.Label>
@@ -149,13 +156,13 @@ const TareasPage = () => {
                         </Col>
                         <Col md={3} className="text-end">
                             <div className="mb-2 text-muted small">Resultados</div>
-                            <h4 className="mb-0 text-primary fw-bold">{tareas.length} <span className="fs-6 text-muted fw-normal">rutinas</span></h4>
+                            <h4 className="mb-0 text-primary fw-bold">{rowsToDisplay.length} <span className="fs-6 text-muted fw-normal">rutinas</span></h4>
                         </Col>
                     </Row>
                 </Card.Body>
             </Card>
 
-            {/* --- TABLA DE RESULTADOS --- */}
+            {/* TABLA */}
             <Card className="shadow-sm border-0">
                 {loading ? (
                     <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
@@ -166,23 +173,51 @@ const TareasPage = () => {
                                 <th className="ps-4">Estado</th>
                                 <th>Campaña</th>
                                 <th>Analista / Equipo</th>
-                                <th>Rutina</th>
-                                <th style={{width: '25%'}}>Progreso y Riesgo</th> {/* Columna ancha para la barra */}
+                                <th>Rutina / Tarea</th>
+                                <th style={{width: '25%'}}>Progreso y Riesgo</th>
                                 <th className="text-end pe-4">Acción</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {tareas.length > 0 ? (
-                                tareas.map(tarea => {
-                                    // Calculamos stats para la barra
-                                    const stats = analizarProgreso(tarea.checklist_items);
+                            {rowsToDisplay.length > 0 ? (
+                                rowsToDisplay.map(tarea => {
                                     
+                                    // --- RENDERIZADO DE FILA "FANTASMA" (SIN GESTIÓN) ---
+                                    if (tarea.es_fantasma) {
+                                        return (
+                                            <tr key={tarea.id} className="table-danger" style={{borderLeft: '4px solid #dc3545'}}>
+                                                <td className="ps-4">
+                                                    <Badge bg="danger" className="fw-normal px-2 py-1 animate__animated animate__pulse animate__infinite">
+                                                        🚨 SIN GESTIÓN
+                                                    </Badge>
+                                                </td>
+                                                <td className="fw-bold text-danger">{tarea.campana?.nombre}</td>
+                                                <td>
+                                                    <span className="text-muted fst-italic">🚫 Nadie conectado</span>
+                                                </td>
+                                                <td>
+                                                    <div className="fw-bold text-secondary">{tarea.titulo}</div>
+                                                    <div className="small text-danger">⚠️ Requiere atención inmediata</div>
+                                                </td>
+                                                <td>
+                                                    <ProgressBar now={0} style={{height: '10px', backgroundColor: '#e9ecef'}} />
+                                                </td>
+                                                <td className="text-end pe-4">
+                                                    <Button size="sm" variant="outline-secondary" disabled>
+                                                        Pendiente de Inicio
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    }
+
+                                    // --- RENDERIZADO DE TAREA REAL ---
+                                    const stats = analizarProgreso(tarea.checklist_items);
                                     let badgeBg = 'secondary';
                                     if (tarea.progreso === 'COMPLETADA') badgeBg = 'success';
                                     else if (tarea.progreso === 'EN_PROGRESO') badgeBg = 'primary';
                                     else if (tarea.progreso === 'PENDIENTE') badgeBg = 'warning';
 
-                                    // Tooltip detallado
                                     const renderTooltip = (props) => (
                                         <Tooltip id={`tooltip-${tarea.id}`} {...props}>
                                             <div className="text-start">
@@ -195,19 +230,12 @@ const TareasPage = () => {
 
                                     return (
                                         <tr key={tarea.id}>
-                                            {/* 1. Estado */}
                                             <td className="ps-4">
                                                 <Badge bg={badgeBg} className="fw-normal px-2 py-1">
                                                     {tarea.progreso.replace('_', ' ')}
                                                 </Badge>
                                             </td>
-                                            
-                                            {/* 2. Campaña */}
-                                            <td className="fw-bold text-dark">
-                                                {tarea.campana?.nombre}
-                                            </td>
-                                            
-                                            {/* 3. Analista o Equipo */}
+                                            <td className="fw-bold text-dark">{tarea.campana?.nombre}</td>
                                             <td>
                                                 {tarea.analista ? (
                                                     <div className="d-flex align-items-center gap-2">
@@ -227,22 +255,15 @@ const TareasPage = () => {
                                                     </div>
                                                 )}
                                             </td>
-                                            
-                                            {/* 4. Título y Origen */}
                                             <td>
-                                                <div className="fw-bold text-dark" style={{ fontSize: '1rem' }}>
-                                                    {tarea.titulo}
-                                                </div>
+                                                <div className="fw-bold text-dark">{tarea.titulo}</div>
                                                 <div className="mt-1">
-                                                    {tarea.es_generada_automaticamente ? (
-                                                        <Badge bg="light" text="secondary" className="border fw-normal">🤖 Automática</Badge>
-                                                    ) : (
+                                                    {tarea.es_generada_automaticamente ? 
+                                                        <Badge bg="light" text="secondary" className="border fw-normal">🤖 Automática</Badge> : 
                                                         <Badge bg="info" className="fw-normal">👤 Manual</Badge>
-                                                    )}
+                                                    }
                                                 </div>
                                             </td>
-                                            
-                                            {/* 5. BARRA DE PROGRESO Y RIESGO (STACKED) */}
                                             <td>
                                                 <OverlayTrigger placement="top" overlay={renderTooltip}>
                                                     <div style={{cursor: 'help'}}>
@@ -250,7 +271,6 @@ const TareasPage = () => {
                                                             <span>{Math.round(stats.pctOk)}%</span>
                                                             {stats.late > 0 && <span className="text-danger fw-bold">{stats.late} Vencidas</span>}
                                                         </div>
-                                                        
                                                         <ProgressBar style={{height: '10px', backgroundColor: '#e9ecef'}}>
                                                             <ProgressBar variant="success" now={stats.pctOk} key={1} />
                                                             <ProgressBar variant="danger" now={stats.pctLate} key={2} animated={stats.late > 0} />
@@ -259,8 +279,6 @@ const TareasPage = () => {
                                                     </div>
                                                 </OverlayTrigger>
                                             </td>
-                                            
-                                            {/* 6. Botón */}
                                             <td className="text-end pe-4">
                                                 <Button size="sm" variant="outline-dark" onClick={() => navigate(`/tareas/${tarea.id}`)}>
                                                     Auditar
@@ -273,7 +291,7 @@ const TareasPage = () => {
                                 <tr>
                                     <td colSpan="6" className="text-center py-5 text-muted">
                                         <div style={{fontSize: '2rem'}}>📭</div>
-                                        <div>No se encontraron rutinas para esta fecha y filtros.</div>
+                                        <div>No hay tareas (y todas las campañas están cubiertas).</div>
                                     </td>
                                 </tr>
                             )}
