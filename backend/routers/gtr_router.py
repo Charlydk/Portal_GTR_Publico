@@ -3256,6 +3256,48 @@ async def exportar_bitacora(
     headers = {'Content-Disposition': f'attachment; filename="Reporte_Eventos_{date.today().isoformat()}.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+
+@router.get("/monitor/tareas", response_model=List[Tarea], summary="Monitor de Cumplimiento (Simple)")
+async def get_tareas_monitor(
+    fecha: Optional[date] = None,
+    campana_id: Optional[int] = None,
+    estado: Optional[ProgresoTarea] = None,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    # 1. Si no hay fecha, usamos hoy
+    if not fecha:
+        fecha = datetime.now().date()
+        
+    # 2. Definir rango del día simple
+    inicio_dia = datetime.combine(fecha, time.min)
+    fin_dia = datetime.combine(fecha, time.max)
+
+    # 3. Query Base: ¡AGREGAMOS LA CARGA DE COMENTARIOS!
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items), 
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios) # <--- ¡ESTA LÍNEA FALTABA!
+    )
+
+    # 4. Aplicar Filtros
+    query = query.filter(models.Tarea.fecha_creacion >= inicio_dia)
+    query = query.filter(models.Tarea.fecha_creacion <= fin_dia)
+
+    if campana_id:
+        query = query.filter(models.Tarea.campana_id == campana_id)
+
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # 5. Ordenar
+    query = query.order_by(models.Tarea.fecha_creacion.desc())
+
+    result = await db.execute(query)
+    return result.scalars().all()
+
 # -----------------------------------------------------------------------------
 # 📍 SISTEMA DE CHECK-IN / SESIONES ACTIVAS (GTR DINÁMICO)
 # -----------------------------------------------------------------------------
