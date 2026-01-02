@@ -3007,88 +3007,90 @@ async def get_alertas_operativas(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Semáforo Inteligente:
-    - AMARILLO (Atención): Faltan 45 min o menos.
-    - AZUL (En Curso): Es la hora exacta o pasaron hasta 15 min (Gracia).
-    - ROJO (Crítico): Pasaron más de 15 min del horario.
+    Semáforo Inteligente Multicampaña:
+    Recupera items de TODAS las campañas donde el analista tenga sesión activa.
     """
     
     # 1. Definir AHORA en Argentina
     tz_argentina = pytz.timezone("America/Argentina/Tucuman")
     ahora_arg = datetime.now(tz_argentina)
     
-    # 2. Buscar sesión activa
-    q_sesion = select(models.SesionCampana).filter(
+    # 2. Buscar TODAS las sesiones activas (Cambio Clave: .all() en lugar de .first())
+    q_sesiones = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.fecha_fin.is_(None)
     )
-    res_sesion = await db.execute(q_sesion)
-    sesion = res_sesion.scalars().first()
+    res_sesiones = await db.execute(q_sesiones)
+    sesiones = res_sesiones.scalars().all()
 
-    if not sesion:
+    if not sesiones:
         return [] 
 
-    # 3. Buscar la Tarea del día (Cargando la Campaña para obtener el nombre)
+    # Extraemos los IDs de todas las campañas activas (Ej: [ID_Bice, ID_Bolt])
+    ids_campanas_activas = [s.campana_id for s in sesiones]
+
+    # 3. Buscar las Tareas del día para TODAS esas campañas
     inicio_dia = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
     
-    q_tarea = select(models.Tarea).options(
-        selectinload(models.Tarea.campana) # <--- CARGAMOS LA CAMPAÑA AQUÍ
+    q_tareas = select(models.Tarea).options(
+        selectinload(models.Tarea.campana)
     ).filter(
-        models.Tarea.campana_id == sesion.campana_id,
+        models.Tarea.campana_id.in_(ids_campanas_activas), # <--- BUSCAMOS EN LA LISTA
         models.Tarea.es_generada_automaticamente == True,
         models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
     )
-    res_tarea = await db.execute(q_tarea)
-    tarea = res_tarea.scalars().first()
+    res_tareas = await db.execute(q_tareas)
+    tareas = res_tareas.scalars().all()
 
-    if not tarea:
+    if not tareas:
         return []
-
-    # 4. Traer ítems pendientes con hora
-    q_items = select(models.ChecklistItem).filter(
-        models.ChecklistItem.tarea_id == tarea.id,
-        models.ChecklistItem.completado == False,
-        models.ChecklistItem.hora_sugerida.is_not(None)
-    ).order_by(models.ChecklistItem.hora_sugerida)
-    
-    res_items = await db.execute(q_items)
-    items = res_items.scalars().all()
 
     alertas = []
     
-    # 5. MOTOR DE REGLAS MATEMÁTICO
-    # Usamos una fecha dummy para poder restar horas fácilmente
+    # Configuración para cálculos de tiempo
     dummy_date = datetime(2000, 1, 1)
     dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
 
-    for item in items:
-        hora_item = item.hora_sugerida
-        dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
+    # 4. Iteramos por CADA tarea encontrada (Una por campaña activa)
+    for tarea in tareas:
+        # Traer ítems pendientes con hora para ESTA tarea específica
+        q_items = select(models.ChecklistItem).filter(
+            models.ChecklistItem.tarea_id == tarea.id,
+            models.ChecklistItem.completado == False,
+            models.ChecklistItem.hora_sugerida.is_not(None)
+        )
         
-        # Calculamos diferencia en minutos: (Hora Actual - Hora Tarea)
-        # Positivo = Ya pasó la hora de la tarea.
-        # Negativo = Aún no llega la hora.
-        diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
-        
-        estado = None
-        
-        # LÓGICA DEL SEMÁFORO
-        if diferencia_minutos > 15:
-            estado = "CRITICO" # Rojo (+15 min tarde)
-        elif 0 <= diferencia_minutos <= 15:
-            estado = "EN_CURSO" # Azul (Estamos en la ventana de envío)
-        elif -45 <= diferencia_minutos < 0:
-            estado = "ATENCION" # Amarillo (Faltan menos de 45 min)
-        
-        if estado:
-            alertas.append({
-                "id": item.id,
-                "descripcion": item.descripcion,
-                "hora": hora_item.strftime("%H:%M"),
-                "tipo": estado,
-                "tarea_id": tarea.id,
-                "campana_nombre": tarea.campana.nombre # <--- ENVIAMOS EL NOMBRE
-            })
+        res_items = await db.execute(q_items)
+        items = res_items.scalars().all()
+
+        # Procesamos los ítems de esta tarea
+        for item in items:
+            hora_item = item.hora_sugerida
+            dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
+            
+            diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
+            
+            estado = None
+            # LÓGICA DEL SEMÁFORO
+            if diferencia_minutos > 15:
+                estado = "CRITICO" 
+            elif 0 <= diferencia_minutos <= 15:
+                estado = "EN_CURSO"
+            elif -45 <= diferencia_minutos < 0:
+                estado = "ATENCION"
+            
+            if estado:
+                alertas.append({
+                    "id": item.id,
+                    "descripcion": item.descripcion,
+                    "hora": hora_item.strftime("%H:%M"),
+                    "tipo": estado,
+                    "tarea_id": tarea.id,
+                    "campana_nombre": tarea.campana.nombre # Nombre correcto de la campaña
+                })
+
+    # 5. Ordenamos TODAS las alertas por hora
+    alertas.sort(key=lambda x: x['hora'])
 
     return alertas
 
@@ -3264,17 +3266,40 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Verificar si ya está activo (Misma lógica de antes...)
-    query = select(models.SesionCampana).filter(
+    # 1. Definir "Hoy" (Inicio del día a las 00:00)
+    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
+    # Buscamos sesiones abiertas que sean de AYER o antes
+    q_zombis = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None),
+        models.SesionCampana.fecha_inicio < hoy_inicio
+    )
+    result_zombis = await db.execute(q_zombis)
+    sesiones_zombis = result_zombis.scalars().all()
+
+    if sesiones_zombis:
+        print(f"🧹 Limpiando {len(sesiones_zombis)} sesiones zombis de {current_analista.email}")
+        for zombi in sesiones_zombis:
+            # Cerramos con fecha de ayer al final del día
+            fin_dia_zombi = zombi.fecha_inicio.replace(hour=23, minute=59, second=59)
+            zombi.fecha_fin = fin_dia_zombi
+            db.add(zombi)
+        await db.commit() # Guardamos la limpieza antes de seguir
+
+    # --- FASE 2: VERIFICACIÓN ESPECÍFICA (Solo la campaña solicitada) ---
+    # Ahora buscamos si ya estoy activo EN LA CAMPAÑA QUE PIDO
+    query_target = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.campana_id == datos.campana_id,
         models.SesionCampana.fecha_fin.is_(None)
     )
-    result = await db.execute(query)
-    sesion_existente = result.scalars().first()
+    result_target = await db.execute(query_target)
+    sesion_existente = result_target.scalars().first()
 
+    # Si ya estoy activo en esta campaña hoy, simplemente devuelvo esa sesión
     if sesion_existente:
-        # (Misma lógica de retorno de sesión existente...)
         result_full = await db.execute(
             select(models.SesionCampana).options(
                 selectinload(models.SesionCampana.campana).options(
@@ -3285,21 +3310,18 @@ async def check_in_campana(
         )
         return result_full.scalars().first()
 
-    # 2. Crear nueva sesión Y GUARDARLA DE INMEDIATO (Corrección del error 500)
+    # --- FASE 3: CREACIÓN DE NUEVA SESIÓN ---
+    # Si llegamos aquí, es porque NO tengo sesión activa en esta campaña
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
-        campana_id=datos.campana_id
+        campana_id=datos.campana_id,
+        fecha_inicio=datetime.now()
     )
     db.add(nueva_sesion)
-    await db.commit()          # <--- ¡ESTO FALTABA EN EL CASO A!
-    await db.refresh(nueva_sesion) # Ahora es seguro refrescar porque ya existe en BD
+    await db.commit()
+    await db.refresh(nueva_sesion) 
     
-    # --- 🤖 LÓGICA COLABORATIVA ---
-    
-    # 1. Definir "Hoy"
-    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-
-    # 2. Buscar Rutina existente
+    # --- FASE 4: GENERACIÓN DE RUTINA (Lógica Colaborativa) ---
     q_tarea_existente = select(models.Tarea).filter(
         models.Tarea.campana_id == datos.campana_id,
         models.Tarea.es_generada_automaticamente == True,
@@ -3308,16 +3330,16 @@ async def check_in_campana(
     result_tarea = await db.execute(q_tarea_existente)
     tarea_compartida = result_tarea.scalars().first()
 
-    # CASO A: Ya existe -> Solo imprimimos (La sesión ya se guardó arriba)
+    # CASO A: Ya existe la rutina -> Nos unimos (No hacemos nada, ya tenemos sesión)
     if tarea_compartida:
-        print(f"🔄 Check-in de {current_analista.email}: Se une a la Rutina ID {tarea_compartida.id}.")
+        print(f"🔄 Se une a Rutina existente ID {tarea_compartida.id}.")
         
-    # CASO B: No existe -> LA CREAMOS
+    # CASO B: No existe -> LA CREAMOS (Incluso si no tiene items configurados)
     else:
-        # ... (Toda tu lógica de creación de tarea, filtro de días, etc.) ...
+        # 1. Detectar qué día es HOY en Argentina
         tz_argentina = pytz.timezone("America/Argentina/Tucuman")
         ahora_arg = datetime.now(tz_argentina)
-        dia_semana_int = ahora_arg.weekday() 
+        dia_semana_int = ahora_arg.weekday()
 
         mapa_dias = {
             0: models.PlantillaChecklistItem.lunes,
@@ -3330,6 +3352,7 @@ async def check_in_campana(
         }
         columna_dia_hoy = mapa_dias[dia_semana_int]
 
+        # 2. Traer items activos para HOY (puede estar vacío)
         q_items_plantilla = select(models.PlantillaChecklistItem).filter(
             models.PlantillaChecklistItem.campana_id == datos.campana_id,
             columna_dia_hoy == True
@@ -3338,15 +3361,15 @@ async def check_in_campana(
         res_items = await db.execute(q_items_plantilla)
         items_plantilla = res_items.scalars().all()
 
+        # 3. Buscar la campaña para el nombre
         q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
         res_campana = await db.execute(q_campana)
         campana_obj = res_campana.scalars().first()
 
-        # Solo creamos si hay items y campaña
-        if items_plantilla and campana_obj:
+        # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
+        if campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
-            vencimiento_local = ahora_arg.replace(hour=23, minute=59, second=59)
-            vencimiento_naive = vencimiento_local.replace(tzinfo=None)
+            vencimiento_naive = ahora_arg.replace(hour=23, minute=59, second=59, tzinfo=None)
 
             nueva_tarea = models.Tarea(
                 titulo=nombre_tarea,
@@ -3359,8 +3382,9 @@ async def check_in_campana(
                 es_generada_automaticamente=True
             )
             db.add(nueva_tarea)
-            await db.flush() 
+            await db.flush() # Obtenemos ID para insertar los items hijos
 
+            # Insertamos los items (si existen)
             for item in items_plantilla:
                 nuevo_checklist_item = models.ChecklistItem(
                     descripcion=item.descripcion,
@@ -3370,20 +3394,20 @@ async def check_in_campana(
                 )
                 db.add(nuevo_checklist_item)
 
-            await db.commit() # Guardamos la tarea y sus items
+            await db.commit()
             
-            # Historial
+            # Historial de creación
             historial = models.HistorialEstadoTarea(
                 old_progreso=None,
                 new_progreso=ProgresoTarea.PENDIENTE,
                 changed_by_analista_id=current_analista.id,
-                tarea_id=nueva_tarea.id,
+                tarea_campana_id=nueva_tarea.id,  # ✅ ESTA ES LA CLAVE
                 timestamp=datetime.now()
             )
             db.add(historial)
             await db.commit()
 
-    # 3. Devolver la sesión (Ya guardada y lista)
+    # 5. Devolver sesión final
     result_final = await db.execute(
         select(models.SesionCampana).options(
             selectinload(models.SesionCampana.campana).options(
@@ -3493,10 +3517,15 @@ async def obtener_cobertura_operativa(
     # 1. Datos de tiempo (Argentina)
     tz_argentina = pytz.timezone("America/Argentina/Tucuman")
     ahora_arg = datetime.now(tz_argentina)
+    
+    # --- 🕒 DEFINIMOS EL INICIO DEL DÍA (La barrera Anti-Zombis) ---
+    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # ---------------------------------------------------------------
+    
     hora_actual = ahora_arg.time()
-    dia_semana = ahora_arg.weekday() # 0=Lun ... 5=Sáb, 6=Dom
+    dia_semana = ahora_arg.weekday() 
 
-    # 2. Query: Cargamos Campaña -> Sesiones -> Analista (Para obtener los nombres)
+    # 2. Query: Cargamos Campaña -> Sesiones -> Analista
     query = select(models.Campana).options(
         selectinload(models.Campana.sesiones).selectinload(models.SesionCampana.analista)
     )
@@ -3506,13 +3535,29 @@ async def obtener_cobertura_operativa(
     reporte_cobertura = []
 
     for campana in campanas:
-        # Filtramos solo las sesiones activas (sin fecha_fin)
-        sesiones_activas = [s for s in campana.sesiones if s.fecha_fin is None]
+        # --- 🕵️‍♂️ FILTRO VISUAL INTELIGENTE ---
+        sesiones_activas = []
+        for s in campana.sesiones:
+            # 1. Si ya cerró, ignorar
+            if s.fecha_fin is not None:
+                continue
+                
+            # 2. Verificar que la sesión sea de HOY
+            # Convertimos la fecha de la DB a horario Argentina para comparar
+            if s.fecha_inicio.tzinfo is None:
+                inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(tz_argentina)
+            else:
+                inicio_local = s.fecha_inicio.astimezone(tz_argentina)
+
+            # Solo la contamos si empezó HOY (o después de las 00:00)
+            if inicio_local >= inicio_dia_hoy:
+                sesiones_activas.append(s)
+        # -------------------------------------
         
-        # A. Contamos activos
+        # A. Contamos activos (Ya filtrados)
         analistas_online = len(sesiones_activas)
         
-        # B. Generamos la lista de nombres (Ej: "Juan Perez", "Maria Gomez")
+        # B. Generamos la lista de nombres
         lista_nombres = [f"{s.analista.nombre} {s.analista.apellido}" for s in sesiones_activas if s.analista]
 
         # C. Seleccionamos el horario que corresponde al DÍA DE HOY
@@ -3534,7 +3579,7 @@ async def obtener_cobertura_operativa(
 
         if not inicio or not fin:
             if analistas_online > 0:
-                estado = "CUBIERTA" # Raro pero positivo
+                estado = "CUBIERTA"
             else:
                 estado = "CERRADA"
         else:
@@ -3559,9 +3604,9 @@ async def obtener_cobertura_operativa(
             nombre_campana=campana.nombre,
             estado=estado,
             analistas_activos=analistas_online,
-            hora_inicio_hoy=inicio,       # Enviamos el horario correcto de hoy
+            hora_inicio_hoy=inicio,
             hora_fin_hoy=fin,
-            nombres_analistas=lista_nombres # Enviamos la lista de personas
+            nombres_analistas=lista_nombres
         ))
 
     return reporte_cobertura

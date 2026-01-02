@@ -1,7 +1,7 @@
 // RUTA: src/pages/DetalleTareaPage.jsx
 
 import React, { useState, useEffect } from 'react';
-import { Container, Card, Row, Col, Badge, ProgressBar, Button, Form, Spinner, ListGroup, Alert, InputGroup, Modal } from 'react-bootstrap';
+import { Container, Card, Row, Col, Badge, ProgressBar, Button, Form, Spinner, ListGroup, Alert, InputGroup, Modal, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
@@ -243,20 +243,71 @@ const DetalleTareaPage = () => {
             <Row className="g-4">
                 <Col lg={8}>
                     <Card className={`shadow-sm border-0 mb-4 ${tareaCerrada ? 'bg-light border-success' : ''}`}>
-                        <Card.Header className="bg-white py-3"><h5 className="mb-0">✅ Lista de Actividades</h5></Card.Header>
+                        <Card.Header className="bg-white py-3 d-flex justify-content-between align-items-center flex-wrap">
+                            <h5 className="mb-0">✅ Lista de Actividades</h5>
+                            
+                            {/* --- REFERENCIA VISUAL CORREGIDA --- */}
+                            <div className="d-flex align-items-center bg-light px-3 py-2 rounded" style={{ fontSize: '0.75rem' }}>
+                                <span className="fw-bold me-3 text-muted text-uppercase" style={{fontSize:'0.7rem'}}>Referencias:</span>
+                                
+                                {/* Rojo: Vencido */}
+                                <div className="d-flex align-items-center me-3">
+                                    <span className="rounded-circle me-1" style={{width:'12px', height:'12px', backgroundColor: '#dc3545', display:'inline-block'}}></span>
+                                    <span className="text-secondary">Vencido</span>
+                                </div>
+                                
+                                {/* Azul: En Horario */}
+                                <div className="d-flex align-items-center me-3">
+                                    <span className="rounded-circle me-1" style={{width:'12px', height:'12px', backgroundColor: '#0d6efd', display:'inline-block'}}></span>
+                                    <span className="text-secondary">En Horario</span>
+                                </div>
+                                
+                                {/* Amarillo: Próximo */}
+                                <div className="d-flex align-items-center">
+                                    <span className="rounded-circle me-1" style={{width:'12px', height:'12px', backgroundColor: '#ffc107', display:'inline-block'}}></span>
+                                    <span className="text-secondary">Próximo</span>
+                                </div>
+                            </div>
+                        </Card.Header>
                         <ListGroup variant="flush" className={tareaCerrada ? 'opacity-75' : ''}>
                         {tarea.checklist_items.map(item => {
-                            // --- 🧠 LÓGICA DEL SEMÁFORO ---
-                            // 1. Obtenemos la hora actual en formato "HH:MM" para comparar
-                            const now = new Date();
-                            const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+                            // --- 1. LIMPIEZA DE TEXTO Y DETECCIÓN DE EXTRA ---
+                            let descripcionLimpia = item.descripcion;
+                            // Detectamos si es extra antes de limpiar
+                            const esExtra = descripcionLimpia.includes('(Extra)');
                             
-                            // 2. Preparamos la hora de la tarea (si existe)
-                            const taskTime = item.hora_sugerida ? item.hora_sugerida.toString().substring(0, 5) : null;
+                            // Borramos [HH:MM] del inicio y la palabra (Extra)
+                            descripcionLimpia = descripcionLimpia
+                                .replace(/^\[.*?\]\s*/, '') // Quita [10:30]
+                                .replace(/\(Extra\)\s*/, ''); // Quita (Extra)
+                            // ------------------------------------------------
 
-                            // 3. ¿Está atrasada? (Solo si tiene hora, NO está completada, y ya pasó la hora)
-                            const isLate = taskTime && !item.completado && currentTime > taskTime;
-                            // ------------------------------
+                            // --- 2. LÓGICA DE SEMÁFORO (COLORES) ---
+                            let badgeBg = 'warning'; 
+                            let badgeIcon = 'bi-clock';
+                            // Ya no usamos badgeText (Atrasado/En curso)
+                            
+                            if (item.hora_sugerida && !item.completado) {
+                                const now = new Date();
+                                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                                const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
+                                const taskMinutes = h * 60 + m;
+                                const diff = currentMinutes - taskMinutes;
+
+                                if (diff > 15) {
+                                    badgeBg = 'danger'; // Rojo
+                                    badgeIcon = 'bi-alarm-fill';
+                                } else if (diff >= 0 && diff <= 15) {
+                                    badgeBg = 'primary'; // Azul
+                                    badgeIcon = 'bi-rocket-takeoff-fill';
+                                } else {
+                                    badgeBg = 'warning'; // Amarillo
+                                    badgeIcon = 'bi-clock';
+                                }
+                            } else if (item.completado) {
+                                badgeBg = 'success';
+                                badgeIcon = 'bi-check-circle-fill';
+                            }
 
                             return (
                                 <ListGroup.Item key={item.id} className="py-3 action-hover bg-transparent">
@@ -275,27 +326,37 @@ const DetalleTareaPage = () => {
                                                     cursor: tareaCerrada ? 'default' : 'pointer',
                                                     textDecoration: item.completado ? 'line-through' : 'none',
                                                     color: item.completado ? '#adb5bd' : '#212529',
-                                                    width: '100%' 
+                                                    width: '100%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    flexWrap: 'wrap'
                                                 }}
                                             >
-                                                {/* --- BADGE INTELIGENTE --- */}
-                                                {taskTime && (
+                                                {/* --- BADGE DE HORA (SOLO ICONO + HORA) --- */}
+                                                {item.hora_sugerida && (
                                                     <Badge 
-                                                        bg={item.completado ? "success" : (isLate ? "danger" : "warning")} 
-                                                        text={item.completado || isLate ? "white" : "dark"} 
-                                                        className="me-2" 
-                                                        style={{ fontSize: '0.85em' }}
+                                                        bg={badgeBg} 
+                                                        text={badgeBg === 'warning' ? "dark" : "white"} 
+                                                        className="me-2 d-flex align-items-center" 
+                                                        style={{ fontSize: '0.85em', height: '24px' }}
                                                     >
-                                                        {/* Ícono dinámico: Reloj normal o Alarma sonando */}
-                                                        <i className={`bi ${isLate && !item.completado ? 'bi-alarm-fill' : 'bi-clock'} me-1`}></i>
-                                                        {taskTime}
-                                                        {/* Texto explícito de atraso */}
-                                                        {isLate && !item.completado && " (Atrasado)"}
+                                                        <i className={`bi ${badgeIcon} me-1`}></i>
+                                                        {item.hora_sugerida.toString().substring(0, 5)}
                                                     </Badge>
                                                 )}
-                                                {/* ------------------------- */}
+
+                                                {esExtra && (
+                                                    <OverlayTrigger overlay={<Tooltip>Actividad Extra</Tooltip>}>
+                                                        <Badge bg="light" text="dark" className="me-2" style={{height: '24px', width: '24px', display:'flex', alignItems:'center', justifyContent:'center', borderRadius:'50%'}}>
+                                                            ↪️
+                                                        </Badge>
+                                                    </OverlayTrigger>
+                                                )}
                                                 
-                                                {item.descripcion}
+                                                {/* --- DESCRIPCIÓN LIMPIA --- */}
+                                                <span style={{ paddingTop: '2px' }}>
+                                                    {descripcionLimpia}
+                                                </span>
                                             </Form.Check.Label>
                                         </div>
                                     </Form.Check>
