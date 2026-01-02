@@ -2162,10 +2162,13 @@ async def get_incidencias(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     query = select(models.Incidencia).options(
-        selectinload(models.Incidencia.campana)
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.lobs),
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.asignado_a),
+        selectinload(models.Incidencia.cerrado_por)
     ).order_by(models.Incidencia.fecha_apertura.desc())
 
-    
     result = await db.execute(query)
     return result.scalars().unique().all()
 
@@ -2269,12 +2272,13 @@ async def get_incidencias_filtradas(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     campana_id: Optional[int] = None,
-    estado: Optional[List[EstadoIncidencia]] = Query(default=None),
+    # MODIFICACIÓN CLAVE: Aceptamos str o list y parseamos manualmente si es necesario
+    estado: Optional[Union[List[str], str]] = Query(default=None), 
     asignado_a_id: Optional[int] = None
 ):
     """
     Endpoint para el portal de control de incidencias.
-    Todos los roles con acceso ven la misma información.
+    Soporta filtros de estado múltiples (ej: ?estado=ABIERTA&estado=EN_PROGRESO o ?estado=ABIERTA,EN_PROGRESO)
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
@@ -2290,8 +2294,38 @@ async def get_incidencias_filtradas(
         query = query.filter(models.Incidencia.fecha_apertura <= datetime.combine(fecha_fin, time.max))
     if campana_id:
         query = query.filter(models.Incidencia.campana_id == campana_id)
+    
     if estado:
-        query = query.filter(models.Incidencia.estado.in_(estado))
+        estados_finales = []
+        
+        # 1. Normalizar entrada a una lista de strings
+        lista_temporal = []
+        if isinstance(estado, str):
+            # Caso: ?estado=ABIERTA,EN_PROGRESO
+            if ',' in estado:
+                lista_temporal = estado.split(',')
+            else:
+                lista_temporal = [estado]
+        else:
+            # Caso: ?estado=ABIERTA&estado=EN_PROGRESO (FastAPI ya lo da como lista)
+            lista_temporal = estado
+
+        # 2. Convertir strings a Enum (EstadoIncidencia)
+        for e_str in lista_temporal:
+            try:
+                # Limpiamos espacios y buscamos en el Enum
+                e_clean = e_str.strip()
+                # Buscamos si coincide con algún valor del enum
+                for estado_enum in EstadoIncidencia:
+                    if estado_enum.value == e_clean:
+                        estados_finales.append(estado_enum)
+                        break
+            except ValueError:
+                continue # Ignoramos valores inválidos
+        
+        if estados_finales:
+            query = query.filter(models.Incidencia.estado.in_(estados_finales))
+
     if asignado_a_id is not None:
         if asignado_a_id == 0:
             query = query.filter(models.Incidencia.asignado_a_id.is_(None))

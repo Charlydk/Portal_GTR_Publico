@@ -1,244 +1,436 @@
 // RUTA: src/pages/DashboardPage.jsx
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert, Button, Badge } from 'react-bootstrap';
+import React, { useEffect, useState } from 'react';
+import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
-import { GTR_API_URL, API_BASE_URL, fetchWithAuth } from '../api'; 
-import { Link } from 'react-router-dom';
-import CampaignSelector from '../components/dashboard/CampaignSelector';
+import { API_BASE_URL, fetchWithAuth } from '../api'; 
+import { useNavigate } from 'react-router-dom';
 
 // Widgets
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
-import EstadisticasGTRWidget from '../components/dashboard/EstadisticasGTRWidget';
-import CoberturaWidget from '../components/dashboard/CoberturaWidget';
-import WidgetAlertas from '../components/dashboard/WidgetAlertas';
+import WidgetAlertas from '../components/dashboard/WidgetAlertas'; // Importamos el componente
+import CampaignSelector from '../components/dashboard/CampaignSelector';
 
 function DashboardPage() {
-    const { user, loading: authLoading } = useAuth();
+    const { user } = useAuth();
+    const navigate = useNavigate();
 
+    // Estados Generales
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [misIncidencias, setMisIncidencias] = useState([]);
-    const [dashboardStats, setDashboardStats] = useState(null);
-    const [tareasDisponibles, setTareasDisponibles] = useState([]);
+    const [statsIncidencias, setStatsIncidencias] = useState(null);
+    const [coberturaGlobal, setCoberturaGlobal] = useState([]); 
     
-    // Estados para el Selector Dinámico
+    // Estados Analista
+    const [misIncidencias, setMisIncidencias] = useState([]);
     const [showCampaignModal, setShowCampaignModal] = useState(false);
-    const [misSesiones, setMisSesiones] = useState([]);
-    const [refreshing, setRefreshing] = useState(false);
-    const [refreshTrigger, setRefreshTrigger] = useState(0); 
+    const [misSesionesActivas, setMisSesionesActivas] = useState([]); 
+    // SE ELIMINÓ: const [misTareasHoy, setMisTareasHoy] = useState([]);
 
-    // --- Callbacks de Carga ---
-    const fetchDashboardStats = useCallback(async () => {
-        const response = await fetchWithAuth(`${GTR_API_URL}/dashboard/stats`);
-        if (!response.ok) throw new Error('Error al cargar estadísticas.');
-        setDashboardStats(await response.json());
-    }, []);
+    // Estados Supervisor
+    const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
+    const [estadoAnalistas, setEstadoAnalistas] = useState([]);
 
-    const fetchMisIncidencias = useCallback(async () => {
-        const response = await fetchWithAuth(`${GTR_API_URL}/analistas/me/incidencias_asignadas`);
-        if (!response.ok) throw new Error('Error al cargar mis incidencias.');
-        setMisIncidencias(await response.json());
-    }, []);
-
-    const fetchTareasDisponibles = useCallback(async () => {
-        const response = await fetchWithAuth(`${GTR_API_URL}/campanas/tareas_disponibles/`);
-        if (!response.ok) throw new Error('Error al cargar tareas disponibles.');
-        setTareasDisponibles(await response.json());
-    }, []);
-
-    const fetchMisSesiones = useCallback(async () => {
-        try {
-            if (['ANALISTA', 'SUPERVISOR', 'RESPONSABLE'].includes(user?.role)) {
-                const res = await fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/activas`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setMisSesiones(data);
-                }
-            }
-        } catch (err) {
-            console.error("Error cargando sesiones", err);
+    useEffect(() => {
+        if (user) {
+            cargarDatosDashboard();
         }
-    }, [user?.role]);
+    }, [user]);
 
-    const handleManualRefresh = async () => {
-        setRefreshing(true);
+    const cargarDatosDashboard = async () => {
+        setLoading(true);
         try {
-            const promises = [
-                fetchDashboardStats(),
-                fetchMisSesiones() 
-            ];
+            const [resStats, resCobertura] = await Promise.all([
+                fetchWithAuth(`${API_BASE_URL}/gtr/dashboard/stats`),
+                fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/cobertura`)
+            ]);
+
+            if (resStats.ok) setStatsIncidencias(await resStats.json());
+            
+            let dataCobertura = [];
+            if (resCobertura.ok) {
+                dataCobertura = await resCobertura.json();
+                setCoberturaGlobal(dataCobertura);
+            }
 
             if (user.role === 'ANALISTA') {
-                promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
+                await cargarDatosEspecificosAnalista(dataCobertura);
+            } else {
+                await cargarDatosEspecificosSupervisor(dataCobertura);
             }
 
-            await Promise.all(promises);
-            setRefreshTrigger(prev => prev + 1);
+        } catch (error) { console.error("Error dashboard", error); } 
+        finally { setLoading(false); }
+    };
 
-        } catch (error) {
-            console.error("Error al actualizar:", error);
-        } finally {
-            setTimeout(() => setRefreshing(false), 500);
+    const cargarDatosEspecificosAnalista = async (dataCobertura) => {
+        const resInc = await fetchWithAuth(`${API_BASE_URL}/gtr/incidencias/mis-incidencias`);
+        if (resInc.ok) setMisIncidencias(await resInc.json());
+
+        const resSesiones = await fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/activas`);
+        if (resSesiones.ok) {
+            const dataSesiones = await resSesiones.json();
+            setMisSesionesActivas(dataSesiones);
+        }
+
+        // SE ELIMINÓ: La carga manual de tareas (/gtr/tareas/). Ahora lo hace el widget.
+    };
+
+    const cargarDatosEspecificosSupervisor = async (dataCobertura) => {
+        const hoy = new Date().toISOString().split('T')[0];
+        const [resTareas, resAnalistas] = await Promise.all([
+            fetchWithAuth(`${API_BASE_URL}/gtr/monitor/tareas?fecha=${hoy}`),
+            fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`)
+        ]);
+
+        if (resTareas.ok && resAnalistas.ok) {
+            const tareas = await resTareas.json();
+            const analistas = await resAnalistas.json();
+            procesarCumplimiento(tareas, dataCobertura);
+            procesarEstadoAnalistas(analistas, dataCobertura);
         }
     };
 
-    // --- Efecto Inicial ---
-    useEffect(() => {
-        if (authLoading || !user) return; 
+    // --- PROCESADORES SUPERVISOR (Sin cambios) ---
+    const procesarCumplimiento = (tareas, cobertura) => {
+        const reporte = cobertura.map(c => {
+            const tareasCampaña = tareas.filter(t => t.campana_id === c.campana_id);
+            let porcentaje = 0, total = 0, completados = 0, vencidas = 0;
 
-        if (user.role === 'SUPERVISOR_OPERACIONES') {
-            setLoading(false);
-            return;
-        }
-
-        const fetchInitialData = async () => {
-            setError(null);
-            try {
-                const promises = [fetchDashboardStats(), fetchMisSesiones()];
-
-                if (user.role === 'ANALISTA') {
-                    promises.push(fetchMisIncidencias(), fetchTareasDisponibles());
-                }
-                await Promise.all(promises);
-            } catch (err) {
-                setError(err.message);
-            } finally {
-                setLoading(false);
+            if (tareasCampaña.length > 0) {
+                tareasCampaña.forEach(t => {
+                    t.checklist_items.forEach(i => {
+                        total++;
+                        if (i.completado) completados++;
+                        if (!i.completado && i.hora_sugerida) {
+                             const now = new Date();
+                             const [h, m] = i.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
+                             if ((now.getHours() * 60 + now.getMinutes()) - (h * 60 + m) > 15) vencidas++;
+                        }
+                    });
+                });
+                porcentaje = total === 0 ? 0 : Math.round((completados / total) * 100);
             }
-        };
-
-        fetchInitialData();
-        
-    }, [user?.id, authLoading, fetchDashboardStats, fetchMisIncidencias, fetchTareasDisponibles, fetchMisSesiones]);
-
-    const handleIncidenciaCreada = useCallback(() => {
-        setError(null);
-        const promisesToRun = [fetchDashboardStats()];
-        if (user && user.role === 'ANALISTA') {
-            promisesToRun.push(fetchMisIncidencias());
-        }
-        Promise.all(promisesToRun).catch(err => {
-            console.error("Error al actualizar widgets:", err);
-            setError(err.message);
+            return { id: c.campana_id, nombre: c.nombre_campana, avance: porcentaje, tiene_tareas: tareasCampaña.length > 0, vencidas };
         });
-    }, [user, fetchDashboardStats, fetchMisIncidencias]);
+        setCumplimientoCampanas(reporte.sort((a, b) => b.tiene_tareas - a.tiene_tareas || b.vencidas - a.vencidas));
+    };
 
-    if (authLoading || loading) {
-        return <Container className="text-center py-5"><Spinner /></Container>;
-    }
+    const procesarEstadoAnalistas = (todosAnalistas, cobertura) => {
+        const mapaActivos = {}; 
+        cobertura.forEach(camp => {
+            camp.nombres_analistas.forEach(nombreCompleto => {
+                if (!mapaActivos[nombreCompleto]) mapaActivos[nombreCompleto] = [];
+                mapaActivos[nombreCompleto].push(camp.nombre_campana);
+            });
+        });
 
-    if (!user) return null;
+        const estado = todosAnalistas.map(a => {
+            const key = Object.keys(mapaActivos).find(k => k.toLowerCase().includes(a.nombre.toLowerCase()));
+            const campañas = key ? mapaActivos[key] : [];
 
-    if (user.role === 'SUPERVISOR_OPERACIONES') {
-        return (
-            <Container className="py-5 text-center">
-                <Card className="shadow-lg p-4 mx-auto" style={{maxWidth: '600px'}}>
-                    <Card.Body>
-                        <Card.Title as="h2">¡Bienvenido, {user.nombre}!</Card.Title>
-                        <Link to="/hhee/portal" className="btn btn-primary btn-lg mt-4">Ir al Portal de HHEE</Link>
+            return {
+                id: a.id,
+                nombre: `${a.nombre} ${a.apellido}`,
+                campanas: campañas,
+                estado: campañas.length > 0 ? 'ACTIVO' : 'LIBRE'
+            };
+        });
+        setEstadoAnalistas(estado.sort((a, b) => (a.estado === 'ACTIVO' ? -1 : 1)));
+    };
+
+    // ========================================================================
+    // WIDGETS DE INCIDENCIAS (REUTILIZABLE) (Sin cambios)
+    // ========================================================================
+    const renderIncidentWidgets = () => (
+        <Row className="g-2 mb-3">
+            <Col xs={6} md={3}>
+                <Card 
+                    className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" 
+                    style={{cursor: 'pointer'}} 
+                    onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}
+                >
+                    <Card.Body className="p-2">
+                        <h4 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h4>
+                        <small style={{fontSize:'0.75rem'}}>Incidencias Activas 👆</small>
                     </Card.Body>
                 </Card>
+            </Col>
+            <Col xs={6} md={3}>
+                <Card 
+                    className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" 
+                    style={{cursor: 'pointer'}} 
+                    onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}
+                >
+                    <Card.Body className="p-2">
+                        <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h4>
+                        <small style={{fontSize:'0.75rem'}}>Sin Asignar 👆</small>
+                    </Card.Body>
+                </Card>
+            </Col>
+            <Col xs={6} md={3}>
+                <Card className="bg-success text-white text-center shadow-sm h-100 py-1">
+                    <Card.Body className="p-2">
+                        <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_cerradas_hoy || 0}</h4>
+                        <small style={{fontSize:'0.75rem'}}>Cerradas Hoy</small>
+                    </Card.Body>
+                </Card>
+            </Col>
+            <Col xs={6} md={3}>
+                <Card className="bg-info text-white text-center shadow-sm h-100 py-1">
+                    <Card.Body className="p-2">
+                        {user.role === 'ANALISTA' ? (
+                            <>
+                                <h4 className="mb-0 fw-bold">{statsIncidencias?.mis_incidencias_asignadas || 0}</h4>
+                                <small style={{fontSize:'0.75rem'}}>Mis Asignadas</small>
+                            </>
+                        ) : (
+                            <>
+                                <h4 className="mb-0 fw-bold">{estadoAnalistas.filter(a=>a.estado === 'ACTIVO').length} / {estadoAnalistas.length}</h4>
+                                <small style={{fontSize:'0.75rem'}}>Dotación Online</small>
+                            </>
+                        )}
+                    </Card.Body>
+                </Card>
+            </Col>
+        </Row>
+    );
+
+    // ========================================================================
+    // VISTA SUPERVISOR (Sin cambios)
+    // ========================================================================
+    if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
+        const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0);
+        const conCobertura = coberturaGlobal.filter(c => c.analistas_activos > 0);
+
+        return (
+            <Container fluid className="p-4">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                    <h3 className="fw-bold mb-0">Tablero de Control</h3>
+                    <Button variant="outline-primary" size="sm" onClick={cargarDatosDashboard}>Actualizar</Button>
+                </div>
+
+                {renderIncidentWidgets()}
+
+                <div className="mb-4">
+                    <h6 className="text-muted fw-bold mb-2">📡 Radar de Cobertura</h6>
+                    
+                    {sinCobertura.length > 0 && (
+                        <Row className="g-2 mb-3">
+                            {sinCobertura.map(c => (
+                                <Col md={2} sm={4} key={c.campana_id}>
+                                    <Card className="bg-danger text-white shadow h-100 animate__animated animate__pulse animate__infinite">
+                                        <Card.Body className="text-center p-2">
+                                            <div className="fs-3 mb-1">🚨</div>
+                                            <div className="fw-bold text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>{c.nombre_campana}</div>
+                                            <Badge bg="white" text="danger" style={{fontSize:'0.6rem'}}>DESCUBIERTA</Badge>
+                                        </Card.Body>
+                                    </Card>
+                                </Col>
+                            ))}
+                        </Row>
+                    )}
+                    
+                    <Row className="g-2">
+                        {conCobertura.map(c => (
+                            <Col md={2} sm={4} key={c.campana_id}>
+                                <OverlayTrigger
+                                    placement="top"
+                                    overlay={
+                                        <Tooltip id={`tooltip-${c.campana_id}`}>
+                                            <strong>Analistas conectados:</strong>
+                                            {c.nombres_analistas.length > 0 
+                                                ? c.nombres_analistas.map(n => <div key={n} style={{textAlign:'left'}}>• {n}</div>)
+                                                : <div>(Sin datos)</div>
+                                            }
+                                        </Tooltip>
+                                    }
+                                >
+                                    <Card className="border-success bg-light shadow-sm h-100" style={{cursor:'help'}}>
+                                        <Card.Body className="p-2 text-center">
+                                            <div className="fw-bold text-success text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>
+                                                {c.nombre_campana}
+                                            </div>
+                                            <small className="text-muted d-block" style={{fontSize:'0.75rem'}}>
+                                                👥 {c.analistas_activos} Analistas
+                                            </small>
+                                        </Card.Body>
+                                    </Card>
+                                </OverlayTrigger>
+                            </Col>
+                        ))}
+                    </Row>
+                </div>
+
+                <Row className="g-3">
+                    <Col lg={7}>
+                        <Card className="shadow-sm border-0 h-100">
+                            <Card.Header className="bg-white fw-bold">📊 Cumplimiento de Rutinas (Hoy)</Card.Header>
+                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '400px'}}>
+                                <Table hover className="mb-0 align-middle">
+                                    <thead className="bg-light small text-muted">
+                                        <tr><th className="ps-3">Campaña</th><th>Estado</th><th className="pe-3 text-end">Avance</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {cumplimientoCampanas.map(c => (
+                                            <tr key={c.id}>
+                                                <td className="ps-3 fw-semibold">
+                                                    {c.nombre}
+                                                    {c.vencidas > 0 && <Badge bg="danger" className="ms-2" style={{fontSize:'0.6em'}}>{c.vencidas} Vencidas</Badge>}
+                                                </td>
+                                                <td>
+                                                    {!c.tiene_tareas ? <Badge bg="light" text="muted" className="border fw-normal">Sin gestión iniciada</Badge> : 
+                                                    <ProgressBar style={{height: '6px', minWidth: '100px'}}>
+                                                        <ProgressBar variant={c.avance === 100 ? 'success' : (c.vencidas > 0 ? 'danger' : 'primary')} now={c.avance} />
+                                                    </ProgressBar>}
+                                                </td>
+                                                <td className="pe-3 text-end fw-bold text-muted">{c.tiene_tareas ? `${c.avance}%` : '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </Table>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                    <Col lg={5}>
+                        <Card className="shadow-sm border-0 h-100">
+                            <Card.Header className="bg-white fw-bold d-flex justify-content-between">
+                                <span>👥 Dotación</span>
+                                <Badge bg="light" text="dark" className="border">Total: {estadoAnalistas.length}</Badge>
+                            </Card.Header>
+                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '400px'}}>
+                                <Table hover className="mb-0 align-middle">
+                                    <tbody>
+                                        {estadoAnalistas.map(a => (
+                                            <tr key={a.id}>
+                                                <td className="ps-3">
+                                                    <div className="d-flex align-items-center">
+                                                        <div className={`rounded-circle d-flex justify-content-center align-items-center text-white me-2 shadow-sm ${a.estado === 'ACTIVO' ? 'bg-success' : 'bg-secondary'}`} style={{width:'30px', height:'30px', fontSize:'0.8rem'}}>
+                                                            {a.nombre.charAt(0)}
+                                                        </div>
+                                                        <span className={a.estado === 'LIBRE' ? 'text-muted' : 'fw-semibold'}>{a.nombre}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="text-end pe-3">
+                                                    {a.estado === 'ACTIVO' ? (
+                                                        <div className="d-flex flex-wrap justify-content-end gap-1">
+                                                            {a.campanas.map((c, i) => <Badge key={i} bg="success" className="fw-normal">{c}</Badge>)}
+                                                        </div>
+                                                    ) : <Badge bg="light" text="secondary" className="border fw-normal">Inactivo / Libre</Badge>}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </Table>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
+                
+                <Row className="mt-4">
+                    <Col>
+                        <Card className="shadow-sm border-0 bg-light">
+                            <Card.Body>
+                                <h6 className="text-muted mb-3">📝 Registro Rápido de Incidencias</h6>
+                                <PanelRegistroWidget />
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
             </Container>
         );
     }
 
+    // ========================================================================
+    // VISTA ANALISTA (CORREGIDA: USA WIDGET ALERTAS EN MODO 'MAIN')
+    // ========================================================================
+    const campañasSinAnalistas = coberturaGlobal.filter(c => c.analistas_activos === 0);
+
     return (
         <Container fluid className="p-4">
-            {/* --- CABECERA --- */}
+            {/* CABECERA */}
             <div className="d-flex justify-content-between align-items-center mb-4">
-                <h1 className="mb-0">Bitácora y Centro de Comando GTR</h1>
-                <Button 
-                    variant="light" 
-                    className="border shadow-sm d-flex align-items-center gap-2"
-                    onClick={handleManualRefresh}
-                    disabled={refreshing}
-                >
-                    {refreshing ? <Spinner size="sm" animation="border" /> : '🔄'}
-                    {refreshing ? 'Actualizando...' : 'Actualizar Todo'}
+                <div>
+                    <h2 className="mb-0">Hola, {user.nombre}</h2>
+                    <div className="d-flex align-items-center mt-1">
+                        <span className="text-muted me-2">Activo en:</span>
+                        {misSesionesActivas.length > 0 ? (
+                            misSesionesActivas.map((s, i) => <Badge key={i} bg="success" className="me-1">{s.campana.nombre}</Badge>)
+                        ) : (
+                            <Badge bg="secondary">Ninguna (Inicia sesión)</Badge>
+                        )}
+                    </div>
+                </div>
+                <Button variant="primary" onClick={() => setShowCampaignModal(true)} className="shadow-sm">
+                    🔄 Gestionar mi Actividad
                 </Button>
             </div>
-            
-            {/* --- BARRA DE CAMPAÑAS --- */}
-            <Card className="mb-4 shadow-sm border-primary">
-                <Card.Body className="d-flex justify-content-between align-items-center flex-wrap">
-                    <div>
-                        <h5 className="mb-1">Mis Campañas Activas:</h5>
-                        {misSesiones.length > 0 ? (
-                            <div className="d-flex gap-2 flex-wrap">
-                                {misSesiones.map(sesion => (
-                                    <Badge key={sesion.id} bg="success" className="p-2">
-                                        {sesion.campana.nombre}
-                                    </Badge>
-                                ))}
-                            </div>
-                        ) : (
-                            <span className="text-muted fst-italic">No estás gestionando ninguna campaña activamente.</span>
-                        )}
-                    </div>
-                    <Button 
-                        variant="outline-primary" 
-                        onClick={() => setShowCampaignModal(true)}
-                        className="mt-2 mt-md-0"
-                    >
-                        🔄 Gestionar mi Actividad
-                    </Button>
-                </Card.Body>
-            </Card>
 
-            {error && <Alert variant="danger">{error}</Alert>}
-
-            {/* --- ZONA PRINCIPAL DE TRABAJO --- */}
-            <Row className="g-4">
-                
-                {/* COLUMNA IZQUIERDA (66%): GESTIÓN DE INCIDENCIAS (Stats + Carga) */}
-                <Col lg={8}>
-                    {/* 1. Estadísticas (Budgets) */}
-                    <div className="mb-4">
-                        {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                            <EstadisticasGTRWidget stats={dashboardStats} user={user} />
-                        )}
-                        {user.role === 'ANALISTA' && (
-                            <EstadisticasGTRWidget 
-                                stats={dashboardStats} 
-                                user={user} 
-                                tareasDisponibles={tareasDisponibles.length} 
-                            />
-                        )}
-                    </div>
-
-                    {/* 2. Registro Rápido (Pegado abajo de los budgets) */}
-                    <div>
-                        <PanelRegistroWidget onUpdate={handleIncidenciaCreada} />
-                    </div>
-                </Col>
-
-                {/* COLUMNA DERECHA (33%): AGENDA DE ACTIVIDADES (Suelto) */}
-                <Col lg={4}>
-                     <WidgetAlertas />
+            {/* 1. OPORTUNIDADES DE COLABORACIÓN */}
+            <Row className="mb-4">
+                <Col xs={12}>
+                    <Card className="shadow-sm border-0 border-start border-danger border-4">
+                        <Card.Header className="bg-white fw-bold text-danger d-flex justify-content-between align-items-center">
+                            <span>🤝 Oportunidades de Colaboración (Campañas sin Analistas)</span>
+                            <Badge bg="danger">{campañasSinAnalistas.length}</Badge>
+                        </Card.Header>
+                        <Card.Body className="py-3">
+                            {campañasSinAnalistas.length > 0 ? (
+                                <Row className="g-2">
+                                    {campañasSinAnalistas.map(c => (
+                                        <Col md={2} sm={4} key={c.campana_id}>
+                                            <Card className="bg-danger text-white shadow h-100 animate__animated animate__pulse animate__infinite">
+                                                <Card.Body className="text-center p-2">
+                                                    <div className="fs-3 mb-1">🚨</div>
+                                                    <div className="fw-bold text-truncate" title={c.nombre_campana} style={{fontSize:'0.8rem'}}>
+                                                        {c.nombre_campana}
+                                                    </div>
+                                                    <Badge bg="white" text="danger" style={{fontSize:'0.55rem'}}>AYUDA</Badge>
+                                                </Card.Body>
+                                            </Card>
+                                        </Col>
+                                    ))}
+                                </Row>
+                            ) : (
+                                <div className="text-success d-flex align-items-center">
+                                    <span className="fs-5 me-2">✅</span> <span>¡Todo cubierto! Excelente trabajo de equipo.</span>
+                                </div>
+                            )}
+                        </Card.Body>
+                    </Card>
                 </Col>
             </Row>
 
-            {/* --- ZONA INFERIOR: TABLAS Y LISTADOS --- */}
-            <Row className="g-4 mt-2">
-                {user.role === 'ANALISTA' && (
-                    <Col md={12}>
-                        <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
-                    </Col>
-                )}
+            {/* 2. ZONA PRINCIPAL */}
+            <Row className="g-4 mb-4">
+                
+                {/* COLUMNA IZQUIERDA (40%) */}
+                <Col lg={5}>
+                    {renderIncidentWidgets()}
+                    
+                    <Card className="shadow-sm border-0 bg-light mb-3">
+                        <Card.Body className="py-2 px-3">
+                            <h6 className="text-muted small mb-2">⚡ Nueva Incidencia</h6>
+                            <PanelRegistroWidget compact={true} />
+                        </Card.Body>
+                    </Card>
 
-                {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
-                    <Col md={12}>
-                        <CoberturaWidget refreshTrigger={refreshTrigger} />
-                    </Col>
-                )}
+                    <div style={{maxHeight:'400px', overflowY:'auto'}}>
+                         <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
+                    </div>
+                </Col>
+
+                {/* COLUMNA DERECHA (60%): AHORA USA EL WIDGET DIRECTAMENTE */}
+                <Col lg={7}>
+                    {/* AQUÍ ESTÁ LA MAGIA: Reutilizamos el componente con variant="main" */}
+                    <WidgetAlertas variant="main" />
+                </Col>
             </Row>
 
             <CampaignSelector 
                 show={showCampaignModal} 
                 handleClose={() => setShowCampaignModal(false)}
-                onUpdate={fetchMisSesiones} 
+                onUpdate={cargarDatosDashboard} 
             />
         </Container>
     );
