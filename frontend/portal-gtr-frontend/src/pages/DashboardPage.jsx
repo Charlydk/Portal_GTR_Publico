@@ -1,7 +1,7 @@
 // RUTA: src/pages/DashboardPage.jsx
 
 import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { API_BASE_URL, fetchWithAuth } from '../api'; 
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 // Widgets
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
-import WidgetAlertas from '../components/dashboard/WidgetAlertas'; // Importamos el componente
+import WidgetAlertas from '../components/dashboard/WidgetAlertas'; 
 import CampaignSelector from '../components/dashboard/CampaignSelector';
 
 function DashboardPage() {
@@ -25,7 +25,6 @@ function DashboardPage() {
     const [misIncidencias, setMisIncidencias] = useState([]);
     const [showCampaignModal, setShowCampaignModal] = useState(false);
     const [misSesionesActivas, setMisSesionesActivas] = useState([]); 
-    // SE ELIMINÓ: const [misTareasHoy, setMisTareasHoy] = useState([]);
 
     // Estados Supervisor
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
@@ -40,6 +39,7 @@ function DashboardPage() {
     const cargarDatosDashboard = async () => {
         setLoading(true);
         try {
+            // 1. Datos Comunes
             const [resStats, resCobertura] = await Promise.all([
                 fetchWithAuth(`${API_BASE_URL}/gtr/dashboard/stats`),
                 fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/cobertura`)
@@ -72,8 +72,6 @@ function DashboardPage() {
             const dataSesiones = await resSesiones.json();
             setMisSesionesActivas(dataSesiones);
         }
-
-        // SE ELIMINÓ: La carga manual de tareas (/gtr/tareas/). Ahora lo hace el widget.
     };
 
     const cargarDatosEspecificosSupervisor = async (dataCobertura) => {
@@ -91,7 +89,7 @@ function DashboardPage() {
         }
     };
 
-    // --- PROCESADORES SUPERVISOR (Sin cambios) ---
+    // --- PROCESADORES SUPERVISOR ---
     const procesarCumplimiento = (tareas, cobertura) => {
         const reporte = cobertura.map(c => {
             const tareasCampaña = tareas.filter(t => t.campana_id === c.campana_id);
@@ -140,16 +138,12 @@ function DashboardPage() {
     };
 
     // ========================================================================
-    // WIDGETS DE INCIDENCIAS (REUTILIZABLE) (Sin cambios)
+    // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPLETO)
     // ========================================================================
-    const renderIncidentWidgets = () => (
+    const renderIncidentWidgetsSupervisor = () => (
         <Row className="g-2 mb-3">
             <Col xs={6} md={3}>
-                <Card 
-                    className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" 
-                    style={{cursor: 'pointer'}} 
-                    onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}
-                >
+                <Card className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}>
                     <Card.Body className="p-2">
                         <h4 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h4>
                         <small style={{fontSize:'0.75rem'}}>Incidencias Activas 👆</small>
@@ -157,11 +151,7 @@ function DashboardPage() {
                 </Card>
             </Col>
             <Col xs={6} md={3}>
-                <Card 
-                    className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" 
-                    style={{cursor: 'pointer'}} 
-                    onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}
-                >
+                <Card className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}>
                     <Card.Body className="p-2">
                         <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h4>
                         <small style={{fontSize:'0.75rem'}}>Sin Asignar 👆</small>
@@ -179,17 +169,8 @@ function DashboardPage() {
             <Col xs={6} md={3}>
                 <Card className="bg-info text-white text-center shadow-sm h-100 py-1">
                     <Card.Body className="p-2">
-                        {user.role === 'ANALISTA' ? (
-                            <>
-                                <h4 className="mb-0 fw-bold">{statsIncidencias?.mis_incidencias_asignadas || 0}</h4>
-                                <small style={{fontSize:'0.75rem'}}>Mis Asignadas</small>
-                            </>
-                        ) : (
-                            <>
-                                <h4 className="mb-0 fw-bold">{estadoAnalistas.filter(a=>a.estado === 'ACTIVO').length} / {estadoAnalistas.length}</h4>
-                                <small style={{fontSize:'0.75rem'}}>Dotación Online</small>
-                            </>
-                        )}
+                        <h4 className="mb-0 fw-bold">{estadoAnalistas.filter(a=>a.estado === 'ACTIVO').length} / {estadoAnalistas.length}</h4>
+                        <small style={{fontSize:'0.75rem'}}>Dotación Online</small>
                     </Card.Body>
                 </Card>
             </Col>
@@ -197,7 +178,7 @@ function DashboardPage() {
     );
 
     // ========================================================================
-    // VISTA SUPERVISOR (Sin cambios)
+    // VISTA SUPERVISOR
     // ========================================================================
     if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
         const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0);
@@ -210,11 +191,10 @@ function DashboardPage() {
                     <Button variant="outline-primary" size="sm" onClick={cargarDatosDashboard}>Actualizar</Button>
                 </div>
 
-                {renderIncidentWidgets()}
+                {renderIncidentWidgetsSupervisor()}
 
                 <div className="mb-4">
                     <h6 className="text-muted fw-bold mb-2">📡 Radar de Cobertura</h6>
-                    
                     {sinCobertura.length > 0 && (
                         <Row className="g-2 mb-3">
                             {sinCobertura.map(c => (
@@ -230,30 +210,14 @@ function DashboardPage() {
                             ))}
                         </Row>
                     )}
-                    
                     <Row className="g-2">
                         {conCobertura.map(c => (
                             <Col md={2} sm={4} key={c.campana_id}>
-                                <OverlayTrigger
-                                    placement="top"
-                                    overlay={
-                                        <Tooltip id={`tooltip-${c.campana_id}`}>
-                                            <strong>Analistas conectados:</strong>
-                                            {c.nombres_analistas.length > 0 
-                                                ? c.nombres_analistas.map(n => <div key={n} style={{textAlign:'left'}}>• {n}</div>)
-                                                : <div>(Sin datos)</div>
-                                            }
-                                        </Tooltip>
-                                    }
-                                >
+                                <OverlayTrigger placement="top" overlay={<Tooltip id={`tooltip-${c.campana_id}`}><strong>Analistas conectados:</strong>{c.nombres_analistas.length > 0 ? c.nombres_analistas.map(n => <div key={n} style={{textAlign:'left'}}>• {n}</div>) : <div>(Sin datos)</div>}</Tooltip>}>
                                     <Card className="border-success bg-light shadow-sm h-100" style={{cursor:'help'}}>
                                         <Card.Body className="p-2 text-center">
-                                            <div className="fw-bold text-success text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>
-                                                {c.nombre_campana}
-                                            </div>
-                                            <small className="text-muted d-block" style={{fontSize:'0.75rem'}}>
-                                                👥 {c.analistas_activos} Analistas
-                                            </small>
+                                            <div className="fw-bold text-success text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>{c.nombre_campana}</div>
+                                            <small className="text-muted d-block" style={{fontSize:'0.75rem'}}>👥 {c.analistas_activos} Analistas</small>
                                         </Card.Body>
                                     </Card>
                                 </OverlayTrigger>
@@ -342,7 +306,7 @@ function DashboardPage() {
     }
 
     // ========================================================================
-    // VISTA ANALISTA (CORREGIDA: USA WIDGET ALERTAS EN MODO 'MAIN')
+    // VISTA ANALISTA (CORREGIDA Y COMPACTA)
     // ========================================================================
     const campañasSinAnalistas = coberturaGlobal.filter(c => c.analistas_activos === 0);
 
@@ -366,7 +330,7 @@ function DashboardPage() {
                 </Button>
             </div>
 
-            {/* 1. OPORTUNIDADES DE COLABORACIÓN */}
+            {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
             <Row className="mb-4">
                 <Col xs={12}>
                     <Card className="shadow-sm border-0 border-start border-danger border-4">
@@ -374,18 +338,18 @@ function DashboardPage() {
                             <span>🤝 Oportunidades de Colaboración (Campañas sin Analistas)</span>
                             <Badge bg="danger">{campañasSinAnalistas.length}</Badge>
                         </Card.Header>
-                        <Card.Body className="py-3">
+                        <Card.Body className="py-2">
                             {campañasSinAnalistas.length > 0 ? (
                                 <Row className="g-2">
+                                    {/* MÁS PEQUEÑAS: xs=6 md=3 lg=2 */}
                                     {campañasSinAnalistas.map(c => (
-                                        <Col md={2} sm={4} key={c.campana_id}>
-                                            <Card className="bg-danger text-white shadow h-100 animate__animated animate__pulse animate__infinite">
+                                        <Col xs={6} md={3} lg={2} key={c.campana_id}>
+                                            <Card className="bg-danger text-white shadow-sm h-100 animate__animated animate__pulse animate__infinite border-0">
                                                 <Card.Body className="text-center p-2">
-                                                    <div className="fs-3 mb-1">🚨</div>
-                                                    <div className="fw-bold text-truncate" title={c.nombre_campana} style={{fontSize:'0.8rem'}}>
+                                                    <div className="fs-4 mb-1">🚨</div>
+                                                    <div className="fw-bold text-truncate small" title={c.nombre_campana}>
                                                         {c.nombre_campana}
                                                     </div>
-                                                    <Badge bg="white" text="danger" style={{fontSize:'0.55rem'}}>AYUDA</Badge>
                                                 </Card.Body>
                                             </Card>
                                         </Col>
@@ -406,7 +370,34 @@ function DashboardPage() {
                 
                 {/* COLUMNA IZQUIERDA (40%) */}
                 <Col lg={5}>
-                    {renderIncidentWidgets()}
+                    
+                    {/* WIDGETS COMPACTOS PERSONALIZADOS (SOLO ACTIVAS Y SIN ASIGNAR) */}
+                    <Row className="g-2 mb-3">
+                        <Col xs={6}>
+                            <Card 
+                                className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" 
+                                style={{cursor: 'pointer'}} 
+                                onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}
+                            >
+                                <Card.Body className="p-2 d-flex flex-column justify-content-center">
+                                    <h5 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h5>
+                                    <small style={{fontSize:'0.65rem'}}>Incidencias Activas</small>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                        <Col xs={6}>
+                            <Card 
+                                className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" 
+                                style={{cursor: 'pointer'}} 
+                                onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}
+                            >
+                                <Card.Body className="p-2 d-flex flex-column justify-content-center">
+                                    <h5 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h5>
+                                    <small style={{fontSize:'0.65rem'}}>Sin Asignar</small>
+                                </Card.Body>
+                            </Card>
+                        </Col>
+                    </Row>
                     
                     <Card className="shadow-sm border-0 bg-light mb-3">
                         <Card.Body className="py-2 px-3">
@@ -420,9 +411,8 @@ function DashboardPage() {
                     </div>
                 </Col>
 
-                {/* COLUMNA DERECHA (60%): AHORA USA EL WIDGET DIRECTAMENTE */}
+                {/* COLUMNA DERECHA (60%): WIDGET ALERTAS (MAIN MODE) */}
                 <Col lg={7}>
-                    {/* AQUÍ ESTÁ LA MAGIA: Reutilizamos el componente con variant="main" */}
                     <WidgetAlertas variant="main" />
                 </Col>
             </Row>
