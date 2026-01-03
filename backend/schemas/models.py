@@ -24,10 +24,24 @@ class PasswordUpdate(BaseModel):
 class CampanaBase(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
+    hora_inicio_operacion: Optional[time] = None
+    hora_fin_operacion: Optional[time] = None
     fecha_inicio: Optional[datetime] = None
     fecha_fin: Optional[datetime] = None
     lobs_nombres: Optional[List[str]] = None
+    hora_inicio_semana: Optional[time] = None
+    hora_fin_semana: Optional[time] = None
+    hora_inicio_sabado: Optional[time] = None
+    hora_fin_sabado: Optional[time] = None
+    hora_inicio_domingo: Optional[time] = None
+    hora_fin_domingo: Optional[time] = None
 
+class CampanaUpdate(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    hora_inicio_operacion: Optional[time] = None
+    hora_fin_operacion: Optional[time] = None
+    
 class TareaBase(BaseModel):
     titulo: str
     descripcion: Optional[str] = None
@@ -48,6 +62,7 @@ class ChecklistItemBase(BaseModel):
     descripcion: str
     completado: Optional[bool] = False
     tarea_id: int
+    hora_sugerida: Optional[time] = None
 
 class ChecklistItemUpdate(BaseModel):
     descripcion: Optional[str] = None
@@ -191,6 +206,8 @@ class ChecklistItemSimple(BaseModel):
     id: int
     descripcion: str
     completado: bool
+    fecha_completado: Optional[datetime] = None
+    hora_sugerida: Optional[time] = None
     class Config:
         from_attributes = True
 
@@ -329,6 +346,7 @@ class Tarea(TareaBase):
     id: int
     fecha_creacion: datetime
     fecha_finalizacion: Optional[datetime] = None
+    es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
     campana: Optional[CampanaSimple] = None
     checklist_items: List[ChecklistItemSimple] = []
@@ -342,10 +360,12 @@ class TareaListOutput(BaseModel):
     titulo: str
     progreso: ProgresoTarea
     fecha_vencimiento: datetime
+    es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
     campana: Optional[CampanaSimple] = None
+    checklist_items: List[ChecklistItemSimple] = []
     class Config:
-        from_attributes = True
+        from_attributes = True  # Para Pydantic V2
 
 class ChecklistItem(ChecklistItemBase):
     id: int
@@ -357,6 +377,13 @@ class ChecklistItem(ChecklistItemBase):
 class PlantillaChecklistItemBase(BaseModel):
     descripcion: str
     hora_sugerida: Optional[time] = None
+    lunes: bool = True
+    martes: bool = True
+    miercoles: bool = True
+    jueves: bool = True
+    viernes: bool = True
+    sabado: bool = True
+    domingo: bool = True
 
 class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
     pass
@@ -366,6 +393,31 @@ class PlantillaChecklistItem(PlantillaChecklistItemBase):
     orden: int
     campana_id: int
 
+    class Config:
+        from_attributes = True
+
+# Esquema para recibir la petición de entrada
+class CheckInCreate(BaseModel):
+    campana_id: int
+
+# Esquema para responder (mostrando detalles de la campaña)
+class SesionActiva(BaseModel):
+    id: int
+    fecha_inicio: datetime
+    campana: Campana
+    campana_id: int
+    campana: CampanaSimple
+    
+    class Config:
+        from_attributes = True
+
+class SesionCampanaSchema(BaseModel):
+    id: int
+    analista_id: int
+    campana_id: int
+    fecha_inicio: datetime
+    active: bool = True
+    
     class Config:
         from_attributes = True
 
@@ -542,6 +594,14 @@ class DashboardIncidenciaWidget(BaseModel):
     class Config:
         from_attributes = True
 
+class CoberturaCampana(BaseModel):
+    campana_id: int
+    nombre_campana: str
+    estado: str  # "CUBIERTA", "DESCUBIERTA", "CERRADA", "SIN_HORARIO"
+    analistas_activos: int
+    hora_inicio_hoy: Optional[time] = None
+    hora_fin_hoy: Optional[time] = None
+    nombres_analistas: List[str] = []
 
 
 # --- Forward References Update ---

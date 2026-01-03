@@ -1,233 +1,306 @@
-// src/pages/TareasPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert, ListGroup, Button, Badge, Form } from 'react-bootstrap';
-import { useAuth } from '../hooks/useAuth';
-import { API_BASE_URL, GTR_API_URL, fetchWithAuth } from '../api';
+// RUTA: src/pages/TareasPage.jsx
+
+import React, { useState, useEffect } from 'react';
+import { Container, Table, Badge, ProgressBar, Button, Card, Row, Col, Form, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
-import { formatDateTime } from '../utils/dateFormatter';
+import { API_BASE_URL, fetchWithAuth } from '../api';
 
-function TareasPage() {
-    const { user, authToken, loading: authLoading } = useAuth();
+const TareasPage = () => {
     const navigate = useNavigate();
-
-    const [allTasks, setAllTasks] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    // --- INICIO DE CAMBIOS: Estado de filtros ampliado ---
-    const [filtros, setFiltros] = useState({
-        analistaId: '',
-        campanaId: '',
-        estado: '',
-        fechaDesde: '',
-        fechaHasta: ''
-    });
-    const [analistas, setAnalistas] = useState([]);
+    
+    // --- ESTADOS ---
+    const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]); 
+    const [campanaFiltro, setCampanaFiltro] = useState('');
+    const [estadoFiltro, setEstadoFiltro] = useState('');
+    
+    const [tareas, setTareas] = useState([]);
     const [campanas, setCampanas] = useState([]);
-    // --- FIN DE CAMBIOS ---
+    const [rowsToDisplay, setRowsToDisplay] = useState([]); // Nueva lista combinada
+    const [loading, setLoading] = useState(true);
 
-    // La función fetchFilterData ahora también obtiene campañas para los analistas
-    const fetchFilterData = useCallback(async () => {
-        if (!authToken || !user) return;
-        try {
-            // Supervisores obtienen todo
-            if (user.role !== 'ANALISTA') {
-                const [analistasRes, campanasRes] = await Promise.all([
-                    fetchWithAuth(`${GTR_API_URL}/analistas/` ),
-                    fetchWithAuth(`${GTR_API_URL}/campanas/` )
-                ]);
-                if (!analistasRes.ok) throw new Error('No se pudo cargar la lista de analistas.');
-                if (!campanasRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
-                setAnalistas(await analistasRes.json());
-                setCampanas(await campanasRes.json());
-            } else { // Analistas obtienen solo sus campañas
-                const userRes = await fetchWithAuth(`${API_BASE_URL}/users/me/`);
-                if (!userRes.ok) throw new Error('No se pudo cargar la lista de campañas.');
-                const userData = await userRes.json();
-                setCampanas(userData.campanas_asignadas || []);
-            }
-        } catch (err) {
-            setError(err.message);
+    // Carga inicial de Campañas
+    useEffect(() => {
+        cargarCampanas();
+    }, []);
+
+    // Recargar tareas al cambiar filtros
+    useEffect(() => {
+        cargarTareas();
+    }, [fechaFiltro, campanaFiltro, estadoFiltro]);
+
+    // --- LÓGICA DE FUSIÓN (EL CEREBRO NUEVO) ---
+    useEffect(() => {
+        if (loading) return;
+
+        let combinedRows = [...tareas];
+
+        // Solo agregamos las "Fantasmas" si estamos viendo el día de HOY y no hay filtros restrictivos
+        const esHoy = fechaFiltro === new Date().toISOString().split('T')[0];
+        const filtroEstadoPermiteVerPendientes = estadoFiltro === '' || estadoFiltro === 'PENDIENTE';
+
+        if (esHoy && filtroEstadoPermiteVerPendientes) {
+            // 1. Identificar qué campañas YA tienen tarea
+            const idsCampanasConTarea = new Set(tareas.map(t => t.campana_id));
+
+            // 2. Buscar campañas que FALTAN
+            const campanasFaltantes = campanas.filter(c => {
+                // Si el usuario filtró por una campaña específica, solo revisamos esa
+                if (campanaFiltro && parseInt(campanaFiltro) !== c.id) return false;
+                
+                // Si la campaña ya tiene tarea, la ignoramos (ya está en la lista 'tareas')
+                return !idsCampanasConTarea.has(c.id);
+            });
+
+            // 3. Crear objetos "Fantasma" para las faltantes
+            const filasFantasma = campanasFaltantes.map(c => ({
+                id: `ghost-${c.id}`, // ID falso
+                es_fantasma: true,   // Bandera para identificarla
+                campana: c,
+                titulo: `Rutina Diaria - ${c.nombre}`,
+                progreso: 'SIN_GESTION', // Estado especial
+                analista: null
+            }));
+
+            // 4. Agregar al principio de la lista (Son Urgentes)
+            combinedRows = [...filasFantasma, ...combinedRows];
         }
-    }, [authToken, user]);
 
-    // La función fetchAllTasks ahora es mucho más inteligente
-    const fetchAllTasks = useCallback(async () => {
-        if (!authToken || !user) return;
-        setLoading(true);
-        setError(null);
+        setRowsToDisplay(combinedRows);
+
+    }, [tareas, campanas, fechaFiltro, campanaFiltro, estadoFiltro, loading]);
+
+
+    const cargarCampanas = async () => {
         try {
-            const params = new URLSearchParams();
-            if (user.role === 'ANALISTA') {
-                params.append('analista_id', user.id);
-            } else if (filtros.analistaId) {
-                params.append('analista_id', filtros.analistaId);
+            const res = await fetchWithAuth(`${API_BASE_URL}/gtr/campanas/listado-simple/`);
+            if (res.ok) setCampanas(await res.json());
+        } catch (error) { console.error("Error cargando campañas"); }
+    };
+
+    const cargarTareas = async () => {
+        setLoading(true);
+        try {
+            let url = `${API_BASE_URL}/gtr/monitor/tareas?fecha=${fechaFiltro}`;
+            if (campanaFiltro) url += `&campana_id=${campanaFiltro}`;
+            if (estadoFiltro) url += `&estado=${estadoFiltro}`;
+
+            const response = await fetchWithAuth(url);
+            if (response.ok) {
+                const data = await response.json();
+                // Ordenar tareas reales: Prioridad Vencidas
+                const sorted = data.sort((a, b) => {
+                    const statsA = analizarProgreso(a.checklist_items);
+                    const statsB = analizarProgreso(b.checklist_items);
+                    if (statsB.late !== statsA.late) return statsB.late - statsA.late;
+                    return statsA.pctOk - statsB.pctOk;
+                });
+                setTareas(sorted);
             }
-
-            if (filtros.campanaId) params.append('campana_id', filtros.campanaId);
-            if (filtros.estado) params.append('estado', filtros.estado);
-            if (filtros.fechaDesde) params.append('fecha_desde', filtros.fechaDesde);
-            if (filtros.fechaHasta) params.append('fecha_hasta', filtros.fechaHasta);
-            
-            const queryString = params.toString();
-            const campaignTasksUrl = `${GTR_API_URL}/tareas/?${queryString}`;
-            const generatedTasksUrl = `${GTR_API_URL}/tareas_generadas_por_avisos/?${queryString}`;
-
-            const [campaignTasksResponse, generatedTasksResponse] = await Promise.all([
-                fetchWithAuth(campaignTasksUrl),
-                fetchWithAuth(generatedTasksUrl)
-            ]);
-
-            if (!campaignTasksResponse.ok) throw new Error('Error al cargar tareas de campaña.');
-            if (!generatedTasksResponse.ok) throw new Error('Error al cargar tareas generadas.');
-
-            const campaignTasks = (await campaignTasksResponse.json()).map(t => ({ ...t, type: 'campaign' }));
-            const generatedTasks = (await generatedTasksResponse.json()).map(t => ({ ...t, type: 'generated' }));
-
-            const combinedTasks = [...campaignTasks, ...generatedTasks].sort((a, b) => new Date(b.fecha_creacion) - new Date(a.fecha_creacion));
-            setAllTasks(combinedTasks);
-        } catch (err) {
-            setError(err.message);
+        } catch (error) {
+            console.error("Error cargando tareas:", error);
         } finally {
             setLoading(false);
         }
-    }, [authToken, user, filtros]);
-
-    useEffect(() => {
-      if (!authLoading && user) {
-          fetchFilterData(); // Carga los datos para los selectores
-          fetchAllTasks(); // Hace la primera búsqueda inicial sin filtros
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user]); // Se ejecuta solo una vez cuando el usuario carga
-  
-
-    const handleFilterChange = (e) => {
-        setFiltros(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    const clearFilters = () => {
-        setFiltros({ analistaId: '', campanaId: '', estado: '', fechaDesde: '', fechaHasta: '' });
-    };
-    
-    // El resto de funciones no cambian
-    /*const formatDateTime = (apiDateString) => {
-        if (!apiDateString) return 'N/A';
-        const date = new Date(apiDateString + 'Z');
-        if (isNaN(date.getTime())) return 'Fecha inválida';
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${day}/${month}/${year}, ${hours}:${minutes}`;
-    };*/
+    const analizarProgreso = (items) => {
+        if (!items || items.length === 0) return { pctOk: 0, late: 0, pending: 0 };
+        const now = new Date();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        let ok = 0, late = 0, pending = 0;
 
-    if (authLoading) return <Container className="text-center py-5"><Spinner /></Container>;
+        items.forEach(item => {
+            if (item.completado) ok++;
+            else if (item.hora_sugerida) {
+                const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
+                if ((currentMinutes - (h * 60 + m)) > 15) late++;
+                else pending++;
+            } else pending++;
+        });
+        const total = items.length;
+        return { pctOk: (ok / total) * 100, pctLate: (late / total) * 100, pctPending: (pending / total) * 100, ok, late, pending };
+    };
 
     return (
-        <Container className="py-5">
-            <h1 className="mb-4 text-center text-primary">Gestión de Tareas</h1>
-            {error && <Alert variant="danger">{error}</Alert>}
+        <Container fluid className="p-4">
+            <div className="d-flex justify-content-between align-items-center mb-4">
+                <h2 className="mb-0">🛡️ Monitor de Cumplimiento</h2>
+                <div className="d-flex gap-2">
+                    <Button variant="outline-primary" onClick={cargarTareas}>🔄 Refrescar</Button>
+                </div>
+            </div>
 
-            {/* --- INICIO DE CAMBIOS: El formulario de filtros ahora es para todos --- */}
-            <Card className="mb-4 shadow-sm">
-                <Card.Body>
-                    <Row className="g-3">
-                        {user.role !== 'ANALISTA' && (
-                            <Col md={4}>
-                                <Form.Group>
-                                    <Form.Label>Analista</Form.Label>
-                                    <Form.Select name="analistaId" value={filtros.analistaId} onChange={handleFilterChange}>
-                                        <option value="">Todos</option>
-                                        <option value="0">Sin Asignar</option>
-                                        {analistas.map(a => <option key={a.id} value={a.id}>{a.nombre} {a.apellido}</option>)}
-                                    </Form.Select>
-                                </Form.Group>
-                            </Col>
-                        )}
-                        <Col md={user.role !== 'ANALISTA' ? 4 : 6}>
-                            <Form.Group>
-                                <Form.Label>Campaña</Form.Label>
-                                <Form.Select name="campanaId" value={filtros.campanaId} onChange={handleFilterChange}>
-                                    <option value="">Todas</option>
-                                    <option value="0">Sin Campaña (Personal)</option>
-                                    {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                                </Form.Select>
-                            </Form.Group>
+            {/* FILTROS */}
+            <Card className="shadow-sm border-0 mb-4 bg-light">
+                <Card.Body className="py-3">
+                    <Row className="g-3 align-items-end">
+                        <Col md={3}>
+                            <Form.Label className="small text-muted fw-bold">Fecha de Gestión</Form.Label>
+                            <Form.Control type="date" value={fechaFiltro} onChange={(e) => setFechaFiltro(e.target.value)} />
                         </Col>
-                        <Col md={user.role !== 'ANALISTA' ? 4 : 6}>
-                            <Form.Group>
-                                <Form.Label>Estado</Form.Label>
-                                <Form.Select name="estado" value={filtros.estado} onChange={handleFilterChange}>
-                                    <option value="">Todos</option>
-                                    <option value="PENDIENTE">Pendiente</option>
-                                    <option value="EN_PROGRESO">En Progreso</option>
-                                    <option value="COMPLETADA">Completada</option>
-                                    <option value="CANCELADA">Cancelada</option>
-                                </Form.Select>
-                            </Form.Group>
+                        <Col md={3}>
+                            <Form.Label className="small text-muted fw-bold">Campaña</Form.Label>
+                            <Form.Select value={campanaFiltro} onChange={(e) => setCampanaFiltro(e.target.value)}>
+                                <option value="">Todas las campañas</option>
+                                {campanas.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                            </Form.Select>
                         </Col>
-                        <Col md={4}>
-                            <Form.Group>
-                                <Form.Label>Vencimiento Desde</Form.Label>
-                                <Form.Control type="date" name="fechaDesde" value={filtros.fechaDesde} onChange={handleFilterChange} />
-                            </Form.Group>
+                        <Col md={3}>
+                            <Form.Label className="small text-muted fw-bold">Estado</Form.Label>
+                            <Form.Select value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)}>
+                                <option value="">Todos</option>
+                                <option value="PENDIENTE">Pendiente</option>
+                                <option value="EN_PROGRESO">En Progreso</option>
+                                <option value="COMPLETADA">Completada</option>
+                            </Form.Select>
                         </Col>
-                        <Col md={4}>
-                            <Form.Group>
-                                <Form.Label>Vencimiento Hasta</Form.Label>
-                                <Form.Control type="date" name="fechaHasta" value={filtros.fechaHasta} onChange={handleFilterChange} />
-                            </Form.Group>
-                        </Col>
-                        <Col md={6} className="d-flex align-items-end gap-2">
-                            <Button variant="primary" onClick={fetchAllTasks} className="w-100">
-                                Aplicar Filtros
-                            </Button>
-                            <Button variant="secondary" onClick={clearFilters} className="w-100">
-                                Limpiar Filtros
-                            </Button>
+                        <Col md={3} className="text-end">
+                            <div className="mb-2 text-muted small">Resultados</div>
+                            <h4 className="mb-0 text-primary fw-bold">{rowsToDisplay.length} <span className="fs-6 text-muted fw-normal">rutinas</span></h4>
                         </Col>
                     </Row>
                 </Card.Body>
             </Card>
-            {/* --- FIN DE CAMBIOS --- */}
 
-            <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4>{loading ? 'Cargando...' : `Mostrando ${allTasks.length} tareas`}</h4>
-                <Button variant="primary" onClick={() => navigate('/tareas/crear')}>
-                    Crear Nueva Tarea
-                </Button>
-            </div>
+            {/* TABLA */}
+            <Card className="shadow-sm border-0">
+                {loading ? (
+                    <div className="text-center py-5"><Spinner animation="border" variant="primary" /></div>
+                ) : (
+                    <Table hover responsive className="mb-0 align-middle">
+                        <thead className="bg-white text-muted small text-uppercase">
+                            <tr>
+                                <th className="ps-4">Estado</th>
+                                <th>Campaña</th>
+                                <th>Analista / Equipo</th>
+                                <th>Rutina / Tarea</th>
+                                <th style={{width: '25%'}}>Progreso y Riesgo</th>
+                                <th className="text-end pe-4">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rowsToDisplay.length > 0 ? (
+                                rowsToDisplay.map(tarea => {
+                                    
+                                    // --- RENDERIZADO DE FILA "FANTASMA" (SIN GESTIÓN) ---
+                                    if (tarea.es_fantasma) {
+                                        return (
+                                            <tr key={tarea.id} className="table-danger" style={{borderLeft: '4px solid #dc3545'}}>
+                                                <td className="ps-4">
+                                                    <Badge bg="danger" className="fw-normal px-2 py-1 animate__animated animate__pulse animate__infinite">
+                                                        🚨 SIN GESTIÓN
+                                                    </Badge>
+                                                </td>
+                                                <td className="fw-bold text-danger">{tarea.campana?.nombre}</td>
+                                                <td>
+                                                    <span className="text-muted fst-italic">🚫 Nadie conectado</span>
+                                                </td>
+                                                <td>
+                                                    <div className="fw-bold text-secondary">{tarea.titulo}</div>
+                                                    <div className="small text-danger">⚠️ Requiere atención inmediata</div>
+                                                </td>
+                                                <td>
+                                                    <ProgressBar now={0} style={{height: '10px', backgroundColor: '#e9ecef'}} />
+                                                </td>
+                                                <td className="text-end pe-4">
+                                                    <Button size="sm" variant="outline-secondary" disabled>
+                                                        Pendiente de Inicio
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    }
 
-            {loading ? (
-                <div className="text-center"><Spinner /></div>
-            ) : allTasks.length > 0 ? (
-                // ... (La lista de tareas no necesita cambios)
-                 <ListGroup variant="flush">
-                    {allTasks.map(tarea => (
-                       <ListGroup.Item key={`${tarea.type}-${tarea.id}`} className="mb-2 shadow-sm rounded p-3">
-                            <Row>
-                                <Col>
-                                    <h5>{tarea.titulo} <Badge bg={tarea.type === 'campaign' ? 'primary' : 'info'}>{tarea.type === 'campaign' ? 'Campaña' : 'Aviso'}</Badge></h5>
-                                    <p className="mb-1 text-muted small">{tarea.descripcion}</p>
-                                    <small>Asignado a: {tarea.analista?.nombre || tarea.analista_asignado?.nombre || 'N/A'} {tarea.analista?.apellido || tarea.analista_asignado?.apellido}</small>
-                                    <br/>
-                                    <small>Estado: <Badge bg={tarea.progreso === 'PENDIENTE' ? 'secondary' : 'success'}>{tarea.progreso}</Badge></small>
-                                    {tarea.fecha_vencimiento && <small className="ms-2 text-danger">Vence: {formatDateTime(tarea.fecha_vencimiento)}</small>}
-                                </Col>
-                                <Col xs="auto" className="d-flex flex-column justify-content-center">
-                                    <Button variant="outline-primary" size="sm" onClick={() => navigate(tarea.type === 'campaign' ? `/tareas/${tarea.id}` : `/tareas-generadas/${tarea.id}`)}>Ver Detalles</Button>
-                                </Col>
-                            </Row>
-                        </ListGroup.Item>
-                    ))}
-                </ListGroup>
-            ) : (
-                <Alert variant="info">No se encontraron tareas con los filtros seleccionados.</Alert>
-            )}
+                                    // --- RENDERIZADO DE TAREA REAL ---
+                                    const stats = analizarProgreso(tarea.checklist_items);
+                                    let badgeBg = 'secondary';
+                                    if (tarea.progreso === 'COMPLETADA') badgeBg = 'success';
+                                    else if (tarea.progreso === 'EN_PROGRESO') badgeBg = 'primary';
+                                    else if (tarea.progreso === 'PENDIENTE') badgeBg = 'warning';
+
+                                    const renderTooltip = (props) => (
+                                        <Tooltip id={`tooltip-${tarea.id}`} {...props}>
+                                            <div className="text-start">
+                                                <div>✅ Realizadas: {stats.ok}</div>
+                                                <div className="text-danger">⚠️ Vencidas: {stats.late}</div>
+                                                <div>⏳ En tiempo: {stats.pending}</div>
+                                            </div>
+                                        </Tooltip>
+                                    );
+
+                                    return (
+                                        <tr key={tarea.id}>
+                                            <td className="ps-4">
+                                                <Badge bg={badgeBg} className="fw-normal px-2 py-1">
+                                                    {tarea.progreso.replace('_', ' ')}
+                                                </Badge>
+                                            </td>
+                                            <td className="fw-bold text-dark">{tarea.campana?.nombre}</td>
+                                            <td>
+                                                {tarea.analista ? (
+                                                    <div className="d-flex align-items-center gap-2">
+                                                        <div className="bg-primary text-white rounded-circle d-flex justify-content-center align-items-center shadow-sm" style={{width: 32, height: 32, fontSize: '0.8rem'}}>
+                                                            {tarea.analista.nombre.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <div className="fw-semibold" style={{fontSize:'0.9rem'}}>{tarea.analista.nombre} {tarea.analista.apellido}</div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="d-flex align-items-center gap-2 text-secondary">
+                                                        <div className="bg-light border text-secondary rounded-circle d-flex justify-content-center align-items-center" style={{width: 32, height: 32}}>
+                                                            <i className="bi bi-people-fill"></i>
+                                                        </div>
+                                                        <span className="fst-italic small">👥 Equipo Operativo</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td>
+                                                <div className="fw-bold text-dark">{tarea.titulo}</div>
+                                                <div className="mt-1">
+                                                    {tarea.es_generada_automaticamente ? 
+                                                        <Badge bg="light" text="secondary" className="border fw-normal">🤖 Automática</Badge> : 
+                                                        <Badge bg="info" className="fw-normal">👤 Manual</Badge>
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <OverlayTrigger placement="top" overlay={renderTooltip}>
+                                                    <div style={{cursor: 'help'}}>
+                                                        <div className="d-flex justify-content-between small text-muted mb-1">
+                                                            <span>{Math.round(stats.pctOk)}%</span>
+                                                            {stats.late > 0 && <span className="text-danger fw-bold">{stats.late} Vencidas</span>}
+                                                        </div>
+                                                        <ProgressBar style={{height: '10px', backgroundColor: '#e9ecef'}}>
+                                                            <ProgressBar variant="success" now={stats.pctOk} key={1} />
+                                                            <ProgressBar variant="danger" now={stats.pctLate} key={2} animated={stats.late > 0} />
+                                                            <ProgressBar variant="info" now={stats.pctPending} key={3} />
+                                                        </ProgressBar>
+                                                    </div>
+                                                </OverlayTrigger>
+                                            </td>
+                                            <td className="text-end pe-4">
+                                                <Button size="sm" variant="outline-dark" onClick={() => navigate(`/tareas/${tarea.id}`)}>
+                                                    Auditar
+                                                </Button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            ) : (
+                                <tr>
+                                    <td colSpan="6" className="text-center py-5 text-muted">
+                                        <div style={{fontSize: '2rem'}}>📭</div>
+                                        <div>No hay tareas (y todas las campañas están cubiertas).</div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </Table>
+                )}
+            </Card>
         </Container>
     );
-}
+};
 
 export default TareasPage;

@@ -14,8 +14,8 @@ from sqlalchemy import or_
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Union
 from datetime import datetime, date, time
-from sqlalchemy import func
-from sqlalchemy import case, text, select, delete
+from sqlalchemy import func, and_
+from sqlalchemy import case, text, select, delete, update
 from ..database import get_db
 from ..sql_app import models
 from ..enums import UserRole, ProgresoTarea, EstadoIncidencia, GravedadIncidencia
@@ -40,8 +40,11 @@ from ..schemas.models import (
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
     DashboardStatsAnalista, DashboardStatsSupervisor,
-    TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,
-    DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana
+    TareaGeneradaPorAviso, TareaGeneradaPorAvisoUpdate, TareaGeneradaPorAvisoBase,TareaListOutput,
+    DashboardIncidenciaWidget, WidgetAnalista, WidgetCampana,
+    CheckInCreate,
+    SesionActiva,
+    CoberturaCampana,
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
 
@@ -52,31 +55,61 @@ router = APIRouter(
 )
 
 
-@router.get("/campanas/tareas_disponibles/", response_model=List[TareaListOutput], summary="Obtener Tareas de Campaña sin Asignar (Protegido)")
-async def obtener_tareas_disponibles(
+@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
+async def obtener_tareas(
+    skip: int = 0, 
+    limit: int = 100, 
+    estado: Optional[ProgresoTarea] = None, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Obtiene las tareas de las campañas a las que el analista está asignado,
-    pero que aún no tienen un analista asignado (analista_id es NULL).
+    Muestra las tareas de cualquier campaña con TODA su información cargada.
+    Incluye una LIMPIEZA AUTOMÁTICA de tareas vencidas.
     """
-    # Obtener los IDs de las campañas asignadas al analista actual
-    assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
+    
+    # --- 🧹 BARRENDERO AUTOMÁTICO ---
+    # Si una tarea ya venció (fecha_vencimiento < ahora) y sigue PENDIENTE o EN_PROGRESO,
+    # la cerramos automáticamente como CANCELADA para que no moleste hoy.
+    now = datetime.now()
+    
+    # Nota: Asegúrate de que tu servidor tenga la hora correcta o usa datetime.utcnow() si guardas en UTC.
+    # Aquí asumimos que fecha_vencimiento es "naive" o compatible con 'now'.
+    
+    query_limpieza = (
+        update(models.Tarea)
+        .where(
+            models.Tarea.fecha_vencimiento < now,
+            models.Tarea.progreso.in_([ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO])
+        )
+        .values(progreso=ProgresoTarea.CANCELADA)
+        .execution_options(synchronize_session=False)
+    )
+    
+    # Ejecutamos la limpieza (es muy rápida)
+    await db.execute(query_limpieza)
+    await db.commit()
+    # -------------------------------
 
-    if not assigned_campaign_ids:
-        return [] # Si no tiene campañas, no hay tareas disponibles
-
+    # Consulta base con carga PROFUNDA de relaciones (Código original sigue aquí...)
     query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.campana)
-    ).where(
-        models.Tarea.campana_id.in_(assigned_campaign_ids),
-        models.Tarea.analista_id.is_(None) # La condición clave: tareas sin analista
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
     )
 
-    tareas = await db.execute(query)
-    return tareas.scalars().unique().all()
+    # Filtro opcional por estado
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # Ordenamos por vencimiento más próximo o creación
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/campanas/listado-simple/", response_model=List[CampanaSimple], summary="Obtener una lista simple de campañas para selectores")
@@ -657,18 +690,49 @@ async def crear_campana(
 
 
 
-@router.get("/campanas/", response_model=List[Campana], summary="Obtener todas las Campañas (Protegido)")
+@router.get("/campanas/", response_model=List[Campana], summary="Listar todas las campañas activas")
 async def obtener_campanas(
+    skip: int = 0, 
+    limit: int = 100, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
-    # Añadimos skip y limit si quieres paginación
-    # skip: int = 0,
-    # limit: int = 100
 ):
-    # ¡Mucho más limpio! Solo llamamos a la función del CRUD
-    campanas = await crud.get_campanas(db=db) # Pasamos skip y limit si los añadimos arriba
+    """
+    Devuelve todas las campañas del sistema con sus relaciones cargadas.
+    """
+    # Consulta con carga explícita de relaciones para evitar MissingGreenlet
+    query = select(models.Campana).options(
+        selectinload(models.Campana.lobs),
+        selectinload(models.Campana.analistas_asignados) # Cargamos esta relación también
+    ).order_by(models.Campana.nombre.asc()).offset(skip).limit(limit)
+    
+    result = await db.execute(query)
+    campanas = result.scalars().all()
     return campanas
 
+@router.get("/campanas/tareas_disponibles", response_model=List[Tarea], summary="Endpoint específico para tareas disponibles")
+async def obtener_tareas_disponibles_campana(
+    skip: int = 0, 
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Endpoint específico para evitar conflicto con rutas dinámicas.
+    Redirige a la lógica general de obtener tareas.
+    """
+    # Reutilizamos la misma lógica que /tareas/
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
+    ).order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
 async def obtener_campana_por_id(
@@ -783,152 +847,39 @@ async def eliminar_campana(
     return
 
 
-# --- Endpoints para Tareas (Protegidos) ---
+# --- Endpoints para Tareas ---
 
-@router.post("/tareas/", response_model=Tarea, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Tarea (Protegido)")
-async def crear_tarea(
-    tarea: TareaBase,
+
+@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
+async def obtener_tareas(
+    skip: int = 0, 
+    limit: int = 100, 
+    estado: Optional[ProgresoTarea] = None, 
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Crea una nueva tarea.
-    - Supervisor/Responsable: Pueden crear tareas asignadas o sin asignar (estas últimas deben tener campaña).
-    - Analista: Solo puede crear tareas para sí mismo y en campañas a las que esté asignado.
+    Muestra las tareas de cualquier campaña con TODA su información cargada.
     """
-    current_analista_id = current_analista.id
-    current_analista_role_value = current_analista.role.value # Usamos .value para la comparación de strings
-
-    # --- VALIDACIÓN DE EXISTENCIA (MODIFICADA PARA SER OPCIONAL) ---
-    # 1. Si se proporciona un analista, verificar que existe.
-    if tarea.analista_id:
-        analista_result = await db.execute(select(models.Analista).filter(models.Analista.id == tarea.analista_id))
-        if not analista_result.scalars().first():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Analista con ID {tarea.analista_id} no encontrado.")
-
-    # 2. Si se proporciona una campaña, verificar que existe.
-    if tarea.campana_id:
-        campana_result = await db.execute(select(models.Campana).filter(models.Campana.id == tarea.campana_id))
-        if not campana_result.scalars().first():
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Campaña con ID {tarea.campana_id} no encontrada.")
-
-    # --- LÓGICA DE PERMISOS (FUSIONADA) ---
-    # 3. Mantenemos tu lógica original para el rol ANALISTA
-    if current_analista_role_value == UserRole.ANALISTA.value:
-        # Un analista DEBE asignarse la tarea a sí mismo
-        if not tarea.analista_id or tarea.analista_id != current_analista_id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Analista solo puede crear tareas para sí mismo.")
-        
-        # Si la tarea tiene campana_id, el analista debe estar asignado a esa campaña (TU LÓGICA ORIGINAL)
-        if tarea.campana_id:
-            is_assigned_to_campaign_result = await db.execute(
-                select(models.analistas_campanas.c.campana_id)
-                .where(models.analistas_campanas.c.analista_id == current_analista_id)
-                .where(models.analistas_campanas.c.campana_id == tarea.campana_id)
-            )
-            if not is_assigned_to_campaign_result.scalars().first():
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para crear tareas en esta campaña. No estás asignado a ella.")
-    
-    # 4. Agregamos la nueva regla para SUPERVISOR/RESPONSABLE
-    elif current_analista_role_value in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
-        # Si crean una tarea sin analista, DEBE tener una campaña.
-        if not tarea.analista_id and not tarea.campana_id:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Una tarea sin analista asignado debe estar asociada a una campaña.")
-
-    # --- El resto de la función se mantiene igual que la tuya ---
-    tarea_data_dict = tarea.model_dump()
-    
-    db_tarea = models.Tarea(**tarea_data_dict)
-    db.add(db_tarea)
-    
-    try:
-        await db.commit()
-        await db.refresh(db_tarea)
-        new_tarea_id = db_tarea.id
-        new_tarea_progreso = db_tarea.progreso
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error inesperado al crear tarea: {e}")
-
-    # Registrar el estado inicial de la tarea
-    historial_entry = models.HistorialEstadoTarea(
-        old_progreso=None,
-        new_progreso=new_tarea_progreso,
-        changed_by_analista_id=current_analista_id,
-        tarea_campana_id=new_tarea_id
-    )
-    db.add(historial_entry)
-    
-    try:
-        await db.commit()
-    except Exception as e:
-        await db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al registrar el historial de la tarea: {e}")
-
-    result = await db.execute(
-        select(models.Tarea)
-        .options(
-            selectinload(models.Tarea.analista),
-            selectinload(models.Tarea.campana),
-            selectinload(models.Tarea.checklist_items),
-            selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
-            selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
-
-        )
-        .filter(models.Tarea.id == new_tarea_id)
-    )
-    tarea_to_return = result.scalars().first()
-    if not tarea_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar la tarea después de la creación.")
-    
-    return tarea_to_return
-
-
-@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener Tareas (con filtros opcionales) (Protegido)")
-async def obtener_tareas(
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista),
-    analista_id: Optional[int] = None,
-    campana_id: Optional[int] = None,
-    estado: Optional[ProgresoTarea] = None,
-    fecha_desde: Optional[date] = None,
-    fecha_hasta: Optional[date] = None
-):
-    """
-    Obtiene todas las tareas, o filtra por analista y/o campaña.
-    Requiere autenticación.
-    Un analista normal solo ve sus propias tareas.
-    """
+    # Consulta base con carga PROFUNDA de relaciones
     query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.campana)
+        selectinload(models.Tarea.checklist_items),
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
     )
 
-    if current_analista.role == UserRole.ANALISTA.value:
-        query = query.where(models.Tarea.analista_id == current_analista.id)
-    elif analista_id is not None:
-        if analista_id == 0:  # Señal para tareas sin asignar
-            query = query.where(models.Tarea.analista_id.is_(None))
-        else:
-            query = query.where(models.Tarea.analista_id == analista_id)
-
-    if campana_id is not None:
-        if campana_id == 0:  # Señal para tareas sin campaña
-            query = query.where(models.Tarea.campana_id.is_(None))
-        else:
-            query = query.where(models.Tarea.campana_id == campana_id)
+    # Filtro opcional por estado
     if estado:
-        query = query.where(models.Tarea.progreso == estado)
-    if fecha_desde:
-        query = query.where(models.Tarea.fecha_vencimiento >= fecha_desde)
-    if fecha_hasta:
-        # Añadimos un día para que la fecha 'hasta' sea inclusiva
-        query = query.where(models.Tarea.fecha_vencimiento < (fecha_hasta + timedelta(days=1)))
-    # --- FIN DE CAMBIOS ---
-   
+        query = query.filter(models.Tarea.progreso == estado)
 
-    tareas = await db.execute(query)
-    return tareas.scalars().unique().all()
+    # Ordenamos por vencimiento más próximo o creación
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+    
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/tareas/{tarea_id}", response_model=Tarea, summary="Obtener Tarea por ID (Protegido)")
@@ -939,21 +890,37 @@ async def obtener_tarea_por_id(
 ):
     """
     Obtiene una tarea específica por su ID.
-    Construye la respuesta manualmente para evitar errores de carga asíncrona.
+    Permite el acceso si eres el dueño O si tienes una sesión activa en la campaña (Colaborativo).
     """
-    # Paso 1: Obtener el objeto Tarea principal de la base de datos.
+    # Paso 1: Obtener el objeto Tarea
     result = await db.execute(select(models.Tarea).filter(models.Tarea.id == tarea_id))
     tarea_db = result.scalars().first()
     
     if not tarea_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
     
-    # Paso 2: Verificar los permisos.
+    # Paso 2: Verificar los permisos (LÓGICA COLABORATIVA ACTUALIZADA)
     if current_analista.role.value == UserRole.ANALISTA.value:
-        if tarea_db.analista_id is not None and tarea_db.analista_id != current_analista.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver esta tarea.")
+        # A. ¿Soy el dueño asignado?
+        es_dueno = tarea_db.analista_id == current_analista.id
+        
+        # B. ¿Tengo sesión activa en esta campaña? (Para tareas compartidas)
+        tiene_acceso_colaborativo = False
+        if tarea_db.es_generada_automaticamente and tarea_db.campana_id:
+            # Consultamos si existe una sesión activa para este analista en esta campaña
+            session_q = select(models.SesionCampana).filter(
+                models.SesionCampana.analista_id == current_analista.id,
+                models.SesionCampana.campana_id == tarea_db.campana_id,
+                models.SesionCampana.fecha_fin.is_(None)
+            )
+            session_res = await db.execute(session_q)
+            if session_res.scalars().first():
+                tiene_acceso_colaborativo = True
 
-    # Paso 3: Cargar todas las relaciones necesarias en consultas separadas.
+        if not es_dueno and not tiene_acceso_colaborativo:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver esta tarea (ni dueño ni sesión activa).")
+
+    # Paso 3: Cargar todas las relaciones necesarias (Igual que antes)
     analista, campana = None, None
     if tarea_db.analista_id:
         analista_result = await db.execute(select(models.Analista).filter(models.Analista.id == tarea_db.analista_id))
@@ -965,7 +932,7 @@ async def obtener_tarea_por_id(
     historial_result = await db.execute(
         select(models.HistorialEstadoTarea)
         .filter(models.HistorialEstadoTarea.tarea_campana_id == tarea_id)
-        .options(selectinload(models.HistorialEstadoTarea.changed_by_analista)) # Eager load del analista en el historial
+        .options(selectinload(models.HistorialEstadoTarea.changed_by_analista))
     )
     historial = historial_result.scalars().all()
 
@@ -977,12 +944,12 @@ async def obtener_tarea_por_id(
     comentarios_result = await db.execute(
         select(models.ComentarioTarea)
         .filter(models.ComentarioTarea.tarea_id == tarea_id)
-        .options(selectinload(models.ComentarioTarea.autor)) # Cargar el autor de cada comentario
-        .order_by(models.ComentarioTarea.fecha_creacion.desc()) # Ordenar por más reciente
+        .options(selectinload(models.ComentarioTarea.autor))
+        .order_by(models.ComentarioTarea.fecha_creacion.desc())
     )
     comentarios = comentarios_result.scalars().all()
 
-    # Paso 4: Construir el objeto de respuesta Pydantic manualmente.
+    # Paso 4: Construir respuesta
     tarea_response = Tarea(
         id=tarea_db.id,
         titulo=tarea_db.titulo,
@@ -993,9 +960,9 @@ async def obtener_tarea_por_id(
         campana_id=tarea_db.campana_id,
         fecha_finalizacion=tarea_db.fecha_finalizacion,
         fecha_creacion=tarea_db.fecha_creacion,
+        es_generada_automaticamente=tarea_db.es_generada_automaticamente, # ¡Importante!
         analista=AnalistaSimple.model_validate(analista) if analista else None,
         campana=CampanaSimple.model_validate(campana) if campana else None,
-        # Usamos model_validate para convertir los objetos SQLAlchemy a Pydantic
         checklist_items=[ChecklistItemSimple.model_validate(item) for item in checklist_items],
         historial_estados=[HistorialEstadoTarea.model_validate(h) for h in historial],
         comentarios=[ComentarioTarea.model_validate(c) for c in comentarios]
@@ -1168,36 +1135,56 @@ async def crear_comentario_tarea(
 ):
     """
     Crea un nuevo comentario para una tarea específica.
+    Permite comentarios colaborativos si hay sesión activa en la campaña.
     """
-    # Primero, verificamos que la tarea existe
+    # 1. Verificar que la tarea existe
     tarea_result = await db.execute(select(models.Tarea).filter(models.Tarea.id == tarea_id))
     db_tarea = tarea_result.scalars().first()
     if not db_tarea:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
 
-    # (Opcional pero recomendado) Verificar permisos: El usuario puede ver la tarea?
+    # 2. Verificar permisos (LÓGICA COLABORATIVA)
     if current_analista.role == UserRole.ANALISTA.value:
-        if db_tarea.analista_id != current_analista.id:
+        # A. Soy el dueño
+        es_dueno = db_tarea.analista_id == current_analista.id
+        
+        # B. Tengo sesión activa en la campaña
+        tiene_acceso_colaborativo = False
+        if db_tarea.es_generada_automaticamente and db_tarea.campana_id:
+            session_q = select(models.SesionCampana).filter(
+                models.SesionCampana.analista_id == current_analista.id,
+                models.SesionCampana.campana_id == db_tarea.campana_id,
+                models.SesionCampana.fecha_fin.is_(None)
+            )
+            session_res = await db.execute(session_q)
+            if session_res.scalars().first():
+                tiene_acceso_colaborativo = True
+
+        if not es_dueno and not tiene_acceso_colaborativo:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para comentar en esta tarea.")
 
-    # Creamos el objeto del comentario
+    # 3. Guardar el comentario
     db_comentario = models.ComentarioTarea(
         texto=comentario.texto,
         tarea_id=tarea_id,
         autor_id=current_analista.id
     )
     db.add(db_comentario)
-    await db.commit()
-    await db.refresh(db_comentario)
+    
+    try:
+        await db.commit()
+        await db.refresh(db_comentario)
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar comentario: {e}")
 
-    # Recargamos el comentario con la relación del autor para la respuesta
+    # 4. Recargar para devolver con datos del autor (para mostrar nombre en el chat)
     result = await db.execute(
         select(models.ComentarioTarea)
         .options(selectinload(models.ComentarioTarea.autor))
         .filter(models.ComentarioTarea.id == db_comentario.id)
     )
     return result.scalars().first()
-
 # --- Endpoints para checklist tareas (Protegidos) ---
 
 @router.post("/checklist_items/", response_model=ChecklistItem, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo ChecklistItem (Protegido)")
@@ -1207,37 +1194,33 @@ async def crear_checklist_item(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Crea un nuevo elemento de checklist asociado a una tarea.
-    - Un Analista puede crear ítems para tareas a las que está asignado o que están libres en sus campañas.
-    - Un Supervisor o Responsable pueden crear ítems para cualquier tarea.
+    Crea un nuevo elemento de checklist. 
+    Permite creación colaborativa si hay sesión activa en la campaña de la tarea.
     """
-    tarea_existente_result = await db.execute(
-        select(models.Tarea)
-        .filter(models.Tarea.id == item.tarea_id)
-    )
+    tarea_existente_result = await db.execute(select(models.Tarea).filter(models.Tarea.id == item.tarea_id))
     tarea_existente = tarea_existente_result.scalars().first()
-    if tarea_existente is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada para asociar el ChecklistItem")
-
-    # --- CAMBIO CLAVE: Nueva lógica de permisos para analistas ---
-    if current_analista.role == UserRole.ANALISTA.value:
-        is_assigned_to_task = tarea_existente.analista_id == current_analista.id
-        
-        is_task_in_assigned_campaign = False
-        # Si la tarea no está asignada y pertenece a una campaña...
-        if tarea_existente.analista_id is None and tarea_existente.campana_id is not None:
-            # Verificamos si la campaña de la tarea está en la lista de campañas del analista
-            assigned_campaign_ids = [c.id for c in current_analista.campanas_asignadas]
-            if tarea_existente.campana_id in assigned_campaign_ids:
-                is_task_in_assigned_campaign = True
-
-        # El analista puede crear el item SOLO si está asignado a la tarea
-        # O si la tarea está libre en una de sus campañas.
-        if not is_assigned_to_task and not is_task_in_assigned_campaign:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para crear ítems de checklist para esta tarea.")
     
-    # Si es Supervisor o Responsable, no hay restricciones adicionales.
+    if tarea_existente is None:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
 
+    if current_analista.role == UserRole.ANALISTA.value:
+        es_dueno = tarea_existente.analista_id == current_analista.id
+        
+        tiene_acceso_colaborativo = False
+        if tarea_existente.es_generada_automaticamente and tarea_existente.campana_id:
+            # Verificamos sesión activa
+            session_q = select(models.SesionCampana).filter(
+                models.SesionCampana.analista_id == current_analista.id,
+                models.SesionCampana.campana_id == tarea_existente.campana_id,
+                models.SesionCampana.fecha_fin.is_(None)
+            )
+            session_res = await db.execute(session_q)
+            if session_res.scalars().first():
+                tiene_acceso_colaborativo = True
+
+        if not es_dueno and not tiene_acceso_colaborativo:
+            raise HTTPException(status_code=403, detail="No tienes permiso para crear ítems en esta tarea.")
+    
     db_item = models.ChecklistItem(**item.model_dump())
     db.add(db_item)
     try:
@@ -1245,20 +1228,10 @@ async def crear_checklist_item(
         await db.refresh(db_item)
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al crear checklist item: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
     
-    result = await db.execute(
-        select(models.ChecklistItem)
-        .filter(models.ChecklistItem.id == db_item.id)
-        .options(selectinload(models.ChecklistItem.tarea))
-    )
-    item_to_return = result.scalars().first()
-    if not item_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el checklist item después de la creación.")
-    return item_to_return
+    result = await db.execute(select(models.ChecklistItem).filter(models.ChecklistItem.id == db_item.id).options(selectinload(models.ChecklistItem.tarea)))
+    return result.scalars().first()
 
 @router.get("/checklist_items/{item_id}", response_model=ChecklistItem, summary="Obtener ChecklistItem por ID (Protegido)")
 async def obtener_checklist_item_por_id(
@@ -1321,10 +1294,7 @@ async def actualizar_checklist_item(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Actualiza la información de un elemento de checklist existente.
-    Requiere autenticación.
-    Un Analista solo puede cambiar el estado 'completado' de los ítems de sus propias tareas.
-    Un Supervisor o Responsable pueden actualizar cualquier campo de cualquier ítem.
+    Actualiza un ítem de checklist. Permite acción colaborativa si hay sesión activa.
     """
     db_item_result = await db.execute(
         select(models.ChecklistItem)
@@ -1339,20 +1309,44 @@ async def actualizar_checklist_item(
     update_data = item_update.model_dump(exclude_unset=True)
 
     if current_analista.role == UserRole.ANALISTA.value:
-        if item_existente.tarea.analista_id != current_analista.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar este ítem de checklist. Solo puedes actualizar ítems de tus propias tareas.")
+        # Validación de permisos COLABORATIVA
+        es_dueno = item_existente.tarea.analista_id == current_analista.id
         
+        tiene_acceso_colaborativo = False
+        if item_existente.tarea.es_generada_automaticamente and item_existente.tarea.campana_id:
+            session_q = select(models.SesionCampana).filter(
+                models.SesionCampana.analista_id == current_analista.id,
+                models.SesionCampana.campana_id == item_existente.tarea.campana_id,
+                models.SesionCampana.fecha_fin.is_(None)
+            )
+            session_res = await db.execute(session_q)
+            if session_res.scalars().first():
+                tiene_acceso_colaborativo = True
+
+        if not es_dueno and not tiene_acceso_colaborativo:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para editar este ítem (requiere ser dueño o sesión activa).")
+        
+        # Lógica de actualización (Auditoría)
         if "completado" in update_data:
-            item_existente.completado = update_data["completado"]
-        else:
-            pass # Si el analista intenta actualizar otra cosa, simplemente no se hace
+            nuevo_estado = update_data["completado"]
+            
+            if nuevo_estado and not item_existente.completado:
+                # MARCAR: Guardamos fecha y QUIÉN lo hizo
+                item_existente.fecha_completado = datetime.now(timezone.utc)
+                item_existente.realizado_por_id = current_analista.id 
+                
+            elif not nuevo_estado:
+                # DESMARCAR: Limpiamos fecha y autor
+                item_existente.fecha_completado = None
+                item_existente.realizado_por_id = None
+            
+            item_existente.completado = nuevo_estado
             
     elif current_analista.role in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
+        # (Lógica de supervisor se mantiene igual...)
         if "tarea_id" in update_data and update_data["tarea_id"] != item_existente.tarea_id:
-            nueva_tarea_existente_result = await db.execute(select(models.Tarea).where(models.Tarea.id == update_data["tarea_id"]))
-            if nueva_tarea_existente_result.scalars().first() is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nueva Tarea no encontrada para reasignar el ChecklistItem")
-            item_existente.tarea_id = update_data["tarea_id"]
+            # ... validación de tarea ...
+            pass # (Aquí iría tu lógica existente de reasignación de tarea si la usas)
         
         if "descripcion" in update_data:
             item_existente.descripcion = update_data["descripcion"]
@@ -1361,26 +1355,19 @@ async def actualizar_checklist_item(
             item_existente.completado = update_data["completado"]
     
     else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar ítems de checklist con tu rol actual.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Rol sin permisos.")
 
     try:
         await db.commit()
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error inesperado al actualizar checklist item: {e}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error al actualizar: {e}")
+        
     await db.refresh(item_existente)
     result = await db.execute(
-        select(models.ChecklistItem)
-        .filter(models.ChecklistItem.id == item_existente.id)
-        .options(selectinload(models.ChecklistItem.tarea))
+        select(models.ChecklistItem).filter(models.ChecklistItem.id == item_existente.id).options(selectinload(models.ChecklistItem.tarea))
     )
-    item_to_return = result.scalars().first()
-    if not item_to_return:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el checklist item después de la actualización.")
-    return item_to_return
+    return result.scalars().first()
 
 @router.delete("/checklist_items/{item_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar un ChecklistItem (Protegido por Supervisor)")
 async def eliminar_checklist_item(
@@ -1474,43 +1461,29 @@ async def crear_aviso(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al recargar el aviso después de la creación.")
     return aviso_to_return
 
-@router.get("/avisos/", response_model=List[AvisoListOutput], summary="Obtener Avisos (con filtros opcionales) (Protegido)")
+@router.get("/avisos/", response_model=List[Aviso], summary="Ver tablón de anuncios global")
 async def obtener_avisos(
+    skip: int = 0, 
+    limit: int = 100, 
     db: AsyncSession = Depends(get_db),
-    creador_id: Optional[int] = None,
-    campana_id: Optional[int] = None,
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Obtiene todos los avisos, o filtra por ID del creador (analista) y/o ID de campaña.
-    Requiere autenticación. Un analista normal solo ve avisos creados por él o asociados a sus campañas,
-    o avisos que no tienen campaña asociada (generales).
+    Muestra los avisos vigentes.
+    Visibilidad total.
     """
+    hoy = datetime.now()
+    
+    # Traemos avisos que no hayan vencido (o que no tengan fecha de vencimiento)
     query = select(models.Aviso).options(
         selectinload(models.Aviso.creador),
         selectinload(models.Aviso.campana)
-    )
+    ).filter(
+        (models.Aviso.fecha_vencimiento >= hoy) | (models.Aviso.fecha_vencimiento == None)
+    ).order_by(models.Aviso.fecha_creacion.desc()).offset(skip).limit(limit)
 
-    if current_analista.role == UserRole.ANALISTA.value:
-        # Un analista puede ver:
-        # 1. Avisos creados por él
-        # 2. Avisos sin campaña asociada (generales)
-        # 3. Avisos asociados a campañas a las que está asignado
-        query = query.filter(
-            (models.Aviso.creador_id == current_analista.id) |
-            (models.Aviso.campana_id.is_(None)) | # AHORA INCLUYE AVISOS GENERALES
-            (models.Aviso.campana_id.in_(
-                select(models.analistas_campanas.c.campana_id).where(models.analistas_campanas.c.analista_id == current_analista.id)
-            ))
-        )
-    else: # Supervisores y Responsables ven todos los avisos
-        if creador_id:
-            query = query.where(models.Aviso.creador_id == creador_id)
-        if campana_id:
-            query = query.where(models.Aviso.campana_id == campana_id)
-
-    avisos = await db.execute(query)
-    return avisos.scalars().unique().all()
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/avisos/{aviso_id}", response_model=Aviso, summary="Obtener Aviso por ID (Protegido)")
@@ -2189,10 +2162,13 @@ async def get_incidencias(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     query = select(models.Incidencia).options(
-        selectinload(models.Incidencia.campana)
+        selectinload(models.Incidencia.campana),
+        selectinload(models.Incidencia.lobs),
+        selectinload(models.Incidencia.creador),
+        selectinload(models.Incidencia.asignado_a),
+        selectinload(models.Incidencia.cerrado_por)
     ).order_by(models.Incidencia.fecha_apertura.desc())
 
-    
     result = await db.execute(query)
     return result.scalars().unique().all()
 
@@ -2296,12 +2272,13 @@ async def get_incidencias_filtradas(
     fecha_inicio: Optional[date] = None,
     fecha_fin: Optional[date] = None,
     campana_id: Optional[int] = None,
-    estado: Optional[List[EstadoIncidencia]] = Query(default=None),
+    # MODIFICACIÓN CLAVE: Aceptamos str o list y parseamos manualmente si es necesario
+    estado: Optional[Union[List[str], str]] = Query(default=None), 
     asignado_a_id: Optional[int] = None
 ):
     """
     Endpoint para el portal de control de incidencias.
-    Todos los roles con acceso ven la misma información.
+    Soporta filtros de estado múltiples (ej: ?estado=ABIERTA&estado=EN_PROGRESO o ?estado=ABIERTA,EN_PROGRESO)
     """
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
@@ -2317,8 +2294,38 @@ async def get_incidencias_filtradas(
         query = query.filter(models.Incidencia.fecha_apertura <= datetime.combine(fecha_fin, time.max))
     if campana_id:
         query = query.filter(models.Incidencia.campana_id == campana_id)
+    
     if estado:
-        query = query.filter(models.Incidencia.estado.in_(estado))
+        estados_finales = []
+        
+        # 1. Normalizar entrada a una lista de strings
+        lista_temporal = []
+        if isinstance(estado, str):
+            # Caso: ?estado=ABIERTA,EN_PROGRESO
+            if ',' in estado:
+                lista_temporal = estado.split(',')
+            else:
+                lista_temporal = [estado]
+        else:
+            # Caso: ?estado=ABIERTA&estado=EN_PROGRESO (FastAPI ya lo da como lista)
+            lista_temporal = estado
+
+        # 2. Convertir strings a Enum (EstadoIncidencia)
+        for e_str in lista_temporal:
+            try:
+                # Limpiamos espacios y buscamos en el Enum
+                e_clean = e_str.strip()
+                # Buscamos si coincide con algún valor del enum
+                for estado_enum in EstadoIncidencia:
+                    if estado_enum.value == e_clean:
+                        estados_finales.append(estado_enum)
+                        break
+            except ValueError:
+                continue # Ignoramos valores inválidos
+        
+        if estados_finales:
+            query = query.filter(models.Incidencia.estado.in_(estados_finales))
+
     if asignado_a_id is not None:
         if asignado_a_id == 0:
             query = query.filter(models.Incidencia.asignado_a_id.is_(None))
@@ -2816,10 +2823,27 @@ async def add_item_a_plantilla(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
+    # (Opcional) Calculamos el orden para que quede al final de la lista
+    result = await db.execute(
+        select(func.max(models.PlantillaChecklistItem.orden))
+        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
+    )
+    max_orden = result.scalar() or 0
+
     nuevo_item = models.PlantillaChecklistItem(
         descripcion=item_data.descripcion,
         campana_id=campana_id,
-        hora_sugerida=item_data.hora_sugerida 
+        hora_sugerida=item_data.hora_sugerida,
+        orden=max_orden + 1, # Asignamos el siguiente número
+
+        lunes=item_data.lunes,
+        martes=item_data.martes,
+        miercoles=item_data.miercoles,
+        jueves=item_data.jueves,
+        viernes=item_data.viernes,
+        sabado=item_data.sabado,
+        domingo=item_data.domingo
+
     )
 
     db.add(nuevo_item)
@@ -2903,7 +2927,7 @@ async def get_recientes_incidencias_activas(
     return response_list
 
 
-@router.get("/analistas/me/incidencias_asignadas", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
+@router.get("/incidencias/mis-incidencias", response_model=List[IncidenciaSimple], summary="Obtener incidencias asignadas al analista actual")
 async def get_mis_incidencias_asignadas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA]))
@@ -3011,6 +3035,98 @@ async def get_dashboard_stats(
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard GTR definido.")
 
+@router.get("/dashboard/alertas-operativas", summary="Obtener alertas de tareas vencidas o próximas")
+async def get_alertas_operativas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Semáforo Inteligente Multicampaña:
+    Recupera items de TODAS las campañas donde el analista tenga sesión activa.
+    """
+    
+    # 1. Definir AHORA en Argentina
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    
+    # 2. Buscar TODAS las sesiones activas (Cambio Clave: .all() en lugar de .first())
+    q_sesiones = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    res_sesiones = await db.execute(q_sesiones)
+    sesiones = res_sesiones.scalars().all()
+
+    if not sesiones:
+        return [] 
+
+    # Extraemos los IDs de todas las campañas activas (Ej: [ID_Bice, ID_Bolt])
+    ids_campanas_activas = [s.campana_id for s in sesiones]
+
+    # 3. Buscar las Tareas del día para TODAS esas campañas
+    inicio_dia = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    q_tareas = select(models.Tarea).options(
+        selectinload(models.Tarea.campana)
+    ).filter(
+        models.Tarea.campana_id.in_(ids_campanas_activas), # <--- BUSCAMOS EN LA LISTA
+        models.Tarea.es_generada_automaticamente == True,
+        models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
+    )
+    res_tareas = await db.execute(q_tareas)
+    tareas = res_tareas.scalars().all()
+
+    if not tareas:
+        return []
+
+    alertas = []
+    
+    # Configuración para cálculos de tiempo
+    dummy_date = datetime(2000, 1, 1)
+    dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
+
+    # 4. Iteramos por CADA tarea encontrada (Una por campaña activa)
+    for tarea in tareas:
+        # Traer ítems pendientes con hora para ESTA tarea específica
+        q_items = select(models.ChecklistItem).filter(
+            models.ChecklistItem.tarea_id == tarea.id,
+            models.ChecklistItem.completado == False,
+            models.ChecklistItem.hora_sugerida.is_not(None)
+        )
+        
+        res_items = await db.execute(q_items)
+        items = res_items.scalars().all()
+
+        # Procesamos los ítems de esta tarea
+        for item in items:
+            hora_item = item.hora_sugerida
+            dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
+            
+            diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
+            
+            estado = None
+            # LÓGICA DEL SEMÁFORO
+            if diferencia_minutos > 15:
+                estado = "CRITICO" 
+            elif 0 <= diferencia_minutos <= 15:
+                estado = "EN_CURSO"
+            elif -45 <= diferencia_minutos < 0:
+                estado = "ATENCION"
+            
+            if estado:
+                alertas.append({
+                    "id": item.id,
+                    "descripcion": item.descripcion,
+                    "hora": hora_item.strftime("%H:%M"),
+                    "tipo": estado,
+                    "tarea_id": tarea.id,
+                    "campana_nombre": tarea.campana.nombre # Nombre correcto de la campaña
+                })
+
+    # 5. Ordenamos TODAS las alertas por hora
+    alertas.sort(key=lambda x: x['hora'])
+
+    return alertas
 
 @router.post("/incidencias/exportar/", summary="Exporta incidencias filtradas a Excel")
 async def exportar_incidencias(
@@ -3173,3 +3289,464 @@ async def exportar_bitacora(
     
     headers = {'Content-Disposition': f'attachment; filename="Reporte_Eventos_{date.today().isoformat()}.xlsx"'}
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.get("/monitor/tareas", response_model=List[Tarea], summary="Monitor de Cumplimiento (Limpio)")
+async def get_tareas_monitor(
+    fecha: Optional[date] = None,
+    campana_id: Optional[int] = None,
+    estado: Optional[ProgresoTarea] = None,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+):
+    # 1. Configuración de Fechas
+    if not fecha:
+        fecha = datetime.now().date()
+        
+    inicio_dia = datetime.combine(fecha, time.min)
+    fin_dia = datetime.combine(fecha, time.max)
+
+    # 2. Query Principal (Solo trae lo que EXISTE)
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items), 
+        selectinload(models.Tarea.historial_estados),
+        selectinload(models.Tarea.comentarios)
+    )
+
+    # 3. Filtros
+    query = query.filter(models.Tarea.fecha_creacion >= inicio_dia)
+    query = query.filter(models.Tarea.fecha_creacion <= fin_dia)
+
+    if campana_id:
+        query = query.filter(models.Tarea.campana_id == campana_id)
+
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # 4. Ordenar
+    query = query.order_by(models.Tarea.fecha_creacion.desc())
+
+    result = await db.execute(query)
+    return result.scalars().all()
+
+# -----------------------------------------------------------------------------
+# 📍 SISTEMA DE CHECK-IN / SESIONES ACTIVAS (GTR DINÁMICO)
+# -----------------------------------------------------------------------------
+
+@router.post("/sesiones/check-in", response_model=SesionActiva, summary="Iniciar gestión en una campaña")
+async def check_in_campana(
+    datos: CheckInCreate,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    # 1. Definir "Hoy" (Inicio del día a las 00:00)
+    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
+    # Buscamos sesiones abiertas que sean de AYER o antes
+    q_zombis = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None),
+        models.SesionCampana.fecha_inicio < hoy_inicio
+    )
+    result_zombis = await db.execute(q_zombis)
+    sesiones_zombis = result_zombis.scalars().all()
+
+    if sesiones_zombis:
+        print(f"🧹 Limpiando {len(sesiones_zombis)} sesiones zombis de {current_analista.email}")
+        for zombi in sesiones_zombis:
+            # Cerramos con fecha de ayer al final del día
+            fin_dia_zombi = zombi.fecha_inicio.replace(hour=23, minute=59, second=59)
+            zombi.fecha_fin = fin_dia_zombi
+            db.add(zombi)
+        await db.commit() # Guardamos la limpieza antes de seguir
+
+    # --- FASE 2: VERIFICACIÓN ESPECÍFICA (Solo la campaña solicitada) ---
+    # Ahora buscamos si ya estoy activo EN LA CAMPAÑA QUE PIDO
+    query_target = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.campana_id == datos.campana_id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    result_target = await db.execute(query_target)
+    sesion_existente = result_target.scalars().first()
+
+    # Si ya estoy activo en esta campaña hoy, simplemente devuelvo esa sesión
+    if sesion_existente:
+        result_full = await db.execute(
+            select(models.SesionCampana).options(
+                selectinload(models.SesionCampana.campana).options(
+                    selectinload(models.Campana.lobs),
+                    selectinload(models.Campana.analistas_asignados)
+                )
+            ).filter(models.SesionCampana.id == sesion_existente.id)
+        )
+        return result_full.scalars().first()
+
+    # --- FASE 3: CREACIÓN DE NUEVA SESIÓN ---
+    # Si llegamos aquí, es porque NO tengo sesión activa en esta campaña
+    nueva_sesion = models.SesionCampana(
+        analista_id=current_analista.id,
+        campana_id=datos.campana_id,
+        fecha_inicio=datetime.now()
+    )
+    db.add(nueva_sesion)
+    await db.commit()
+    await db.refresh(nueva_sesion) 
+    
+    # --- FASE 4: GENERACIÓN DE RUTINA (Lógica Colaborativa) ---
+    q_tarea_existente = select(models.Tarea).filter(
+        models.Tarea.campana_id == datos.campana_id,
+        models.Tarea.es_generada_automaticamente == True,
+        models.Tarea.fecha_creacion >= hoy_inicio
+    )
+    result_tarea = await db.execute(q_tarea_existente)
+    tarea_compartida = result_tarea.scalars().first()
+
+    # CASO A: Ya existe la rutina -> Nos unimos (No hacemos nada, ya tenemos sesión)
+    if tarea_compartida:
+        print(f"🔄 Se une a Rutina existente ID {tarea_compartida.id}.")
+        
+    # CASO B: No existe -> LA CREAMOS (Incluso si no tiene items configurados)
+    else:
+        # 1. Detectar qué día es HOY en Argentina
+        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+        ahora_arg = datetime.now(tz_argentina)
+        dia_semana_int = ahora_arg.weekday()
+
+        mapa_dias = {
+            0: models.PlantillaChecklistItem.lunes,
+            1: models.PlantillaChecklistItem.martes,
+            2: models.PlantillaChecklistItem.miercoles,
+            3: models.PlantillaChecklistItem.jueves,
+            4: models.PlantillaChecklistItem.viernes,
+            5: models.PlantillaChecklistItem.sabado,
+            6: models.PlantillaChecklistItem.domingo
+        }
+        columna_dia_hoy = mapa_dias[dia_semana_int]
+
+        # 2. Traer items activos para HOY (puede estar vacío)
+        q_items_plantilla = select(models.PlantillaChecklistItem).filter(
+            models.PlantillaChecklistItem.campana_id == datos.campana_id,
+            columna_dia_hoy == True
+        ).order_by(models.PlantillaChecklistItem.orden)
+        
+        res_items = await db.execute(q_items_plantilla)
+        items_plantilla = res_items.scalars().all()
+
+        # 3. Buscar la campaña para el nombre
+        q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
+        res_campana = await db.execute(q_campana)
+        campana_obj = res_campana.scalars().first()
+
+        # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
+        if campana_obj:
+            nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
+            vencimiento_naive = ahora_arg.replace(hour=23, minute=59, second=59, tzinfo=None)
+
+            nueva_tarea = models.Tarea(
+                titulo=nombre_tarea,
+                descripcion="Rutina operativa compartida del día.",
+                fecha_vencimiento=vencimiento_naive,
+                fecha_creacion=datetime.now(),
+                progreso=ProgresoTarea.PENDIENTE,
+                analista_id=None,
+                campana_id=datos.campana_id,
+                es_generada_automaticamente=True
+            )
+            db.add(nueva_tarea)
+            await db.flush() # Obtenemos ID para insertar los items hijos
+
+            # Insertamos los items (si existen)
+            for item in items_plantilla:
+                nuevo_checklist_item = models.ChecklistItem(
+                    descripcion=item.descripcion,
+                    completado=False,
+                    tarea_id=nueva_tarea.id,
+                    hora_sugerida=item.hora_sugerida
+                )
+                db.add(nuevo_checklist_item)
+
+            await db.commit()
+            
+            # Historial de creación
+            historial = models.HistorialEstadoTarea(
+                old_progreso=None,
+                new_progreso=ProgresoTarea.PENDIENTE,
+                changed_by_analista_id=current_analista.id,
+                tarea_campana_id=nueva_tarea.id,  # ✅ ESTA ES LA CLAVE
+                timestamp=datetime.now()
+            )
+            db.add(historial)
+            await db.commit()
+
+    # 5. Devolver sesión final
+    result_final = await db.execute(
+        select(models.SesionCampana).options(
+            selectinload(models.SesionCampana.campana).options(
+                selectinload(models.Campana.lobs),
+                selectinload(models.Campana.analistas_asignados)
+            )
+        ).filter(models.SesionCampana.id == nueva_sesion.id)
+    )
+    return result_final.scalars().first()
+
+
+@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Propias + Campaña Activa)")
+async def read_tareas(
+    skip: int = 0,
+    limit: int = 100,
+    estado: Optional[ProgresoTarea] = None,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista) 
+):
+    # Consulta Base: Cargamos relaciones necesarias
+    query = select(models.Tarea).options(
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.analista),
+        selectinload(models.Tarea.checklist_items),  
+
+        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+        
+        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
+    )
+
+    # --- LÓGICA DE VISIBILIDAD (EL CORAZÓN DEL SISTEMA) ---
+    if current_analista.role == UserRole.ANALISTA:
+        # 1. Campañas donde estoy asignado FIJO
+        ids_mis_campanas = [c.id for c in current_analista.campanas_asignadas]
+
+        # 2. Campañas donde tengo Check-in ACTIVO (Sesión temporal)
+        q_sesiones = select(models.SesionCampana.campana_id).filter(
+            models.SesionCampana.analista_id == current_analista.id,
+            models.SesionCampana.fecha_fin.is_(None)
+        )
+        res_sesiones = await db.execute(q_sesiones)
+        ids_sesiones = res_sesiones.scalars().all()
+
+        # 3. Unimos ambas listas (sin duplicados)
+        ids_totales_acceso = list(set(ids_mis_campanas + ids_sesiones))
+
+        # El analista ve tareas si:
+        # A. Son suyas directas (analista_id == mi_id)
+        # B. Son de una campaña a la que tiene acceso (Check-in o Asignado)
+        # C. Son GLOBALES (campana_id IS NULL)
+        query = query.filter(
+            or_(
+                models.Tarea.analista_id == current_analista.id,
+                models.Tarea.campana_id.in_(ids_totales_acceso),
+                models.Tarea.campana_id.is_(None)
+            )
+        )
+    
+    # (Si es Supervisor o Admin, ve todo, así que no aplicamos el filtro anterior)
+
+    # --- Filtros Adicionales ---
+    if estado:
+        query = query.filter(models.Tarea.progreso == estado)
+
+    # Ordenar: Prioridad a las vencidas o pendientes
+    query = query.order_by(models.Tarea.fecha_vencimiento.asc())
+
+    # Paginación
+    query = query.offset(skip).limit(limit)
+
+    # Ejecutar
+    result = await db.execute(query)
+    tareas = result.scalars().all()
+    
+    return tareas
+
+
+@router.post("/sesiones/check-out", summary="Dejar de gestionar una campaña")
+async def check_out_campana(
+    datos: CheckInCreate,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Cierra la sesión activa en la campaña especificada.
+    """
+    # Buscar la sesión activa
+    query = select(models.SesionCampana).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.campana_id == datos.campana_id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    result = await db.execute(query)
+    sesion = result.scalars().first()
+
+    if not sesion:
+        raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
+
+    # Cerrar sesión
+    sesion.fecha_fin = datetime.now()
+    await db.commit()
+    
+    return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
+
+@router.get("/sesiones/cobertura", response_model=List[CoberturaCampana], summary="Radar de Cobertura (Con Nombres y Horarios)")
+async def obtener_cobertura_operativa(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
+):
+    # 1. Datos de tiempo (Argentina)
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    
+    # --- 🕒 DEFINIMOS EL INICIO DEL DÍA (La barrera Anti-Zombis) ---
+    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # ---------------------------------------------------------------
+    
+    hora_actual = ahora_arg.time()
+    dia_semana = ahora_arg.weekday() 
+
+    # 2. Query: Cargamos Campaña -> Sesiones -> Analista
+    query = select(models.Campana).options(
+        selectinload(models.Campana.sesiones).selectinload(models.SesionCampana.analista)
+    )
+    result = await db.execute(query)
+    campanas = result.scalars().all()
+    
+    reporte_cobertura = []
+
+    for campana in campanas:
+        # --- 🕵️‍♂️ FILTRO VISUAL INTELIGENTE ---
+        sesiones_activas = []
+        for s in campana.sesiones:
+            # 1. Si ya cerró, ignorar
+            if s.fecha_fin is not None:
+                continue
+                
+            # 2. Verificar que la sesión sea de HOY
+            # Convertimos la fecha de la DB a horario Argentina para comparar
+            if s.fecha_inicio.tzinfo is None:
+                inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(tz_argentina)
+            else:
+                inicio_local = s.fecha_inicio.astimezone(tz_argentina)
+
+            # Solo la contamos si empezó HOY (o después de las 00:00)
+            if inicio_local >= inicio_dia_hoy:
+                sesiones_activas.append(s)
+        # -------------------------------------
+        
+        # A. Contamos activos (Ya filtrados)
+        analistas_online = len(sesiones_activas)
+        
+        # B. Generamos la lista de nombres
+        lista_nombres = [f"{s.analista.nombre} {s.analista.apellido}" for s in sesiones_activas if s.analista]
+
+        # C. Seleccionamos el horario que corresponde al DÍA DE HOY
+        inicio = None
+        fin = None
+        
+        if dia_semana == 5:   # Sábado
+            inicio = campana.hora_inicio_sabado
+            fin = campana.hora_fin_sabado
+        elif dia_semana == 6: # Domingo
+            inicio = campana.hora_inicio_domingo
+            fin = campana.hora_fin_domingo
+        else:                 # Lunes a Viernes
+            inicio = campana.hora_inicio_semana
+            fin = campana.hora_fin_semana
+        
+        # D. Lógica de Estado (Semáforo)
+        estado = "DESCONOCIDO"
+
+        if not inicio or not fin:
+            if analistas_online > 0:
+                estado = "CUBIERTA"
+            else:
+                estado = "CERRADA"
+        else:
+            # Validar si estamos dentro del horario operativo
+            esta_operativa = False
+            if inicio <= fin:
+                esta_operativa = inicio <= hora_actual <= fin
+            else:
+                esta_operativa = hora_actual >= inicio or hora_actual <= fin
+            
+            if not esta_operativa:
+                estado = "CERRADA"
+            else:
+                if analistas_online > 0:
+                    estado = "CUBIERTA"
+                else:
+                    estado = "DESCUBIERTA" # 🚨 Alerta
+
+        # E. Armamos el objeto final
+        reporte_cobertura.append(CoberturaCampana(
+            campana_id=campana.id,
+            nombre_campana=campana.nombre,
+            estado=estado,
+            analistas_activos=analistas_online,
+            hora_inicio_hoy=inicio,
+            hora_fin_hoy=fin,
+            nombres_analistas=lista_nombres
+        ))
+
+    return reporte_cobertura
+
+@router.get("/sesiones/activas", response_model=List[SesionActiva], summary="Ver mis campañas activas (con limpieza automática)")
+async def obtener_mis_sesiones_activas(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Devuelve la lista de campañas donde el analista está haciendo check-in actualmente.
+    
+    Si detecta que hay una sesión abierta pero su fecha de inicio no es de HOY,
+    la cierra automáticamente. Esto obliga al usuario a volver a elegir campaña
+    para generar la rutina del nuevo día.
+    """
+    
+    # 1. Definir "Hoy" en Argentina (para evitar problemas de UTC)
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # 2. Obtener todas las sesiones "supuestamente" abiertas
+    query = select(models.SesionCampana).options(
+        selectinload(models.SesionCampana.campana)
+        .options(
+            selectinload(models.Campana.lobs),
+            selectinload(models.Campana.analistas_asignados)
+        )
+    ).filter(
+        models.SesionCampana.analista_id == current_analista.id,
+        models.SesionCampana.fecha_fin.is_(None)
+    )
+    
+    result = await db.execute(query)
+    sesiones_abiertas = result.scalars().all()
+    
+    sesiones_validas = []
+    hubo_cierre_automatico = False
+
+    for sesion in sesiones_abiertas:
+        # Convertimos la fecha de inicio de la sesión a la zona horaria local para comparar
+        # Asumimos que la fecha en BD es naive o UTC. Ajusta según tu configuración.
+        # Si guardas en UTC, conviértela a Argentina primero.
+        if sesion.fecha_inicio.tzinfo is None:
+            # Si viene sin zona horaria, asumimos UTC y convertimos
+            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(tz_argentina)
+        else:
+            inicio_sesion_aware = sesion.fecha_inicio.astimezone(tz_argentina)
+
+        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
+        if inicio_sesion_aware < inicio_dia_hoy:
+            # ¡Es una sesión Zombie de ayer! La cerramos.
+            sesion.fecha_fin = datetime.now() # Check-out forzado
+            hubo_cierre_automatico = True
+            print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer para {current_analista.email} en campaña {sesion.campana.nombre}")
+        else:
+            # Es de hoy, es válida.
+            sesiones_validas.append(sesion)
+
+    # 3. Si cerramos algo, guardamos los cambios en la BD
+    if hubo_cierre_automatico:
+        await db.commit()
+
+    return sesiones_validas

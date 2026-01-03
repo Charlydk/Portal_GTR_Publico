@@ -53,9 +53,7 @@ class Analista(Base):
     comentarios_tarea = relationship("ComentarioTarea", back_populates="autor")
     solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
     solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
-
-
-
+    sesiones = relationship("SesionCampana", back_populates="analista")
 
 class Campana(Base):
     __tablename__ = "campanas"
@@ -65,19 +63,25 @@ class Campana(Base):
     descripcion = Column(String, nullable=True)
     fecha_inicio = Column(DateTime(timezone=True), nullable=True)
     fecha_fin = Column(DateTime(timezone=True), nullable=True)
+    hora_inicio_semana = Column(Time, nullable=True)
+    hora_fin_semana = Column(Time, nullable=True)
+    hora_inicio_sabado = Column(Time, nullable=True)
+    hora_fin_sabado = Column(Time, nullable=True)
+    hora_inicio_domingo = Column(Time, nullable=True)
+    hora_fin_domingo = Column(Time, nullable=True)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-
-    # --- RELACIÓN CORREGIDA ---
+    plantilla_defecto_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
     lobs = relationship("LOB", back_populates="campana", cascade="all, delete-orphan")
-
-    # --- El resto de tus relaciones ---
     analistas_asignados = relationship("Analista", secondary=analistas_campanas, back_populates="campanas_asignadas")
     tareas = relationship("Tarea", back_populates="campana", cascade="all, delete-orphan")
     avisos = relationship("Aviso", back_populates="campana", cascade="all, delete-orphan")
+    sesiones = relationship("SesionCampana", back_populates="campana")
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     incidencias = relationship("Incidencia", back_populates="campana", cascade="all, delete-orphan")
     plantilla_checklist = relationship("PlantillaChecklistItem", back_populates="campana", cascade="all, delete-orphan")
+    plantilla_defecto = relationship("PlantillaChecklist")
+    
 
 class LOB(Base):
     __tablename__ = "lobs"
@@ -109,6 +113,7 @@ class Tarea(Base):
     checklist_items = relationship("ChecklistItem", back_populates="tarea", cascade="all, delete-orphan")
     historial_estados = relationship("HistorialEstadoTarea", back_populates="tarea_campana_rel", cascade="all, delete-orphan")
     comentarios = relationship("ComentarioTarea", back_populates="tarea", cascade="all, delete-orphan")
+    es_generada_automaticamente = Column(Boolean, default=False)
 
 
 class ChecklistItem(Base):
@@ -116,9 +121,13 @@ class ChecklistItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     descripcion = Column(String, nullable=False)
     completado = Column(Boolean, default=False)
+    hora_sugerida = Column(Time, nullable=True)
     fecha_creacion = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    fecha_completado = Column(DateTime(timezone=True), nullable=True)
     tarea_id = Column(Integer, ForeignKey("tareas.id"), nullable=False)
     tarea = relationship("Tarea", back_populates="checklist_items")
+    realizado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    realizado_por = relationship("Analista")
 
 class ComentarioGeneralBitacora(Base):
     __tablename__ = "comentarios_generales_bitacora"
@@ -314,6 +323,14 @@ class PlantillaChecklistItem(Base):
     campana_id = Column(Integer, ForeignKey('campanas.id'), nullable=False)
     campana = relationship("Campana", back_populates="plantilla_checklist")
 
+    lunes = Column(Boolean, default=True)
+    martes = Column(Boolean, default=True)
+    miercoles = Column(Boolean, default=True)
+    jueves = Column(Boolean, default=True)
+    viernes = Column(Boolean, default=True)
+    sabado = Column(Boolean, default=True)
+    domingo = Column(Boolean, default=True)
+
 class ChecklistDiarioItem(Base):
     __tablename__ = 'checklist_diario_items'
 
@@ -329,3 +346,42 @@ class ChecklistDiarioItem(Base):
     # Si el ítem viene de una plantilla, guardamos la referencia
     plantilla_item_id = Column(Integer, ForeignKey('plantillas_checklist_items.id'), nullable=True)
     plantilla_item = relationship("PlantillaChecklistItem")
+
+class PlantillaChecklist(Base):
+    __tablename__ = "plantillas_checklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String, nullable=False)
+    descripcion = Column(String, nullable=True)
+    prioridad = Column(String, default="MEDIA")
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relación con sus items
+    items = relationship("ItemPlantillaChecklist", back_populates="plantilla", cascade="all, delete-orphan")
+    
+    # Relación inversa con campañas (Opcional, pero útil)
+    campanas_asociadas = relationship("Campana", back_populates="plantilla_defecto")
+
+class ItemPlantillaChecklist(Base):
+    __tablename__ = "items_plantilla_checklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=False)
+    texto = Column(String, nullable=False)
+    orden = Column(Integer, default=0)
+
+    # Relación con la cabecera
+    plantilla = relationship("PlantillaChecklist", back_populates="items")
+
+class SesionCampana(Base):
+    __tablename__ = "sesiones_campana"
+
+    id = Column(Integer, primary_key=True, index=True)
+    analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
+    fecha_inicio = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_fin = Column(DateTime(timezone=True), nullable=True) # Null = Sesión Activa
+
+    # Relaciones
+    analista = relationship("Analista", back_populates="sesiones")
+    campana = relationship("Campana", back_populates="sesiones")
