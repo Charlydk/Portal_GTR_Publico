@@ -31,8 +31,9 @@ const Planificacion = () => {
   useEffect(() => {
     Promise.all([
       wfmService.getEquipos(),
-      wfmService.getConceptos()
-    ]).then(([equiposData, conceptosData]) => {
+      wfmService.getConceptos(),
+      wfmService.getClusters()
+    ]).then(([equiposData, conceptosData, clustersData]) => {
       setEquipos(equiposData);
       setConceptos(conceptosData);
       setListaClusters(clustersData);

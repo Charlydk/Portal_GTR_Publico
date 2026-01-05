@@ -100,10 +100,6 @@ const handleConceptoClick = (concepto) => {
             </InputGroup>
         </div>
         
-        <Form.Select 
-                // ...
-                disabled={modoBorrador || !conceptoSeleccionado || conceptoSeleccionado.codigo === 'OFF'}
-            ></Form.Select>
         
       </Card.Body>
     </Card>

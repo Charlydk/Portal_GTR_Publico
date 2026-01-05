@@ -134,13 +134,13 @@ async def upsert_turno(
 
 @router.delete("/planificacion", status_code=204)
 async def delete_turno(
-    analista_id: int,
-    fecha: date,
+    analista_id: int = Query(..., description="ID del analista"),
+    fecha: date = Query(..., description="Fecha del turno a borrar (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Elimina un turno específico basado en analista y fecha.
-    """
+    print(f"🗑️ Intentando borrar turno: Analista {analista_id}, Fecha {fecha}") # Log para depurar
+
+    # 1. Buscamos el turno
     query = select(models.PlanificacionDiaria).where(
         models.PlanificacionDiaria.analista_id == analista_id,
         models.PlanificacionDiaria.fecha == fecha
@@ -148,8 +148,13 @@ async def delete_turno(
     result = await db.execute(query)
     turno_db = result.scalars().first()
     
+    # 2. Si existe, lo borramos
     if turno_db:
         await db.delete(turno_db)
         await db.commit()
+        print("✅ Turno eliminado correctamente.")
+    else:
+        print("⚠️ No se encontró el turno, pero devolvemos éxito (Idempotencia).")
     
-    return None # 204 No Content
+    # Si no existe, igual devolvemos 204 (Todo ok), para que el frontend no de error
+    return None
