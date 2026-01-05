@@ -1,22 +1,18 @@
 import React from 'react';
 import { Table, Badge } from 'react-bootstrap';
 
-const MallaGrid = ({ analistas, turnos, rangoFechas, conceptos }) => {
+// 1. Agregamos onCeldaClick a las props
+const MallaGrid = ({ analistas, turnos, rangoFechas, onCeldaClick }) => {
   
-  // Función auxiliar para encontrar el turno de una persona en una fecha
   const getTurno = (analistaId, fechaStr) => {
-    return turnos.find(t => 
-      t.analista_id === analistaId && 
-      t.fecha === fechaStr
-    );
+    return turnos.find(t => t.analista_id === analistaId && t.fecha === fechaStr);
   };
 
-  // Función para obtener el color del badge según el concepto
   const getColorBadge = (codigo) => {
     if (codigo === 'OFF') return 'secondary';
     if (codigo === 'VAC') return 'info';
     if (codigo === 'LIC') return 'danger';
-    return 'success'; // Turnos normales (T1, T2...)
+    return 'success';
   };
 
   return (
@@ -38,35 +34,43 @@ const MallaGrid = ({ analistas, turnos, rangoFechas, conceptos }) => {
         <tbody>
           {analistas.map(analista => (
             <tr key={analista.id}>
-              {/* Columna Fija: Nombre del Analista */}
               <td className="text-start fw-bold text-secondary" style={{ position: 'sticky', left: 0, background: 'white', zIndex: 5 }}>
                 {analista.apellido}, {analista.nombre}
               </td>
 
-              {/* Columnas Dinámicas: Días */}
-              {rangoFechas.map(dia => {
+              {analistas.length > 0 && rangoFechas.map(dia => {
                 const turno = getTurno(analista.id, dia.fechaIso);
                 return (
-                  <td key={`${analista.id}-${dia.fechaIso}`} className="p-1" style={{ cursor: 'pointer' }}>
+                <td 
+                    key={`${analista.id}-${dia.fechaIso}`} 
+                    className="p-1 text-center align-middle" 
+                    style={{ cursor: 'pointer', height: '50px' }} // Un poco más alto para que quepa la hora
+                    onClick={() => onCeldaClick(analista.id, dia.fechaIso, turno)}
+                >
                     {turno ? (
-                      <Badge bg={getColorBadge(turno.concepto?.codigo)}>
+                    <div className="d-flex flex-column align-items-center lh-1">
+                        {/* El Badge con el código (T1, T2, OFF) */}
+                        <Badge bg={getColorBadge(turno.concepto?.codigo)} className="mb-1">
                         {turno.concepto?.codigo}
-                      </Badge>
+                        </Badge>
+                        
+                        {/* Si es laborable y tiene hora, la mostramos chiquita */}
+                        {turno.concepto?.es_laborable && turno.hora_inicio && (
+                        <span style={{ fontSize: '0.65rem', color: '#555' }}>
+                            {turno.hora_inicio.slice(0, 5)} - {turno.hora_fin.slice(0, 5)}
+                        </span>
+                        )}
+                    </div>
                     ) : (
-                      <span className="text-muted small">-</span>
+                    <span className="text-light text-opacity-25 user-select-none">·</span>
                     )}
-                  </td>
+                </td>
                 );
               })}
             </tr>
           ))}
-          
           {analistas.length === 0 && (
-            <tr>
-              <td colSpan={rangoFechas.length + 1} className="p-4 text-muted">
-                No hay analistas seleccionados para este equipo.
-              </td>
-            </tr>
+             <tr><td colSpan={rangoFechas.length + 1} className="p-4 text-muted">No hay analistas.</td></tr>
           )}
         </tbody>
       </Table>
