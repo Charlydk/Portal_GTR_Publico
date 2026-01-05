@@ -75,4 +75,22 @@ const wfmService = {
   }
 };
 
+// --- 4. ELIMINAR TURNO ---
+
+deleteTurno: async (analistaId, fecha) => {
+    // Usamos params en la URL para el DELETE
+    const url = new URL(`${API_BASE_URL}/wfm/planificacion`);
+    url.searchParams.append('analista_id', analistaId);
+    url.searchParams.append('fecha', fecha);
+
+    const response = await fetchWithAuth(url.toString(), {
+      method: 'DELETE'
+    });
+
+    if (!response.ok && response.status !== 404) {
+        throw new Error('Error al eliminar el turno');
+    }
+    return true;
+  }
+
 export default wfmService;

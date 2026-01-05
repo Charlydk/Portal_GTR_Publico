@@ -131,3 +131,25 @@ async def upsert_turno(
     
     final_result = await db.execute(query_refresh)
     return final_result.scalars().first()
+
+@router.delete("/planificacion", status_code=204)
+async def delete_turno(
+    analista_id: int,
+    fecha: date,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Elimina un turno específico basado en analista y fecha.
+    """
+    query = select(models.PlanificacionDiaria).where(
+        models.PlanificacionDiaria.analista_id == analista_id,
+        models.PlanificacionDiaria.fecha == fecha
+    )
+    result = await db.execute(query)
+    turno_db = result.scalars().first()
+    
+    if turno_db:
+        await db.delete(turno_db)
+        await db.commit()
+    
+    return None # 204 No Content

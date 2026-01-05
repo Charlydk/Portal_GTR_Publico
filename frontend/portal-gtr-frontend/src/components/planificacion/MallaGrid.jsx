@@ -40,21 +40,26 @@ const MallaGrid = ({ analistas, turnos, rangoFechas, onCeldaClick }) => {
 
               {analistas.length > 0 && rangoFechas.map(dia => {
                 const turno = getTurno(analista.id, dia.fechaIso);
+                const clusterColor = turno?.cluster?.color_hex || '#dee2e6';
                 return (
                 <td 
                     key={`${analista.id}-${dia.fechaIso}`} 
                     className="p-1 text-center align-middle" 
-                    style={{ cursor: 'pointer', height: '50px' }} // Un poco más alto para que quepa la hora
+                    style={{ 
+                        cursor: 'pointer', 
+                        height: '50px',
+                        // PINTAMOS EL BORDE IZQUIERDO DEL COLOR DEL CLUSTER
+                        borderLeft: turno?.cluster ? `4px solid ${clusterColor}` : '',
+                        backgroundColor: turno?.cluster ? `${clusterColor}15` : '' // Un fondo muy suave del mismo color (opcional)
+                    }} 
                     onClick={() => onCeldaClick(analista.id, dia.fechaIso, turno)}
                 >
                     {turno ? (
                     <div className="d-flex flex-column align-items-center lh-1">
-                        {/* El Badge con el código (T1, T2, OFF) */}
                         <Badge bg={getColorBadge(turno.concepto?.codigo)} className="mb-1">
                         {turno.concepto?.codigo}
                         </Badge>
                         
-                        {/* Si es laborable y tiene hora, la mostramos chiquita */}
                         {turno.concepto?.es_laborable && turno.hora_inicio && (
                         <span style={{ fontSize: '0.65rem', color: '#555' }}>
                             {turno.hora_inicio.slice(0, 5)} - {turno.hora_fin.slice(0, 5)}

@@ -23,6 +23,10 @@ const Planificacion = () => {
   const [horaInicioManual, setHoraInicioManual] = useState("");
   const [horaFinManual, setHoraFinManual] = useState("");
 
+  const [listaClusters, setListaClusters] = useState([]);
+  const [clusterSeleccionadoId, setClusterSeleccionadoId] = useState("");
+  const [modoBorrador, setModoBorrador] = useState(false);
+
   // Carga inicial (Equipos y Conceptos)
   useEffect(() => {
     Promise.all([
@@ -31,6 +35,7 @@ const Planificacion = () => {
     ]).then(([equiposData, conceptosData]) => {
       setEquipos(equiposData);
       setConceptos(conceptosData);
+      setListaClusters(clustersData);
       if (conceptosData.length > 0) setConceptoSeleccionado(conceptosData[0]);
     }).catch(console.error);
   }, []);
@@ -61,10 +66,27 @@ const Planificacion = () => {
     }
   };
 
-  // --- LÓGICA DE GUARDADO ---
   const handleCeldaClick = async (analistaId, fecha, turnoActual) => {
+    
+    // CASO 1: MODO BORRADOR
+    if (modoBorrador) {
+        if (!turnoActual) return; // No hay nada que borrar
+
+        try {
+            await wfmService.deleteTurno(analistaId, fecha);
+            // Actualizar estado local eliminando el turno
+            setTurnos(prev => prev.filter(t => !(t.analista_id === analistaId && t.fecha === fecha)));
+            setToastMsg("🗑️ Turno eliminado"); setShowToast(true);
+        } catch (error) {
+            console.error(error);
+            setToastMsg("❌ Error al eliminar"); setShowToast(true);
+        }
+        return;
+    }
+
+    // CASO 2: MODO ASIGNAR (Lógica existente)
     if (!conceptoSeleccionado) {
-      setToastMsg("⚠️ Selecciona un pincel primero.");
+      setToastMsg("⚠️ Selecciona un pincel o el borrador.");
       setShowToast(true);
       return;
     }
@@ -74,12 +96,15 @@ const Planificacion = () => {
         fecha: fecha,
         analista_id: analistaId,
         concepto_id: conceptoSeleccionado.id,
-        
-        // Si el usuario puso horas, las mandamos. Si no, mandamos null
         hora_inicio: horaInicioManual || null, 
         hora_fin: horaFinManual || null,
+        cluster_id: (conceptoSeleccionado.es_laborable && clusterSeleccionadoId) 
+                    ? parseInt(clusterSeleccionadoId) 
+                    : null
         
       };
+
+
       
       // Validación rápida: Si es un turno laboral (T1, T2) y no tiene horas definidas
       if (conceptoSeleccionado.es_laborable && (!horaInicioManual || !horaFinManual)) {
@@ -88,9 +113,10 @@ const Planificacion = () => {
           return;
       }
 
-      await wfmService.saveTurno(payload);
+      const turnoGuardado = await wfmService.saveTurno(payload);
       
-      actualizarTurnoLocal(analistaId, fecha, conceptoSeleccionado, horaInicioManual, horaFinManual);
+      // Actualizamos localmente usando el objeto cluster que devuelve el backend
+      actualizarTurnoLocal(analistaId, fecha, conceptoSeleccionado, horaInicioManual, horaFinManual, turnoGuardado.cluster);
 
     } catch (error) {
       console.error("Error guardando turno:", error);
@@ -108,7 +134,8 @@ const Planificacion = () => {
         concepto: concepto,
         concepto_id: concepto.id,
         hora_inicio: inicio,
-        hora_fin: fin
+        hora_fin: fin,
+        cluster: objCluster
       }];
     });
   };
@@ -157,6 +184,11 @@ const Planificacion = () => {
         setHoraInicio={setHoraInicioManual}
         horaFin={horaFinManual}
         setHoraFin={setHoraFinManual}
+        clusters={listaClusters}
+        clusterSeleccionado={clusterSeleccionadoId}
+        setClusterSeleccionado={setClusterSeleccionadoId}
+        modoBorrador={modoBorrador}
+        setModoBorrador={setModoBorrador}
       />
 
       {/* 2. FILTROS */}
