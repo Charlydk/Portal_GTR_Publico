@@ -643,3 +643,63 @@ class Lob(LobBase):
         from_attributes = True # Permite que Pydantic lea los datos desde el modelo ORM
 
 
+# ==========================================
+# SCHEMAS WFM (Planificación)
+# ==========================================
+
+# --- EQUIPOS ---
+class EquipoBase(BaseModel):
+    nombre: str
+    codigo_pais: Optional[str] = None
+
+class Equipo(EquipoBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- CLUSTERS (Grupos/Colores) ---
+class ClusterBase(BaseModel):
+    nombre: str
+    color_hex: str = "#6c757d"
+    equipo_id: Optional[int] = None
+
+class Cluster(ClusterBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- CONCEPTOS DE TURNO (Turno, Off, Vacaciones) ---
+class ConceptoTurnoBase(BaseModel):
+    codigo: str
+    nombre: str
+    es_laborable: bool = True
+    requiere_asistencia: bool = True
+
+class ConceptoTurno(ConceptoTurnoBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- PLANIFICACIÓN DIARIA (La celda del Excel) ---
+class PlanificacionBase(BaseModel):
+    fecha: date
+    analista_id: int
+    concepto_id: int
+    cluster_id: Optional[int] = None
+    hora_inicio: Optional[time] = None
+    hora_fin: Optional[time] = None
+    es_extra: bool = False
+    nota: Optional[str] = None
+
+class PlanificacionCreate(PlanificacionBase):
+    pass
+
+class Planificacion(PlanificacionBase):
+    id: int
+    # Relaciones para mostrar nombres en el frontend
+    concepto: Optional[ConceptoTurno] = None
+    cluster: Optional[Cluster] = None
+    analista: Optional[AnalistaSimple] = None # Usamos el Simple para no hacer ciclo infinito
+
+    class Config:
+        from_attributes = True

@@ -26,7 +26,7 @@ from .security import verify_password, get_password_hash, create_access_token, d
 from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
-from .routers import gtr_router, hhee_router
+from .routers import gtr_router, hhee_router, wfm_router
 from .dependencies import get_current_analista, require_role
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
@@ -82,6 +82,7 @@ app.add_middleware(
 
 app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router, prefix="/hhee")
+app.include_router(wfm_router.router, prefix="/wfm")
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
