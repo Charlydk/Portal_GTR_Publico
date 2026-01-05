@@ -82,7 +82,7 @@ app.add_middleware(
 
 app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router, prefix="/hhee")
-app.include_router(wfm_router.router, prefix="/wfm")
+app.include_router(wfm_router.router)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
