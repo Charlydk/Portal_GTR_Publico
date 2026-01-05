@@ -82,11 +82,18 @@ class AcuseReciboCreate(BaseModel):
     analista_id: int
 
 class BitacoraEntryBase(BaseModel):
-    campana_id: int
-    fecha: Optional[date] = None
     hora: time
+    campana_id: int
     comentario: Optional[str] = None
-    lob_id: Optional[int] = None
+    
+    # Campos para Incidencias
+    es_incidencia: bool = False
+    incidencia_id: Optional[int] = None
+    tipo_incidencia: Optional[str] = None
+    comentario_incidencia: Optional[str] = None
+
+class BitacoraEntryCreate(BitacoraEntryBase):
+    pass
 
 class BitacoraEntryUpdate(BaseModel):
     fecha: Optional[date] = None
@@ -257,13 +264,19 @@ class Lob(LobBase):
 
 class BitacoraEntry(BitacoraEntryBase):
     id: int
-    fecha_creacion: Optional[datetime] = None
-    fecha_ultima_actualizacion: Optional[datetime] = None
-    autor: AnalistaSimple
-    campana: "CampanaSimple"
-    lob: Optional[Lob] = None
+    fecha: date
+    autor_id: int
+    
+    # Relaciones anidadas (Opcionales para evitar recursión infinita)
+    campana: Optional['CampanaSimple'] = None
+    autor: Optional['AnalistaSimple'] = None
+    
+    # Configuración para que Pydantic lea modelos de SQLAlchemy
     class Config:
         from_attributes = True
+
+# Alias para compatibilidad si algún código viejo usa 'Simple'
+BitacoraEntrySimple = BitacoraEntry
 
 # --- Schemas para Incidencias ---
 class ActualizacionIncidencia(ActualizacionIncidenciaBase):

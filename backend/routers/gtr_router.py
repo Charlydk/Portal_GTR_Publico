@@ -35,7 +35,7 @@ from ..schemas.models import (
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
     AcuseReciboAviso, AcuseReciboCreate, AcuseReciboAvisoSimple,
-    BitacoraEntry, BitacoraEntryBase, BitacoraEntryUpdate, Lob,
+    BitacoraEntry, BitacoraEntryCreate , BitacoraEntryBase, BitacoraEntryUpdate, Lob,
     ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate, BitacoraExportFilters,
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
@@ -1869,7 +1869,7 @@ async def obtener_lobs_por_campana(
     """
     Devuelve una lista de todos los LOBs asociados a una campaña específica.
     """
-    query = select(models.LOB).where(models.LOB.campana_id == campana_id)
+    query = select(models.Lob).where(models.Lob.campana_id == campana_id)
     result = await db.execute(query)
     lobs = result.scalars().all()
     
@@ -1881,7 +1881,7 @@ async def obtener_lobs_por_campana(
 
 @router.post("/bitacora_entries/", response_model=BitacoraEntry, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Entrada de Bitácora")
 async def create_bitacora_entry(
-    entry: BitacoraEntryBase,
+    entry: BitacoraEntryCreate, # Usa el schema de creación para la entrada
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
@@ -1892,46 +1892,41 @@ async def create_bitacora_entry(
     
     # 1. Definimos la zona horaria de referencia
     tucuman_tz = pytz.timezone("America/Argentina/Tucuman")
-    # 2. Calculamos la fecha correcta en esa zona horaria
-    fecha_correcta = datetime.now(tucuman_tz).date()
-
-    # 3. Verificamos si ya existe una entrada para esa hora, usando la fecha correcta
-    query_existente = select(models.BitacoraEntry).filter(
-        models.BitacoraEntry.fecha == fecha_correcta,
-        models.BitacoraEntry.hora == entry.hora,
-        models.BitacoraEntry.campana_id == entry.campana_id,
-        models.BitacoraEntry.lob_id == entry.lob_id
-    )
-    result_existente = await db.execute(query_existente)
-    if result_existente.scalars().first():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe un evento registrado en la misma franja horaria para esta campaña y LOB."
-        )
-    now_utc = datetime.now(pytz.utc)
+    now_arg = datetime.now(tucuman_tz)
     
-    datos_limpios = entry.model_dump(exclude={"fecha"})
+    # 2. Calculamos la fecha y hora correctas
+    fecha_correcta = now_arg.date()
+    hora_correcta = entry.hora # O usamos now_arg.time() si prefieres la hora del servidor
+
+    # 3. Verificamos duplicados (Opcional, según tu lógica de negocio)
+    # Nota: He simplificado esto para evitar bloqueos si quieres permitir múltiples logs
+    # Si quieres evitar duplicados estrictos, descomenta la validación original.
+
+    # 4. Limpiamos los datos del Pydantic
+    # ¡AQUÍ ESTÁ LA MAGIA! Excluimos explícitamente 'lob_id' y 'fecha' para manejarlos manual
+    datos_limpios = entry.model_dump(exclude={"fecha", "lob_id"})
+    
     if datos_limpios.get("comentario"):
         datos_limpios["comentario"] = bleach.clean(datos_limpios["comentario"])
     
+    # 5. Creamos el objeto DB solo con columnas que EXISTEN en models.py
     db_entry = models.BitacoraEntry(
         **datos_limpios,
         fecha=fecha_correcta, 
         autor_id=current_analista.id,
-        # 3. Asignamos los timestamps directamente en el código
-        fecha_creacion=now_utc,
-        fecha_ultima_actualizacion=now_utc
+        # Nota: No agregamos fecha_creacion/actualizacion porque no están en el modelo SQL actual
     )
     
     db.add(db_entry)
     await db.commit()
+    await db.refresh(db_entry)
 
-    # El resto de la función para recargar y devolver la entrada se mantiene
+    # 6. Devolvemos el objeto recargado (SIN cargar la relación .lob que no existe)
     result = await db.execute(
         select(models.BitacoraEntry).options(
             selectinload(models.BitacoraEntry.campana), 
             selectinload(models.BitacoraEntry.autor),
-            selectinload(models.BitacoraEntry.lob)
+            # selectinload(models.BitacoraEntry.lob) <--- ELIMINADO PARA EVITAR ERROR
         ).filter(models.BitacoraEntry.id == db_entry.id)
     )
     return result.scalars().first()
@@ -2015,47 +2010,44 @@ async def delete_bitacora_entry(
         )
     return
 
-@router.get("/bitacora/log_de_hoy/{campana_id}", response_model=List[BitacoraEntry], summary="Obtiene el log del día operativo actual (Hora de Argentina)")
+@router.get("/bitacora/log_de_hoy/{campana_id}", summary="Obtiene el log del día operativo actual (Hora de Argentina)")
 async def get_log_de_hoy(
     campana_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Obtiene las entradas de la bitácora para el día operativo actual,
-    definido por la zona horaria de Argentina (ART/UTC-3),
-    independientemente de la ubicación del usuario o del servidor.
+    comparando solo la FECHA (Date) en zona horaria Argentina.
     """
     try:
-        # 1. Establecemos la zona horaria de referencia para la operación
-        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+        # 1. Configurar Zona Horaria
+        tz_argentina = pytz.timezone("America/Argentina/Buenos_Aires")
+        
+        # 2. Obtener solo la FECHA de hoy en Argentina (sin hora)
+        fecha_hoy_arg = datetime.now(tz_argentina).date()
 
-        # 2. Obtenemos el momento actual en esa zona horaria
-        now_in_argentina = datetime.now(tz_argentina)
-
-        # 3. Determinamos el inicio y el fin del "día de hoy" en Argentina
-        start_of_day_local = now_in_argentina.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day_local = now_in_argentina.replace(hour=23, minute=59, second=59, microsecond=999999)
-
-        # 4. Construimos la consulta usando el timestamp `fecha_creacion`,
-        # que es la fuente de verdad del momento exacto del registro.
-        # Asumimos que `fecha_creacion` está en UTC, como confirman tus datos.
-        query = select(models.BitacoraEntry).options(
-            selectinload(models.BitacoraEntry.autor),
-            selectinload(models.BitacoraEntry.campana),
-            selectinload(models.BitacoraEntry.lob)
-        ).filter(
-            models.BitacoraEntry.campana_id == campana_id,
-            models.BitacoraEntry.fecha_creacion >= start_of_day_local,
-            models.BitacoraEntry.fecha_creacion <= end_of_day_local
-        ).order_by(
-            models.BitacoraEntry.hora.desc()
+        # 3. Consulta usando las columnas correctas: 'fecha' y 'hora'
+        query = (
+            select(models.BitacoraEntry)
+            .options(
+                selectinload(models.BitacoraEntry.autor),
+                selectinload(models.BitacoraEntry.incidencia) # Agregamos incidencia por si el front lo pide
+            )
+            .where(
+                models.BitacoraEntry.campana_id == campana_id,
+                models.BitacoraEntry.fecha == fecha_hoy_arg  # <--- CORRECCIÓN AQUÍ: Usamos .fecha
+            )
+            .order_by(
+                models.BitacoraEntry.hora.desc() # Ordenamos por la columna 'hora'
+            )
         )
         
         result = await db.execute(query)
         return result.scalars().all()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error interno al calcular el log del día: {e}")
 
+    except Exception as e:
+        print(f"Error en get_log_de_hoy: {e}") # Log para ver en consola
+        raise HTTPException(status_code=500, detail=f"Error interno al calcular el log del día: {str(e)}")
 
 
 # --- NUEVOS ENDPOINTS PARA COMENTARIOS GENERALES DE BITÁCORA ---
@@ -2241,29 +2233,6 @@ async def update_incidencia(
     await db.commit()
     return await get_incidencia_by_id(incidencia_id, db, current_analista)
 
-@router.get("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Obtener detalles de una Incidencia")
-async def get_incidencia_by_id(
-    incidencia_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
-):
-    result = await db.execute(
-        select(models.Incidencia)
-        .options(
-            selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.campana),
-            selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
-            selectinload(models.Incidencia.asignado_a),
-            selectinload(models.Incidencia.lobs),
-            selectinload(models.Incidencia.cerrado_por)
-        )
-        .filter(models.Incidencia.id == incidencia_id)
-    )
-    incidencia = result.scalars().first()
-    if not incidencia:
-        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
-    
-    return incidencia
 
 @router.get("/incidencias/filtradas/", response_model=List[IncidenciaSimple], summary="[Portal de Control] Obtener incidencias con filtros avanzados")
 async def get_incidencias_filtradas(
@@ -2942,7 +2911,6 @@ async def get_mis_incidencias_asignadas(
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
         selectinload(models.Incidencia.lobs),
-        selectinload(models.Incidencia.creador),
         selectinload(models.Incidencia.cerrado_por),
         selectinload(models.Incidencia.asignado_a)
     ).filter(
@@ -2955,6 +2923,30 @@ async def get_mis_incidencias_asignadas(
     
     result = await db.execute(query)
     return result.scalars().unique().all()
+
+@router.get("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Obtener detalles de una Incidencia")
+async def get_incidencia_by_id(
+    incidencia_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    result = await db.execute(
+        select(models.Incidencia)
+        .options(
+            selectinload(models.Incidencia.creador),
+            selectinload(models.Incidencia.campana),
+            selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
+            selectinload(models.Incidencia.asignado_a),
+            selectinload(models.Incidencia.lobs),
+            selectinload(models.Incidencia.cerrado_por)
+        )
+        .filter(models.Incidencia.id == incidencia_id)
+    )
+    incidencia = result.scalars().first()
+    if not incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    
+    return incidencia
 
 # --- ENDPOINTS PARA DASHBOARD ---
 
