@@ -1,71 +1,130 @@
 import React, { useState, useEffect } from 'react';
-import wfmService from '../../services/wfmService.js';
+import { Container, Row, Col, Form, Button, Spinner } from 'react-bootstrap';
+import wfmService from '../../services/wfmService';
+import MallaGrid from '../../components/planificacion/MallaGrid';
 
 const Planificacion = () => {
-  const [conceptos, setConceptos] = useState([]);
+  // Estado para filtros y datos
+  const [fechaInicio, setFechaInicio] = useState(new Date().toISOString().slice(0, 10)); // Hoy
+  const [diasVista, setDiasVista] = useState(7); // Ver 7 días por defecto
+  
+  const [analistas, setAnalistas] = useState([]);
+  const [turnos, setTurnos] = useState([]);
   const [equipos, setEquipos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [equipoSeleccionado, setEquipoSeleccionado] = useState("");
 
+  // Cargar lista de equipos al inicio
   useEffect(() => {
-    const cargarConfiguracion = async () => {
-      try {
-        // Hacemos las peticiones en paralelo
-        const [conceptosData, equiposData] = await Promise.all([
-          wfmService.getConceptos(),
-          wfmService.getEquipos()
-        ]);
-
-        setConceptos(conceptosData);
-        setEquipos(equiposData);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error cargando WFM:", error);
-        setLoading(false);
-      }
-    };
-
-    cargarConfiguracion();
+    wfmService.getEquipos().then(setEquipos).catch(console.error);
   }, []);
 
-  if (loading) return <div className="p-4">Cargando Malla de Turnos...</div>;
+  // Cargar la malla cuando cambian los filtros
+  useEffect(() => {
+    cargarDatos();
+  }, [fechaInicio, diasVista, equipoSeleccionado]);
+
+  const cargarDatos = async () => {
+    setLoading(true);
+    try {
+      // 1. Calcular fecha fin basada en los días de vista
+      const inicio = new Date(fechaInicio);
+      const fin = new Date(fechaInicio);
+      fin.setDate(inicio.getDate() + diasVista - 1);
+      const fechaFinStr = fin.toISOString().slice(0, 10);
+
+      // 2. Peticiones paralelas
+      const [analistasData, turnosData] = await Promise.all([
+        wfmService.getAnalistas(equipoSeleccionado || null),
+        wfmService.getPlanificacion(fechaInicio, fechaFinStr, equipoSeleccionado || null)
+      ]);
+
+      setAnalistas(analistasData);
+      setTurnos(turnosData);
+    } catch (error) {
+      console.error("Error cargando malla:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generar array de fechas para las columnas
+  const generarColumnasFechas = () => {
+    const columnas = [];
+    const actual = new Date(fechaInicio);
+    
+    for (let i = 0; i < diasVista; i++) {
+      // Importante: usar UTC o ajustar zona horaria para evitar desfases visuales
+      // Aquí usamos una aproximación simple para mostrar el concepto
+      columnas.push({
+        fechaIso: actual.toISOString().slice(0, 10),
+        nombreDia: actual.toLocaleDateString('es-ES', { weekday: 'short' }).toUpperCase(),
+        numeroDia: actual.getDate()
+      });
+      actual.setDate(actual.getDate() + 1);
+    }
+    return columnas;
+  };
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4 text-gray-800">Planificación de Turnos (WFM)</h1>
-      
-      {/* TARJETA DE PRUEBA DE CONEXIÓN */}
-      <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-        <h2 className="text-lg font-semibold text-green-600 mb-2">✅ Conexión Exitosa con Backend Fase 2</h2>
-        <p className="text-gray-600 mb-4">Si ves las listas abajo, el frontend ya está leyendo la nueva base de datos.</p>
-
-        <div className="grid grid-cols-2 gap-8">
-          {/* LISTA DE EQUIPOS */}
-          <div>
-            <h3 className="font-bold text-gray-700 border-b pb-2 mb-2">Equipos Disponibles</h3>
-            <ul className="list-disc pl-5">
-              {equipos.map(eq => (
-                <li key={eq.id} className="text-sm text-gray-600">
-                  {eq.nombre} <span className="text-xs bg-gray-200 px-1 rounded">({eq.codigo_pais})</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* LISTA DE CONCEPTOS */}
-          <div>
-            <h3 className="font-bold text-gray-700 border-b pb-2 mb-2">Conceptos (Turnos/Off)</h3>
-            <ul className="grid grid-cols-2 gap-2">
-              {conceptos.map(c => (
-                <li key={c.id} className="text-sm border p-2 rounded text-center">
-                  <strong>{c.codigo}</strong>
-                  <div className="text-xs text-gray-500">{c.nombre}</div>
-                </li>
-              ))}
-            </ul>
-          </div>
+    <Container fluid className="p-4 bg-light min-h-screen">
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h2 className="text-primary fw-bold">📅 Planificación de Turnos</h2>
+        <div>
+          <Button variant="primary" onClick={cargarDatos} disabled={loading}>
+            {loading ? <Spinner size="sm" animation="border" /> : 'Actualizar Malla'}
+          </Button>
         </div>
       </div>
-    </div>
+
+      {/* FILTROS */}
+      <div className="bg-white p-3 rounded shadow-sm mb-4">
+        <Row className="g-3 align-items-end">
+          <Col md={3}>
+            <Form.Label>Fecha Inicio</Form.Label>
+            <Form.Control 
+              type="date" 
+              value={fechaInicio} 
+              onChange={(e) => setFechaInicio(e.target.value)} 
+            />
+          </Col>
+          <Col md={2}>
+            <Form.Label>Vista</Form.Label>
+            <Form.Select value={diasVista} onChange={(e) => setDiasVista(Number(e.target.value))}>
+              <option value={7}>Semanal (7 días)</option>
+              <option value={15}>Quincenal (15 días)</option>
+              <option value={30}>Mensual (30 días)</option>
+            </Form.Select>
+          </Col>
+          <Col md={3}>
+            <Form.Label>Equipo / País</Form.Label>
+            <Form.Select 
+              value={equipoSeleccionado} 
+              onChange={(e) => setEquipoSeleccionado(e.target.value)}
+            >
+              <option value="">Todos los equipos</option>
+              {equipos.map(eq => (
+                <option key={eq.id} value={eq.id}>{eq.nombre}</option>
+              ))}
+            </Form.Select>
+          </Col>
+        </Row>
+      </div>
+
+      {/* MALLA (GRID) */}
+      {loading ? (
+        <div className="text-center py-5">
+          <Spinner animation="border" variant="primary" />
+          <p className="mt-2 text-muted">Cargando turnos...</p>
+        </div>
+      ) : (
+        <MallaGrid 
+          analistas={analistas} 
+          turnos={turnos} 
+          rangoFechas={generarColumnasFechas()} 
+        />
+      )}
+    </Container>
   );
 };
 

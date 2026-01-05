@@ -27,6 +27,15 @@ const wfmService = {
     return await response.json();
   },
 
+  getAnalistas: async (equipoId = null) => {
+    let url = `${API_BASE_URL}/wfm/analistas`;
+    if (equipoId) url += `?equipo_id=${equipoId}`;
+    
+    const response = await fetchWithAuth(url, { method: 'GET' });
+    if (!response.ok) throw new Error('Error al cargar analistas');
+    return await response.json();
+  },
+
   // --- 2. MALLA DE TURNOS ---
 
   getPlanificacion: async (fechaInicio, fechaFin, equipoId = null) => {

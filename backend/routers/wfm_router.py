@@ -35,7 +35,27 @@ async def get_conceptos(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(models.ConceptoTurno))
     return result.scalars().all()
 
+@router.get("/analistas", response_model=List[schemas.AnalistaSimple])
+async def get_analistas_wfm(
+    equipo_id: int = Query(None),
+    active_only: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    query = select(models.Analista)
+    
+    if active_only:
+        query = query.where(models.Analista.esta_activo == True)
+    query = query.where(models.Analista.role.in_([UserRole.ANALISTA, UserRole.RESPONSABLE]))
+    if equipo_id:
+        query = query.where(models.Analista.equipo_id == equipo_id)
+        
+    query = query.order_by(models.Analista.apellido, models.Analista.nombre)
+    
+    result = await db.execute(query)
+    return result.scalars().all()
+
 # --- ENDPOINT PRINCIPAL: LA MALLA DE TURNOS ---
+
 
 @router.get("/planificacion", response_model=List[schemas.Planificacion])
 async def get_malla_turnos(
