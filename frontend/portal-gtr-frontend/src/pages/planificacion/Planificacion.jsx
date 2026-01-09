@@ -126,7 +126,7 @@ const Planificacion = () => {
     }
   };
 
-  const actualizarTurnoLocal = (analistaId, fecha, concepto, inicio, fin) => {
+  const actualizarTurnoLocal = (analistaId, fecha, concepto, inicio, fin, objCluster) => {
     setTurnos(prev => {
       const filtrados = prev.filter(t => !(t.analista_id === analistaId && t.fecha === fecha));
       return [...filtrados, {
@@ -139,7 +139,7 @@ const Planificacion = () => {
         cluster: objCluster
       }];
     });
-  };
+};
 
   const generarColumnasFechas = () => {
     const columnas = [];
