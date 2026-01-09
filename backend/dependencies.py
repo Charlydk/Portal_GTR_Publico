@@ -31,36 +31,40 @@ async def get_current_analista(token: str = Depends(oauth2_scheme), db: AsyncSes
     except Exception:
         raise credentials_exception
 
-    # --- Consulta más completa ---
-    # Ahora cargamos todas las relaciones del analista de una sola vez
-    # para evitar errores de carga perezosa (MissingGreenlet) en toda la aplicación.
     result = await db.execute(
-        select(models.Analista).filter(models.Analista.email == token_data.email)
-        .options(
-            # Cargamos las relaciones directas del Analista
+        select(models.Analista).options(
+            # 1. Campañas y Relaciones Base
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.equipo), # Nueva relación Fase 2
             
-            # Para estas relaciones, también cargamos sus relaciones anidadas
-            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
-            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
-            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
-            
-            # --- AQUÍ ESTÁ LA CORRECCIÓN CLAVE ---
-            # Le decimos que al cargar las incidencias, también cargue la campana Y los lobs de CADA incidencia.
-            selectinload(models.Analista.incidencias_creadas).options(
-                selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
+            # 2. Tareas
+            selectinload(models.Analista.tareas).options(
+                selectinload(models.Tarea.campana),
+                selectinload(models.Tarea.checklist_items)
             ),
+            
+            # 3. Incidencias (SOLO ASIGNADAS, no creadas)
             selectinload(models.Analista.incidencias_asignadas).options(
                 selectinload(models.Incidencia.campana),
                 selectinload(models.Incidencia.lobs)
             ),
-            # --- FIN DE LA CORRECCIÓN CLAVE ---
+            
+            # 4. Avisos y Notificaciones
+            selectinload(models.Analista.avisos_creados),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            
+            # 5. Bitácora y Sesiones
+            selectinload(models.Analista.comentarios_bitacora),
+            selectinload(models.Analista.sesiones),
+            
+            # 6. HHEE (Horas Extras)
+            selectinload(models.Analista.validaciones_hhee),
+            selectinload(models.Analista.solicitudes_hhee),
 
-            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
-        )
+            # 7. Planificación (Fase 2)
+            selectinload(models.Analista.planificaciones).selectinload(models.PlanificacionDiaria.cluster)
+        ).filter(models.Analista.email == token_data.email)
     )
     
     analista = result.scalars().first()
