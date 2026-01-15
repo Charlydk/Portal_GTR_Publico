@@ -281,10 +281,14 @@ class IncidenciaSimple(BaseModel):
     gravedad: Optional[GravedadIncidencia] = 'MEDIA'
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
-    creador: AnalistaSimple
+    
+    creador: Optional[AnalistaSimple] = None
+    
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-    campana: "CampanaSimple"
+
+    campana: Optional["CampanaSimple"] = None 
+    
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None
     class Config:
@@ -304,7 +308,7 @@ class Incidencia(BaseModel):
     creador: AnalistaSimple
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-    campana: "CampanaSimple"
+    campana: Optional["CampanaSimple"] = None
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None 
     actualizaciones: List[ActualizacionIncidencia] = []

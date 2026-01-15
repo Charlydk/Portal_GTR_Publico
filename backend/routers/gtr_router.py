@@ -2241,29 +2241,6 @@ async def update_incidencia(
     await db.commit()
     return await get_incidencia_by_id(incidencia_id, db, current_analista)
 
-@router.get("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Obtener detalles de una Incidencia")
-async def get_incidencia_by_id(
-    incidencia_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
-):
-    result = await db.execute(
-        select(models.Incidencia)
-        .options(
-            selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.campana),
-            selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
-            selectinload(models.Incidencia.asignado_a),
-            selectinload(models.Incidencia.lobs),
-            selectinload(models.Incidencia.cerrado_por)
-        )
-        .filter(models.Incidencia.id == incidencia_id)
-    )
-    incidencia = result.scalars().first()
-    if not incidencia:
-        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
-    
-    return incidencia
 
 @router.get("/incidencias/filtradas/", response_model=List[IncidenciaSimple], summary="[Portal de Control] Obtener incidencias con filtros avanzados")
 async def get_incidencias_filtradas(
@@ -2955,6 +2932,31 @@ async def get_mis_incidencias_asignadas(
     
     result = await db.execute(query)
     return result.scalars().unique().all()
+
+@router.get("/incidencias/{incidencia_id}", response_model=Incidencia, summary="Obtener detalles de una Incidencia")
+async def get_incidencia_by_id(
+    incidencia_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    result = await db.execute(
+        select(models.Incidencia)
+        .options(
+            selectinload(models.Incidencia.creador),
+            selectinload(models.Incidencia.campana),
+            selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
+            selectinload(models.Incidencia.asignado_a),
+            selectinload(models.Incidencia.lobs),
+            selectinload(models.Incidencia.cerrado_por)
+        )
+        .filter(models.Incidencia.id == incidencia_id)
+    )
+    incidencia = result.scalars().first()
+    if not incidencia:
+        raise HTTPException(status_code=404, detail="Incidencia no encontrada")
+    
+    return incidencia
+
 
 # --- ENDPOINTS PARA DASHBOARD ---
 
