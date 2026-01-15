@@ -1,6 +1,6 @@
 // RUTA: src/pages/DashboardPage.jsx
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { API_BASE_URL, fetchWithAuth } from '../api'; 
@@ -30,11 +30,18 @@ function DashboardPage() {
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
     const [estadoAnalistas, setEstadoAnalistas] = useState([]);
 
-    useEffect(() => {
-        if (user) {
-            cargarDatosDashboard();
-        }
-    }, [user]);
+    // Bandera para asegurar que solo cargue una vez
+const dataLoaded = useRef(false);
+
+useEffect(() => {
+    // Log para ver si el ID realmente cambia o si es el componente renaciendo
+    console.log("🔄 Intento de carga. User ID:", user?.id, " | Ya cargado:", dataLoaded.current);
+
+    if (user?.id && !dataLoaded.current) {
+        cargarDatosDashboard();
+        dataLoaded.current = true; // 🔒 Bloqueamos futuras cargas
+    }
+}, [user?.id]);
 
     const cargarDatosDashboard = async () => {
         setLoading(true);
