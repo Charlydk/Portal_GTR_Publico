@@ -656,7 +656,7 @@ async def obtener_campanas(
     campanas = result.scalars().all()
     return campanas
 
-@router.get("/tareas/", response_model=List[Tarea], summary="Obtener lista de tareas (Global y Gestionada)")
+@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Global y Gestionada)")
 async def obtener_tareas_unificadas(
     skip: int = 0,
     limit: int = 100,
@@ -667,14 +667,14 @@ async def obtener_tareas_unificadas(
     """
     Endpoint UNIFICADO para listar tareas.
     Incluye:
-    1. Limpieza automática de tareas vencidas.
-    2. Carga profunda de relaciones (Evita error MissingGreenlet).
+    1. Limpieza automática de tareas vencidas (Barrendero).
+    2. Carga profunda de relaciones anidadas (Soluciona Error 500 MissingGreenlet).
     3. Filtrado de seguridad por rol (Analista solo ve lo suyo).
     """
     
-    # --- 1. 🧹 BARRENDERO AUTOMÁTICO (Limpieza de vencidas) ---
+    # --- 1. 🧹 BARRENDERO AUTOMÁTICO (Traído de la función vieja) ---
+    # Limpia tareas vencidas antes de consultar
     now = datetime.now()
-    # Actualizamos a CANCELADA las tareas vencidas que sigan pendientes
     query_limpieza = (
         update(models.Tarea)
         .where(
@@ -688,23 +688,23 @@ async def obtener_tareas_unificadas(
     await db.commit()
     # -----------------------------------------------------------
 
-    # --- 2. QUERY BASE CON CARGA CORRECTA (SOLUCIÓN ERROR 500) ---
+    # --- 2. QUERY BASE CON CARGA CORRECTA (Soluciona el error actual) ---
     query = select(models.Tarea).options(
         selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
         selectinload(models.Tarea.checklist_items),  
         
-        # 👇 ESTAS SON LAS LÍNEAS QUE FALTABAN Y CAUSABAN EL ERROR
+        # 👇 LA CLAVE DEL ARREGLO: Cargas anidadas
         selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
         selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
     )
 
-    # --- 3. LÓGICA DE VISIBILIDAD SEGÚN ROL ---
+    # --- 3. LÓGICA DE VISIBILIDAD (Seguridad de Datos) ---
     if current_analista.role == UserRole.ANALISTA:
         # A. Campañas asignadas fijas
         ids_mis_campanas = [c.id for c in current_analista.campanas_asignadas]
 
-        # B. Campañas con Check-in activo
+        # B. Campañas con Check-in activo hoy
         q_sesiones = select(models.SesionCampana.campana_id).filter(
             models.SesionCampana.analista_id == current_analista.id,
             models.SesionCampana.fecha_fin.is_(None)
@@ -724,19 +724,16 @@ async def obtener_tareas_unificadas(
             )
         )
     
-    # (Si es Supervisor/Responsable, ve todo por defecto)
+    # (Si es Supervisor, ve todo, el filtro no aplica)
 
-    # --- 4. FILTROS ADICIONALES ---
+    # --- 4. FILTROS Y ORDEN ---
     if estado:
         query = query.filter(models.Tarea.progreso == estado)
 
-    # Ordenar: Prioridad a las vencidas primero
     query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
-
-    # Paginación y Ejecución
     query = query.offset(skip).limit(limit)
+
     result = await db.execute(query)
-    
     return result.scalars().all()
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
