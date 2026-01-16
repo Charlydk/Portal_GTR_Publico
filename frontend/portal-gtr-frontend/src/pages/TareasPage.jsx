@@ -103,22 +103,35 @@ const TareasPage = () => {
         }
     };
 
+    // --- FUNCIÓN UNIFICADA CON LA NUEVA LÓGICA DE TIEMPOS ---
     const analizarProgreso = (items) => {
-        if (!items || items.length === 0) return { pctOk: 0, late: 0, pending: 0 };
+        if (!items || items.length === 0) return { pctOk: 0, pctLate: 0, pctWarning: 0, pctPending: 0, late: 0, warning: 0, pending: 0, ok: 0 };
+        
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        let ok = 0, late = 0, pending = 0;
+        let ok = 0, late = 0, warning = 0, pending = 0; // Agregamos 'warning'
 
         items.forEach(item => {
             if (item.completado) ok++;
             else if (item.hora_sugerida) {
                 const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
-                if ((currentMinutes - (h * 60 + m)) > 15) late++;
-                else pending++;
+                const diff = currentMinutes - (h * 60 + m);
+                
+                // --- NUEVA LÓGICA DE TIEMPOS (Igual al Backend) ---
+                if (diff > 30) late++;          // 🔴 Rojo (> 30 min)
+                else if (diff > 15) warning++;  // 🟡 Amarillo (15-30 min)
+                else pending++;                 // 🔵/⚫ Azul/Negro (En tiempo o futuro)
             } else pending++;
         });
+        
         const total = items.length;
-        return { pctOk: (ok / total) * 100, pctLate: (late / total) * 100, pctPending: (pending / total) * 100, ok, late, pending };
+        return { 
+            pctOk: (ok / total) * 100, 
+            pctLate: (late / total) * 100, 
+            pctWarning: (warning / total) * 100, // Nuevo porcentaje amarillo
+            pctPending: (pending / total) * 100,
+            ok, late, warning, pending 
+        };
     };
 
     return (
@@ -221,9 +234,11 @@ const TareasPage = () => {
                                     const renderTooltip = (props) => (
                                         <Tooltip id={`tooltip-${tarea.id}`} {...props}>
                                             <div className="text-start">
-                                                <div>✅ Realizadas: {stats.ok}</div>
-                                                <div className="text-danger">⚠️ Vencidas: {stats.late}</div>
-                                                <div>⏳ En tiempo: {stats.pending}</div>
+                                                <div>✅ Listas: {stats.ok}</div>
+                                                {/* 👇 AQUÍ ESTABA EL ERROR: Usamos &gt; en lugar de > */}
+                                                <div className="text-danger">🔴 Vencidas (&gt;30m): {stats.late}</div>
+                                                <div className="text-warning">🟡 Atención (15-30m): {stats.warning}</div>
+                                                <div>🔵 En tiempo: {stats.pending}</div>
                                             </div>
                                         </Tooltip>
                                     );
@@ -274,7 +289,8 @@ const TareasPage = () => {
                                                         <ProgressBar style={{height: '10px', backgroundColor: '#e9ecef'}}>
                                                             <ProgressBar variant="success" now={stats.pctOk} key={1} />
                                                             <ProgressBar variant="danger" now={stats.pctLate} key={2} animated={stats.late > 0} />
-                                                            <ProgressBar variant="info" now={stats.pctPending} key={3} />
+                                                            <ProgressBar variant="warning" now={stats.pctWarning} key={3} />
+                                                            <ProgressBar variant="info" now={stats.pctPending} key={4} />
                                                         </ProgressBar>
                                                     </div>
                                                 </OverlayTrigger>

@@ -3080,13 +3080,25 @@ async def get_alertas_operativas(
             diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
             
             estado = None
-            # LÓGICA DEL SEMÁFORO
-            if diferencia_minutos > 15:
-                estado = "CRITICO" 
-            elif 0 <= diferencia_minutos <= 15:
-                estado = "EN_CURSO"
-            elif -45 <= diferencia_minutos < 0:
+            
+            # LÓGICA DEL SEMÁFORO (NUEVO ESQUEMA DE COLORES)
+            
+            # 🔴 ROJO (Vencida): Pasaron más de 30 minutos de la hora
+            if diferencia_minutos > 30:
+                estado = "VENCIDA" 
+            
+            # 🟡 AMARILLO (Atencion): Entre 15 y 30 minutos de demora
+            elif 15 < diferencia_minutos <= 30:
                 estado = "ATENCION"
+            
+            # 🔵 AZUL (En Horario): Desde la hora exacta hasta 15 min después
+            elif 0 <= diferencia_minutos <= 15:
+                estado = "EN_HORARIO"
+            
+            # ⚫ NEGRO (Proximas): Tareas futuras (Faltan minutos para la hora)
+            # El ejemplo "son las 17:00 y muestra las de 18:00" da una diferencia negativa (-60)
+            elif diferencia_minutos < 0:
+                estado = "PROXIMA"
             
             if estado:
                 alertas.append({

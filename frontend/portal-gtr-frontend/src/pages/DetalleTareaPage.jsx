@@ -322,26 +322,27 @@ const DetalleTareaPage = () => {
                                 .replace(/\(Extra\)\s*/, ''); 
 
                             // --- LÓGICA DE SEMÁFORO ---
-                            let badgeBg = 'warning'; 
+                            let badgeBg = 'dark'; // ⚫ Por defecto: Negro (Próxima/Futuro)
                             let badgeIcon = 'bi-clock';
                             
                             if (item.hora_sugerida && !item.completado) {
                                 const now = new Date();
                                 const currentMinutes = now.getHours() * 60 + now.getMinutes();
                                 const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
-                                const taskMinutes = h * 60 + m;
-                                const diff = currentMinutes - taskMinutes;
+                                const diff = currentMinutes - (h * 60 + m);
 
-                                if (diff > 15) {
-                                    badgeBg = 'danger';
-                                    badgeIcon = 'bi-alarm-fill';
-                                } else if (diff >= 0 && diff <= 15) {
-                                    badgeBg = 'primary';
-                                    badgeIcon = 'bi-rocket-takeoff-fill';
-                                } else {
-                                    badgeBg = 'warning';
-                                    badgeIcon = 'bi-clock';
-                                }
+                                if (diff > 30) {
+                                    badgeBg = 'danger'; // 🔴 > 30 min
+                                    badgeIcon = 'bi-exclamation-octagon-fill';
+                                } else if (diff > 15) {
+                                    badgeBg = 'warning'; // 🟡 15-30 min
+                                    badgeIcon = 'bi-exclamation-triangle-fill';
+                                } else if (diff >= 0) {
+                                    badgeBg = 'primary'; // 🔵 0-15 min
+                                    badgeIcon = 'bi-check-circle-fill';
+                                } 
+                                // Si diff < 0 se queda en 'dark' (Negro)
+                                
                             } else if (item.completado) {
                                 badgeBg = 'success';
                                 badgeIcon = 'bi-check-circle-fill';
