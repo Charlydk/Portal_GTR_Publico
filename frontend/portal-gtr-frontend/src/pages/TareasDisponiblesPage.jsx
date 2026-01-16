@@ -42,17 +42,25 @@ const TareasDisponiblesPage = () => {
 
                 // 2. FILTRADO POTENTE
                 const misTareas = dataTareas.filter(t => {
-                    // A. Filtro de Responsabilidad (Dueño o Colaborador)
+                    // A. Filtro de Responsabilidad
                     const soyElDuenio = t.analista_id === user.id;
                     const esDeSesionActiva = idsCampanasActivas.includes(t.campana_id);
-                    const esVisible = soyElDuenio || (t.es_generada_automaticamente && esDeSesionActiva);
+                    
+                    // CORRECCIÓN 1: Quitamos "es_generada_automaticamente".
+                    // Si es de mi sesión activa o es mía, LA TIEHO QUE VER.
+                    const esVisible = soyElDuenio || esDeSesionActiva; 
 
                     if (!esVisible) return false;
 
-                    // B. Filtro de FECHA (La magia para mostrar solo lo del día seleccionado)
-                    // Convertimos la fecha de creación de la tarea a string YYYY-MM-DD en hora Argentina
+                    // B. Filtro de FECHA INTELIGENTE
+                    // Si la tarea está PENDIENTE o EN PROGRESO, la mostramos SIEMPRE.
+                    // (Así no perdemos tareas vencidas de ayer o creadas antes de medianoche)
+                    if (t.progreso !== 'COMPLETADA' && t.progreso !== 'CANCELADA') {
+                        return true; 
+                    }
+
+                    // Solo para el HISTORIAL (Completadas/Canceladas) aplicamos el filtro de fecha estricto
                     const fechaTareaStr = new Date(t.fecha_creacion).toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Tucuman' });
-                    
                     return fechaTareaStr === fechaFiltro;
                 });
                 

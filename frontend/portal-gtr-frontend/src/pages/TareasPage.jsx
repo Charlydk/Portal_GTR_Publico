@@ -9,13 +9,13 @@ const TareasPage = () => {
     const navigate = useNavigate();
     
     // --- ESTADOS ---
-    const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]); 
+    const [fechaFiltro, setFechaFiltro] = useState(new Date().toLocaleDateString('en-CA')); // Iniciar con fecha local
     const [campanaFiltro, setCampanaFiltro] = useState('');
     const [estadoFiltro, setEstadoFiltro] = useState('');
     
     const [tareas, setTareas] = useState([]);
     const [campanas, setCampanas] = useState([]);
-    const [rowsToDisplay, setRowsToDisplay] = useState([]); // Nueva lista combinada
+    const [rowsToDisplay, setRowsToDisplay] = useState([]); 
     const [loading, setLoading] = useState(true);
 
     // Carga inicial de Campañas
@@ -34,34 +34,33 @@ const TareasPage = () => {
 
         let combinedRows = [...tareas];
 
-        // Solo agregamos las "Fantasmas" si estamos viendo el día de HOY y no hay filtros restrictivos
-        const esHoy = fechaFiltro === new Date().toISOString().split('T')[0];
+        // 1. CORRECCIÓN DE ZONA HORARIA: Comparamos contra la fecha local, no UTC
+        const hoyLocal = new Date().toLocaleDateString('en-CA'); 
+        const esHoy = fechaFiltro === hoyLocal;
+        
         const filtroEstadoPermiteVerPendientes = estadoFiltro === '' || estadoFiltro === 'PENDIENTE';
 
         if (esHoy && filtroEstadoPermiteVerPendientes) {
-            // 1. Identificar qué campañas YA tienen tarea
+            // Identificar qué campañas YA tienen tarea activa
             const idsCampanasConTarea = new Set(tareas.map(t => t.campana_id));
 
-            // 2. Buscar campañas que FALTAN
+            // Buscar campañas que FALTAN (donde no hay tarea hoy)
             const campanasFaltantes = campanas.filter(c => {
-                // Si el usuario filtró por una campaña específica, solo revisamos esa
                 if (campanaFiltro && parseInt(campanaFiltro) !== c.id) return false;
-                
-                // Si la campaña ya tiene tarea, la ignoramos (ya está en la lista 'tareas')
                 return !idsCampanasConTarea.has(c.id);
             });
 
-            // 3. Crear objetos "Fantasma" para las faltantes
+            // Crear "Tarjetas Fantasma" (Filas Rojas)
             const filasFantasma = campanasFaltantes.map(c => ({
-                id: `ghost-${c.id}`, // ID falso
-                es_fantasma: true,   // Bandera para identificarla
+                id: `ghost-${c.id}`,
+                es_fantasma: true,
                 campana: c,
                 titulo: `Rutina Diaria - ${c.nombre}`,
-                progreso: 'SIN_GESTION', // Estado especial
+                progreso: 'SIN_GESTION',
                 analista: null
             }));
 
-            // 4. Agregar al principio de la lista (Son Urgentes)
+            // Agregar al principio (Prioridad Urgente)
             combinedRows = [...filasFantasma, ...combinedRows];
         }
 
@@ -87,7 +86,6 @@ const TareasPage = () => {
             const response = await fetchWithAuth(url);
             if (response.ok) {
                 const data = await response.json();
-                // Ordenar tareas reales: Prioridad Vencidas
                 const sorted = data.sort((a, b) => {
                     const statsA = analizarProgreso(a.checklist_items);
                     const statsB = analizarProgreso(b.checklist_items);
@@ -103,13 +101,12 @@ const TareasPage = () => {
         }
     };
 
-    // --- FUNCIÓN UNIFICADA CON LA NUEVA LÓGICA DE TIEMPOS ---
     const analizarProgreso = (items) => {
         if (!items || items.length === 0) return { pctOk: 0, pctLate: 0, pctWarning: 0, pctPending: 0, late: 0, warning: 0, pending: 0, ok: 0 };
         
         const now = new Date();
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        let ok = 0, late = 0, warning = 0, pending = 0; // Agregamos 'warning'
+        let ok = 0, late = 0, warning = 0, pending = 0;
 
         items.forEach(item => {
             if (item.completado) ok++;
@@ -117,10 +114,10 @@ const TareasPage = () => {
                 const [h, m] = item.hora_sugerida.toString().substring(0, 5).split(':').map(Number);
                 const diff = currentMinutes - (h * 60 + m);
                 
-                // --- NUEVA LÓGICA DE TIEMPOS (Igual al Backend) ---
-                if (diff > 30) late++;          // 🔴 Rojo (> 30 min)
-                else if (diff > 15) warning++;  // 🟡 Amarillo (15-30 min)
-                else pending++;                 // 🔵/⚫ Azul/Negro (En tiempo o futuro)
+                // LÓGICA DE TIEMPOS (Igual al Backend)
+                if (diff > 30) late++;
+                else if (diff > 15) warning++;
+                else pending++;
             } else pending++;
         });
         
@@ -128,7 +125,7 @@ const TareasPage = () => {
         return { 
             pctOk: (ok / total) * 100, 
             pctLate: (late / total) * 100, 
-            pctWarning: (warning / total) * 100, // Nuevo porcentaje amarillo
+            pctWarning: (warning / total) * 100,
             pctPending: (pending / total) * 100,
             ok, late, warning, pending 
         };
@@ -235,8 +232,7 @@ const TareasPage = () => {
                                         <Tooltip id={`tooltip-${tarea.id}`} {...props}>
                                             <div className="text-start">
                                                 <div>✅ Listas: {stats.ok}</div>
-                                                {/* 👇 AQUÍ ESTABA EL ERROR: Usamos &gt; en lugar de > */}
-                                                <div className="text-danger">🔴 Vencidas (&gt;30m): {stats.late}</div>
+                                                <div className="text-danger">🔴 Vencidas ({'>'}30m): {stats.late}</div>
                                                 <div className="text-warning">🟡 Atención (15-30m): {stats.warning}</div>
                                                 <div>🔵 En tiempo: {stats.pending}</div>
                                             </div>

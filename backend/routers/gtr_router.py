@@ -3278,13 +3278,14 @@ async def exportar_bitacora(
     return StreamingResponse(output, headers=headers, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-@router.get("/monitor/tareas", response_model=List[Tarea], summary="Monitor de Cumplimiento (Limpio)")
+@router.get("/monitor/tareas", response_model=List[Tarea], summary="Monitor de Cumplimiento (Con Filtro por Rol)")
 async def get_tareas_monitor(
     fecha: Optional[date] = None,
     campana_id: Optional[int] = None,
     estado: Optional[ProgresoTarea] = None,
     db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
+    # 👇 CAMBIO 1: Agregamos UserRole.ANALISTA a los permisos permitidos
+    current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
     # 1. Configuración de Fechas
     if not fecha:
@@ -3293,26 +3294,52 @@ async def get_tareas_monitor(
     inicio_dia = datetime.combine(fecha, time.min)
     fin_dia = datetime.combine(fecha, time.max)
 
-    # 2. Query Principal (Solo trae lo que EXISTE)
+    # 2. Query Principal (Agregamos cargas anidadas para evitar errores)
     query = select(models.Tarea).options(
         selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
         selectinload(models.Tarea.checklist_items), 
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
+        # Cargas anidadas profundas para evitar MissingGreenlet
+        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
     )
 
-    # 3. Filtros
+    # 3. Filtros Base (Fecha)
     query = query.filter(models.Tarea.fecha_creacion >= inicio_dia)
     query = query.filter(models.Tarea.fecha_creacion <= fin_dia)
 
+    if current_analista.role == UserRole.ANALISTA:
+        # A. Campañas asignadas fijas
+        ids_mis_campanas = [c.id for c in current_analista.campanas_asignadas]
+
+        # B. Campañas con Check-in activo (Sesión temporal)
+        q_sesiones = select(models.SesionCampana.campana_id).filter(
+            models.SesionCampana.analista_id == current_analista.id,
+            models.SesionCampana.fecha_fin.is_(None)
+        )
+        res_sesiones = await db.execute(q_sesiones)
+        ids_sesiones = res_sesiones.scalars().all()
+
+        # Unimos permisos
+        ids_totales_acceso = list(set(ids_mis_campanas + ids_sesiones))
+
+        # Filtro: Solo veo tareas asignadas a mí O de mis campañas permitidas
+        query = query.filter(
+            or_(
+                models.Tarea.analista_id == current_analista.id,
+                models.Tarea.campana_id.in_(ids_totales_acceso),
+                models.Tarea.campana_id.is_(None)
+            )
+        )
+
+    # 4. Filtros Opcionales (Frontend)
     if campana_id:
         query = query.filter(models.Tarea.campana_id == campana_id)
 
     if estado:
         query = query.filter(models.Tarea.progreso == estado)
 
-    # 4. Ordenar
+    # 5. Ordenar
     query = query.order_by(models.Tarea.fecha_creacion.desc())
 
     result = await db.execute(query)
