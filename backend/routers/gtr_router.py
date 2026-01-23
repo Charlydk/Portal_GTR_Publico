@@ -249,7 +249,7 @@ async def actualizar_analista(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado")
 
 
-    if current_analista.role == UserRole.RESPONSABLE and analista_existente.role != UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.RESPONSABLE and analista_existente.role != UserRole.ANALISTA:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede editar perfiles de Analistas normales.")
     
     if current_analista.role == UserRole.ANALISTA:
@@ -329,7 +329,7 @@ async def update_analista_password(
     if current_analista.role == UserRole.ANALISTA and current_analista.id != analista_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar esta contraseña.")
     
-    if current_analista.role == UserRole.RESPONSABLE and analista_a_actualizar.role != UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.RESPONSABLE and analista_a_actualizar.role != UserRole.ANALISTA:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede actualizar la contraseña de Analistas normales.")
     
     hashed_password = get_password_hash(password_update.new_password)
@@ -443,7 +443,7 @@ async def asignar_campana_a_analista(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
     if (current_analista.role == UserRole.RESPONSABLE and
-        analista.role != UserRole.ANALISTA.value and 
+        analista.role != UserRole.ANALISTA and
         analista_id != current_analista.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede asignar campañas a analistas de rol ANALISTA o a sí mismo.")
 
@@ -525,7 +525,7 @@ async def desasignar_campana_de_analista(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
     if (current_analista.role == UserRole.RESPONSABLE and
-        analista.role != UserRole.ANALISTA.value and 
+        analista.role != UserRole.ANALISTA and
         analista_id != current_analista.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede desasignar campañas de analistas de rol ANALISTA o a sí mismo.")
 
@@ -880,7 +880,7 @@ async def actualizar_tarea(
                  raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"No tienes permiso para modificar el campo '{key}'.")
 
 
-    elif current_analista.role.value in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
+    elif current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
         # Supervisor/Responsable pueden modificar cualquier campo.
         for key, value in update_data.items():
             if key == "fecha_vencimiento" and value is not None:
@@ -1206,7 +1206,7 @@ async def actualizar_checklist_item(
             
             item_existente.completado = nuevo_estado
             
-    elif current_analista.role in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
+    elif current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
         # (Lógica de supervisor se mantiene igual...)
         if "tarea_id" in update_data and update_data["tarea_id"] != item_existente.tarea_id:
             # ... validación de tarea ...
@@ -2503,7 +2503,7 @@ async def update_tarea_generada_por_aviso(
             # Si el payload no incluye 'progreso', no se permite la actualización para un Analista.
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Los analistas solo pueden actualizar el progreso de sus tareas generadas.")
 
-    elif current_analista.role.value in [UserRole.SUPERVISOR.value, UserRole.RESPONSABLE.value]:
+    elif current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
         for key, value in update_data.items():
             if key == "fecha_vencimiento" and value is not None:
                 setattr(tarea_existente, key, value.replace(tzinfo=None))

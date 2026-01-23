@@ -10,7 +10,6 @@ from typing import List, Optional
 from .database import get_db
 from .sql_app import models
 from .enums import UserRole
-from .schemas.auth_schemas import TokenData
 from .security import decode_access_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -63,7 +62,7 @@ async def get_current_analista_full(
     """
     email = await _get_authenticated_email(token)
     result = await db.execute(
-        select(models.Analista).filter(models.Analista.email == token_data.email)
+        select(models.Analista).filter(models.Analista.email == email)
         .options(
             selectinload(models.Analista.campanas_asignadas),
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
@@ -85,7 +84,7 @@ async def get_current_analista_full(
     
     analista = result.scalars().first()
     if analista is None:
-        raise credentials_exception
+        raise HTTPException(status_code=401, detail="Usuario no encontrado")
     return analista
 
 def require_role(required_roles: List[UserRole], use_simple_auth: bool = True):
