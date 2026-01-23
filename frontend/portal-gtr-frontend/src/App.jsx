@@ -104,6 +104,8 @@ const AppContent = () => {
             <Route path="/incidencias/editar/:id" element={<FormularioIncidenciaPage />} />
             <Route path="/control-eventos" element={<ControlEventosPage />} />
             <Route path="/historial-aprobaciones" element={<HistorialAprobacionesPage />} />
+            {/* Rutas planificacion (Accesible para todos los GTR) */}
+            <Route path="/planificacion-turnos" element={<Planificacion />} />
           </Route>
 
           {/* Rutas ADMINISTRATIVAS (Supervisor y Responsable) */}
@@ -127,10 +129,6 @@ const AppContent = () => {
             
             <Route path="/plantillas-checklist" element={<GestionPlantillasPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
-
-            {/* Rutas planificacion */}
-            <Route path="/planificacion-turnos" element={<Planificacion />} />
-
           </Route>
 
           {/* Rutas solo para Analistas */}

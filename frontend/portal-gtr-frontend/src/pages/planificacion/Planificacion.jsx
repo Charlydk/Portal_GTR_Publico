@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Spinner, Toast, ToastContainer } from 'react-bootstrap';
 import wfmService from '../../services/wfmService';
 import MallaGrid from '../../components/planificacion/MallaGrid';
-import HerramientasWFM from '../../components/planificacion/HerramientasWFM'; // Importar nuevo componente
+import HerramientasWFM from '../../components/planificacion/HerramientasWFM';
+import { useAuth } from '../../hooks/useAuth';
 
 const Planificacion = () => {
-  // ... (Estados anteriores) ...
+  const { user } = useAuth();
+  const isAdmin = user && ['SUPERVISOR', 'RESPONSABLE'].includes(user.role);
+
   const [fechaInicio, setFechaInicio] = useState(new Date().toISOString().slice(0, 10));
   const [diasVista, setDiasVista] = useState(7);
   const [equipoSeleccionado, setEquipoSeleccionado] = useState("");
@@ -68,6 +71,7 @@ const Planificacion = () => {
   };
 
   const handleCeldaClick = async (analistaId, fecha, turnoActual) => {
+    if (!isAdmin) return; // Analistas no pueden editar
 
     // CASO 1: MODO BORRADOR
     if (modoBorrador) {
@@ -174,23 +178,24 @@ const Planificacion = () => {
         </Button>
       </div>
 
-      {/* 1. BARRA DE HERRAMIENTAS (Pinceles) */}
-      <HerramientasWFM
-        conceptos={conceptos}
-        conceptoSeleccionado={conceptoSeleccionado}
-        setConceptoSeleccionado={setConceptoSeleccionado}
+      {/* 1. BARRA DE HERRAMIENTAS (Pinceles) - Solo Admin */}
+      {isAdmin && (
+        <HerramientasWFM
+            conceptos={conceptos}
+            conceptoSeleccionado={conceptoSeleccionado}
+            setConceptoSeleccionado={setConceptoSeleccionado}
 
-        // Props nuevos para manejar horas
-        horaInicio={horaInicioManual}
-        setHoraInicio={setHoraInicioManual}
-        horaFin={horaFinManual}
-        setHoraFin={setHoraFinManual}
-        clusters={listaClusters}
-        clusterSeleccionado={clusterSeleccionadoId}
-        setClusterSeleccionado={setClusterSeleccionadoId}
-        modoBorrador={modoBorrador}
-        setModoBorrador={setModoBorrador}
-      />
+            horaInicio={horaInicioManual}
+            setHoraInicio={setHoraInicioManual}
+            horaFin={horaFinManual}
+            setHoraFin={setHoraFinManual}
+            clusters={listaClusters}
+            clusterSeleccionado={clusterSeleccionadoId}
+            setClusterSeleccionado={setClusterSeleccionadoId}
+            modoBorrador={modoBorrador}
+            setModoBorrador={setModoBorrador}
+        />
+      )}
 
       {/* 2. FILTROS */}
       <div className="bg-white p-3 rounded shadow-sm mb-3">

@@ -82,8 +82,12 @@ async def get_current_analista_full(
                 selectinload(models.Incidencia.creador),
                 selectinload(models.Incidencia.asignado_a)
             ),
-            selectinload(models.Analista.solicitudes_hhee).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.planificaciones).selectinload(models.PlanificacionDiaria.cluster)
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+            selectinload(models.Analista.planificaciones).options(
+                selectinload(models.PlanificacionDiaria.cluster),
+                selectinload(models.PlanificacionDiaria.concepto)
+            )
         )
     )
     

@@ -270,6 +270,7 @@ class BitacoraEntry(BitacoraEntryBase):
     # Relaciones anidadas (Opcionales para evitar recursión infinita)
     campana: Optional['CampanaSimple'] = None
     autor: Optional['AnalistaSimple'] = None
+    lob: Optional['Lob'] = None
 
     # Configuración para que Pydantic lea modelos de SQLAlchemy
     class Config:

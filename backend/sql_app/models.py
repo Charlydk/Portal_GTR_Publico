@@ -140,7 +140,8 @@ class Analista(Base):
     tareas_generadas_por_avisos = relationship("TareaGeneradaPorAviso", back_populates="analista")
     sesiones = relationship("SesionCampana", back_populates="analista")
     validaciones_hhee = relationship("ValidacionHHEE", back_populates="analista", foreign_keys="[ValidacionHHEE.analista_id]")
-    solicitudes_hhee = relationship("SolicitudHHEE", back_populates="analista", foreign_keys="[SolicitudHHEE.analista_id]")
+    solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
+    solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
 
     # --- NUEVA RELACIÓN: PLANIFICACIÓN ---
     planificaciones = relationship("PlanificacionDiaria", back_populates="analista", foreign_keys="[PlanificacionDiaria.analista_id]")
@@ -250,7 +251,7 @@ class ComentarioTarea(Base):
     id = Column(Integer, primary_key=True, index=True)
     tarea_id = Column(Integer, ForeignKey("tareas.id"))
     autor_id = Column(Integer, ForeignKey("analistas.id"))
-    contenido = Column(Text, nullable=False)
+    texto = Column(Text, nullable=False) # Antes 'contenido', unificado con schema
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     tarea = relationship("Tarea", back_populates="comentarios")
     autor = relationship("Analista")
@@ -319,7 +320,7 @@ class ComentarioGeneralBitacora(Base):
     id = Column(Integer, primary_key=True, index=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"))
     autor_id = Column(Integer, ForeignKey("analistas.id"))
-    contenido = Column(String)
+    comentario = Column(String) # Antes 'contenido', unificado con schema
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     campana = relationship("Campana", back_populates="comentarios_generales")
     autor = relationship("Analista", back_populates="comentarios_bitacora")
@@ -420,5 +421,6 @@ class SolicitudHHEE(Base):
     comentario_supervisor = Column(Text, nullable=True)
     supervisor_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     fecha_decision = Column(DateTime(timezone=True), nullable=True)
-    analista = relationship("Analista", foreign_keys=[analista_id], back_populates="solicitudes_hhee")
-    supervisor = relationship("Analista", foreign_keys=[supervisor_id])
+
+    solicitante = relationship("Analista", foreign_keys=[analista_id], back_populates="solicitudes_realizadas")
+    supervisor = relationship("Analista", foreign_keys=[supervisor_id], back_populates="solicitudes_gestionadas")

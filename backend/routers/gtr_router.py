@@ -37,7 +37,7 @@ from ..schemas.models import (
     ComentarioTarea, ComentarioTareaCreate,
     Aviso, AvisoBase, AvisoListOutput, AvisoSimple,
     AcuseReciboAviso, AcuseReciboCreate, AcuseReciboAvisoSimple,
-    BitacoraEntry, BitacoraEntryCreate , BitacoraEntryBase, BitacoraEntryUpdate, Lob,
+    BitacoraEntry, BitacoraEntryCreate, BitacoraEntryBase, BitacoraEntryUpdate, Lob,
     ComentarioGeneralBitacora, ComentarioGeneralBitacoraCreate, BitacoraExportFilters,
     Incidencia, IncidenciaCreate, IncidenciaSimple, IncidenciaEstadoUpdate,IncidenciaUpdate, IncidenciaExportFilters,
     ActualizacionIncidencia, ActualizacionIncidenciaBase,
@@ -638,18 +638,7 @@ async def obtener_tareas_disponibles_campana(
     Endpoint específico para evitar conflicto con rutas dinámicas.
     Redirige a la lógica general de obtener tareas.
     """
-    # Reutilizamos la misma lógica que /tareas/
-    query = select(models.Tarea).options(
-        selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
-    ).order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
-
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
-    return result.scalars().all()
+    return await TareaService.get_tareas_globales(db, skip, limit)
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
 async def obtener_campana_por_id(
@@ -769,6 +758,7 @@ async def eliminar_campana(
 
 @router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
 async def obtener_tareas(
+    background_tasks: BackgroundTasks,
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
@@ -899,50 +889,7 @@ async def actualizar_tarea(
             detail=f"Error inesperado al actualizar tarea: {e}"
         )
     
-    # Usamos el patrón de carga manual para evitar el error MissingGreenlet
-    analista, campana = None, None
-    if tarea_existente.analista_id:
-        analista = await db.get(models.Analista, tarea_existente.analista_id)
-    if tarea_existente.campana_id:
-        campana = await db.get(models.Campana, tarea_existente.campana_id)
-    
-    historial_result = await db.execute(
-        select(models.HistorialEstadoTarea)
-        .filter(models.HistorialEstadoTarea.tarea_campana_id == tarea_id)
-        .options(selectinload(models.HistorialEstadoTarea.changed_by_analista))
-    )
-    historial = historial_result.scalars().all()
-
-    checklist_result = await db.execute(
-        select(models.ChecklistItem).filter(models.ChecklistItem.tarea_id == tarea_id)
-    )
-    checklist_items = checklist_result.scalars().all()
-    
-    comentarios_result = await db.execute(
-        select(models.ComentarioTarea)
-        .filter(models.ComentarioTarea.tarea_id == tarea_id)
-        .options(selectinload(models.ComentarioTarea.autor))
-        .order_by(models.ComentarioTarea.fecha_creacion.desc())
-    )
-    comentarios = comentarios_result.scalars().all()
-
-    tarea_response = Tarea(
-        id=tarea_existente.id,
-        titulo=tarea_existente.titulo,
-        descripcion=tarea_existente.descripcion,
-        fecha_vencimiento=tarea_existente.fecha_vencimiento,
-        progreso=tarea_existente.progreso,
-        analista_id=tarea_existente.analista_id,
-        campana_id=tarea_existente.campana_id,
-        fecha_finalizacion=tarea_existente.fecha_finalizacion,
-        fecha_creacion=tarea_existente.fecha_creacion,
-        analista=AnalistaSimple.model_validate(analista) if analista else None,
-        campana=CampanaSimple.model_validate(campana) if campana else None,
-        checklist_items=[ChecklistItemSimple.model_validate(item) for item in checklist_items],
-        historial_estados=[HistorialEstadoTarea.model_validate(h) for h in historial],
-        comentarios=[ComentarioTarea.model_validate(c) for c in comentarios]
-    )
-    return tarea_response
+    return await TareaService.get_tarea_detalle(db, tarea_id)
 
 @router.delete("/tareas/{tarea_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Eliminar una Tarea (Protegido por Supervisor)")
 async def eliminar_tarea(
@@ -1330,7 +1277,7 @@ async def obtener_avisos(
     ).order_by(models.Aviso.fecha_creacion.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 
 @router.get("/avisos/{aviso_id}", response_model=Aviso, summary="Obtener Aviso por ID (Protegido)")
@@ -1926,7 +1873,7 @@ async def get_comentarios_generales_de_campana(
         .filter(models.ComentarioGeneralBitacora.campana_id == campana_id)
         .order_by(models.ComentarioGeneralBitacora.fecha_creacion.desc())
     )
-    comentarios = result.scalars().all()
+    comentarios = result.scalars().unique().all()
     return comentarios
 
 @router.post("/campanas/{campana_id}/comentarios_generales", response_model=ComentarioGeneralBitacora, status_code=status.HTTP_201_CREATED, summary="Añadir un nuevo Comentario General a una Campaña")
@@ -2758,6 +2705,7 @@ async def get_mis_incidencias_asignadas(
     query = select(models.Incidencia).options(
         selectinload(models.Incidencia.campana),
         selectinload(models.Incidencia.lobs),
+        selectinload(models.Incidencia.creador),
         selectinload(models.Incidencia.cerrado_por),
         selectinload(models.Incidencia.asignado_a)
     ).filter(
@@ -3150,8 +3098,8 @@ async def get_tareas_monitor(
         selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
         selectinload(models.Tarea.checklist_items), 
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
+        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
     )
 
     # 3. Filtros
@@ -3168,7 +3116,7 @@ async def get_tareas_monitor(
     query = query.order_by(models.Tarea.fecha_creacion.desc())
 
     result = await db.execute(query)
-    return result.scalars().all()
+    return result.scalars().unique().all()
 
 # -----------------------------------------------------------------------------
 # 📍 SISTEMA DE CHECK-IN / SESIONES ACTIVAS (GTR DINÁMICO)

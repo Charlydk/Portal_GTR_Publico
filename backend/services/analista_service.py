@@ -30,8 +30,12 @@ class AnalistaService:
                     selectinload(models.Incidencia.campana),
                     selectinload(models.Incidencia.lobs)
                 ),
-                selectinload(models.Analista.solicitudes_hhee).selectinload(models.SolicitudHHEE.supervisor),
-                selectinload(models.Analista.planificaciones).selectinload(models.PlanificacionDiaria.cluster)
+                selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+                selectinload(models.Analista.planificaciones).options(
+                    selectinload(models.PlanificacionDiaria.cluster),
+                    selectinload(models.PlanificacionDiaria.concepto)
+                )
             )
         )
         return result.scalars().first()

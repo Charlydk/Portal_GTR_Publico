@@ -175,6 +175,23 @@ function DashboardPage() {
                 </Card>
             </Col>
         </Row>
+
+        {/* --- CARD ACCESO RÁPIDO WFM --- */}
+        <Row className="mb-4">
+            <Col>
+                <Card className="border-0 shadow-sm bg-gradient text-white" style={{background: 'linear-gradient(45deg, #0d6efd, #6610f2)'}}>
+                    <Card.Body className="d-flex justify-content-between align-items-center p-3">
+                        <div>
+                            <h5 className="mb-1 fw-bold">📅 Planificador de Asistencia (WFM)</h5>
+                            <p className="mb-0 small opacity-75">Gestiona turnos, equipos y clusters para tu operación.</p>
+                        </div>
+                        <Button variant="light" className="fw-bold" onClick={() => navigate('/planificacion-turnos')}>
+                            Ir al Planificador →
+                        </Button>
+                    </Card.Body>
+                </Card>
+            </Col>
+        </Row>
     );
 
     // ========================================================================
@@ -329,6 +346,23 @@ function DashboardPage() {
                     🔄 Gestionar mi Actividad
                 </Button>
             </div>
+
+            {/* --- CARD MI PLANIFICACIÓN (NUEVO) --- */}
+            <Row className="mb-3">
+                <Col>
+                    <Card className="border-0 shadow-sm text-white" style={{background: 'linear-gradient(45deg, #198754, #20c997)'}}>
+                        <Card.Body className="d-flex justify-content-between align-items-center p-2 px-3">
+                            <div>
+                                <h6 className="mb-0 fw-bold">🗓️ Mi Planificación Semanal</h6>
+                                <small className="opacity-75">Consulta tus turnos y clusters asignados.</small>
+                            </div>
+                            <Button variant="light" size="sm" className="fw-bold" onClick={() => navigate('/planificacion-turnos')}>
+                                Ver Calendario →
+                            </Button>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
 
             {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
             <Row className="mb-4">
