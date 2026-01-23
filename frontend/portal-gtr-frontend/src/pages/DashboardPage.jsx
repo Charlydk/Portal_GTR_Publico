@@ -1,7 +1,7 @@
 // RUTA: src/pages/DashboardPage.jsx
 
-import React, { useEffect, useState, useRef } from 'react';
-import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import React, { useEffect, useState } from 'react';
+import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip, ListGroup } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { API_BASE_URL, fetchWithAuth } from '../api'; 
 import { useNavigate } from 'react-router-dom';
@@ -30,44 +30,34 @@ function DashboardPage() {
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
     const [estadoAnalistas, setEstadoAnalistas] = useState([]);
 
-    // Bandera para asegurar que solo cargue una vez (Fix Bucle Infinito)
-    const dataLoaded = useRef(false);
-
     useEffect(() => {
-        // Solo cargamos si tenemos usuario y NO hemos cargado antes
-        if (user?.id && !dataLoaded.current) {
+        if (user) {
             cargarDatosDashboard();
-            dataLoaded.current = true; // 🔒 Bloqueamos futuras cargas automáticas
         }
-    }, [user?.id]);
+    }, [user]);
 
     const cargarDatosDashboard = async () => {
         setLoading(true);
         try {
-            // 1. Datos Comunes (Stats y Cobertura)
-            // Solo los cargamos si el usuario NO es Supervisor de Operaciones (ellos no usan estos widgets)
-            if (user.role !== 'SUPERVISOR_OPERACIONES') {
-                const [resStats, resCobertura] = await Promise.all([
-                    fetchWithAuth(`${API_BASE_URL}/gtr/dashboard/stats`),
-                    fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/cobertura`)
-                ]);
+            // 1. Datos Comunes
+            const [resStats, resCobertura] = await Promise.all([
+                fetchWithAuth(`${API_BASE_URL}/gtr/dashboard/stats`),
+                fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/cobertura`)
+            ]);
 
-                if (resStats.ok) setStatsIncidencias(await resStats.json());
-                
-                var dataCobertura = [];
-                if (resCobertura.ok) {
-                    dataCobertura = await resCobertura.json();
-                    setCoberturaGlobal(dataCobertura);
-                }
+            if (resStats.ok) setStatsIncidencias(await resStats.json());
+
+            let dataCobertura = [];
+            if (resCobertura.ok) {
+                dataCobertura = await resCobertura.json();
+                setCoberturaGlobal(dataCobertura);
             }
 
-            // 2. Carga de datos específicos según rol
             if (user.role === 'ANALISTA') {
                 await cargarDatosEspecificosAnalista(dataCobertura);
-            } else if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
+            } else {
                 await cargarDatosEspecificosSupervisor(dataCobertura);
             }
-            // Si es SUPERVISOR_OPERACIONES, no hacemos nada más aquí.
 
         } catch (error) { console.error("Error dashboard", error); } 
         finally { setLoading(false); }
@@ -188,7 +178,7 @@ function DashboardPage() {
     );
 
     // ========================================================================
-    // VISTA SUPERVISOR Y RESPONSABLE
+    // VISTA SUPERVISOR
     // ========================================================================
     if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
         const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0);
@@ -316,36 +306,7 @@ function DashboardPage() {
     }
 
     // ========================================================================
-    // VISTA SUPERVISOR DE OPERACIONES (NUEVA INTERCEPCIÓN)
-    // ========================================================================
-    if (user.role === 'SUPERVISOR_OPERACIONES') {
-        return (
-            <Container fluid className="p-5 d-flex flex-column align-items-center justify-content-center" style={{ minHeight: '80vh' }}>
-                <div className="text-center animate__animated animate__fadeIn">
-                    <div className="mb-4">
-                        <span style={{ fontSize: '4rem' }}>🛠️</span>
-                    </div>
-                    <h1 className="display-5 fw-bold text-dark mb-3">Panel de Operaciones</h1>
-                    <p className="lead text-muted mb-4">
-                        Bienvenido al módulo de gestión operativa.
-                    </p>
-                    <Card className="shadow-sm border-0 bg-light d-inline-block text-start" style={{ maxWidth: '600px' }}>
-                        <Card.Body className="p-4">
-                            <h6 className="fw-bold mb-3">Accesos Directos:</h6>
-                            <ul className="mb-0 text-muted">
-                                <li className="mb-2">Utiliza el menú GESTION HHEE para acceder a las opciones disponibles .</li>
-                                <li className="mb-2">Gestiona las <strong>HHEE</strong> y Exporta la informacion .</li>
-                                <li>Consulta las metricas de carga de HHEE.</li>
-                            </ul>
-                        </Card.Body>
-                    </Card>
-                </div>
-            </Container>
-        );
-    }
-
-    // ========================================================================
-    // VISTA ANALISTA (POR DEFECTO)
+    // VISTA ANALISTA (CORREGIDA Y COMPACTA)
     // ========================================================================
     const campañasSinAnalistas = coberturaGlobal.filter(c => c.analistas_activos === 0);
 

@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import case
+from sqlalchemy import case, func
 from ..sql_app import models
 from ..enums import EstadoIncidencia, GravedadIncidencia
 
@@ -24,10 +24,8 @@ class IncidenciaService:
 
     @staticmethod
     async def get_incidencias_activas_widget(db: AsyncSession):
-        from sqlalchemy import func
         from ..sql_app.models import ActualizacionIncidencia
 
-        # Subconsulta para obtener la última actualización
         latest_update_subq = select(
             ActualizacionIncidencia.incidencia_id,
             func.max(ActualizacionIncidencia.id).label('max_id')

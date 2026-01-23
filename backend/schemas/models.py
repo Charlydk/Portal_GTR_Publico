@@ -82,11 +82,18 @@ class AcuseReciboCreate(BaseModel):
     analista_id: int
 
 class BitacoraEntryBase(BaseModel):
-    campana_id: int
-    fecha: Optional[date] = None
     hora: time
+    campana_id: int
     comentario: Optional[str] = None
-    lob_id: Optional[int] = None
+
+    # Campos para Incidencias
+    es_incidencia: bool = False
+    incidencia_id: Optional[int] = None
+    tipo_incidencia: Optional[str] = None
+    comentario_incidencia: Optional[str] = None
+
+class BitacoraEntryCreate(BitacoraEntryBase):
+    pass
 
 class BitacoraEntryUpdate(BaseModel):
     fecha: Optional[date] = None
@@ -257,13 +264,19 @@ class Lob(LobBase):
 
 class BitacoraEntry(BitacoraEntryBase):
     id: int
-    fecha_creacion: Optional[datetime] = None
-    fecha_ultima_actualizacion: Optional[datetime] = None
-    autor: AnalistaSimple
-    campana: "CampanaSimple"
-    lob: Optional[Lob] = None
+    fecha: date
+    autor_id: int
+
+    # Relaciones anidadas (Opcionales para evitar recursión infinita)
+    campana: Optional['CampanaSimple'] = None
+    autor: Optional['AnalistaSimple'] = None
+
+    # Configuración para que Pydantic lea modelos de SQLAlchemy
     class Config:
         from_attributes = True
+
+# Alias para compatibilidad si algún código viejo usa 'Simple'
+BitacoraEntrySimple = BitacoraEntry
 
 # --- Schemas para Incidencias ---
 class ActualizacionIncidencia(ActualizacionIncidenciaBase):
@@ -281,14 +294,10 @@ class IncidenciaSimple(BaseModel):
     gravedad: Optional[GravedadIncidencia] = 'MEDIA'
     fecha_apertura: datetime
     fecha_cierre: Optional[datetime] = None
-    
-    creador: Optional[AnalistaSimple] = None
-    
+    creador: AnalistaSimple
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-
-    campana: Optional["CampanaSimple"] = None 
-    
+    campana: "CampanaSimple"
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None
     class Config:
@@ -308,7 +317,7 @@ class Incidencia(BaseModel):
     creador: AnalistaSimple
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-    campana: Optional["CampanaSimple"] = None
+    campana: "CampanaSimple"
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None 
     actualizaciones: List[ActualizacionIncidencia] = []
@@ -634,3 +643,63 @@ class Lob(LobBase):
         from_attributes = True # Permite que Pydantic lea los datos desde el modelo ORM
 
 
+# ==========================================
+# SCHEMAS WFM (Planificación)
+# ==========================================
+
+# --- EQUIPOS ---
+class EquipoBase(BaseModel):
+    nombre: str
+    codigo_pais: Optional[str] = None
+
+class Equipo(EquipoBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- CLUSTERS (Grupos/Colores) ---
+class ClusterBase(BaseModel):
+    nombre: str
+    color_hex: str = "#6c757d"
+    equipo_id: Optional[int] = None
+
+class Cluster(ClusterBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- CONCEPTOS DE TURNO (Turno, Off, Vacaciones) ---
+class ConceptoTurnoBase(BaseModel):
+    codigo: str
+    nombre: str
+    es_laborable: bool = True
+    requiere_asistencia: bool = True
+
+class ConceptoTurno(ConceptoTurnoBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+# --- PLANIFICACIÓN DIARIA (La celda del Excel) ---
+class PlanificacionBase(BaseModel):
+    fecha: date
+    analista_id: int
+    concepto_id: int
+    cluster_id: Optional[int] = None
+    hora_inicio: Optional[time] = None
+    hora_fin: Optional[time] = None
+    es_extra: bool = False
+    nota: Optional[str] = None
+
+class PlanificacionCreate(PlanificacionBase):
+    pass
+
+class Planificacion(PlanificacionBase):
+    id: int
+    # Relaciones para mostrar nombres en el frontend
+    concepto: Optional[ConceptoTurno] = None
+    cluster: Optional[Cluster] = None
+    analista: Optional[AnalistaSimple] = None # Usamos el Simple para no hacer ciclo infinito
+
+    class Config:
+        from_attributes = True

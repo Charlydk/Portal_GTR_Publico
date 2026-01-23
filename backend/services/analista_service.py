@@ -17,6 +17,7 @@ class AnalistaService:
             .filter(models.Analista.id == analista_id, models.Analista.esta_activo == True)
             .options(
                 selectinload(models.Analista.campanas_asignadas),
+                selectinload(models.Analista.equipo),
                 selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
                 selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
                 selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
@@ -29,8 +30,8 @@ class AnalistaService:
                     selectinload(models.Incidencia.campana),
                     selectinload(models.Incidencia.lobs)
                 ),
-                selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
+                selectinload(models.Analista.solicitudes_hhee).selectinload(models.SolicitudHHEE.supervisor),
+                selectinload(models.Analista.planificaciones).selectinload(models.PlanificacionDiaria.cluster)
             )
         )
         return result.scalars().first()

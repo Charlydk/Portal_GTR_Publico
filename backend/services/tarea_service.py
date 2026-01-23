@@ -11,7 +11,6 @@ class TareaService:
     async def limpiar_tareas_vencidas(db: AsyncSession = None):
         """
         Cierra automáticamente las tareas que ya vencieron y siguen pendientes.
-        Si no se provee una sesión, crea una nueva (útil para BackgroundTasks).
         """
         if db is None:
             from ..database import AsyncSessionLocal
@@ -77,18 +76,11 @@ class TareaService:
         )
 
         if analista.role == UserRole.ANALISTA:
-            # 1. Campañas donde está asignado fijo (Necesitamos cargar esto si no lo está)
-            # Como usamos la dependencia ligera, analista.campanas_asignadas no estará cargada.
-            # Mejor hacemos un query para obtener los IDs de campaña.
-
             from ..sql_app.models import analistas_campanas, SesionCampana
-
-            # IDs de campañas asignadas fijas
             q_asignadas = select(analistas_campanas.c.campana_id).where(analistas_campanas.c.analista_id == analista.id)
             res_asignadas = await db.execute(q_asignadas)
             ids_asignadas = res_asignadas.scalars().all()
 
-            # IDs de campañas con sesión activa
             q_sesiones = select(SesionCampana.campana_id).filter(
                 SesionCampana.analista_id == analista.id,
                 SesionCampana.fecha_fin.is_(None)

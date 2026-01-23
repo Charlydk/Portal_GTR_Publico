@@ -17,7 +17,6 @@ import DetalleAvisoPage from './pages/DetalleAvisoPage';
 import TareasPage from './pages/TareasPage';
 import AnalistasPage from './pages/AnalistasPage';
 import CampanasPage from './pages/CampanasPage';
-// AsignacionCampanasPage ELIMINADO (Ya no se asigna estáticamente)
 import FormularioAnalistaPage from './pages/FormularioAnalistaPage';
 import FormularioCampanaPage from './pages/FormularioCampanaPage';
 import FormularioAvisoPage from './pages/FormularioAvisoPage';
@@ -26,7 +25,6 @@ import FormularioTareaPage from './pages/FormularioTareaPage';
 import DetalleAnalistaPage from './pages/DetalleAnalistaPage';
 import DetalleCampanaPage from './pages/DetalleCampanaPage';
 import DetalleTareaPage from './pages/DetalleTareaPage';
-// RegisterPage ELIMINADO (No se usaba)
 import ListaIncidenciasPage from './pages/ListaIncidenciasPage';
 import ControlIncidenciasPage from './pages/ControlIncidenciasPage';
 import ControlEventosPage from './pages/ControlEventosPage';
@@ -43,6 +41,7 @@ import HistorialAprobacionesPage from './pages/hhee/HistorialAprobacionesPage';
 import CambiarPasswordPage from './pages/CambiarPasswordPage';
 import AyudaPage from './pages/AyudaPage';
 import GestionPlantillasPage from './pages/GestionPlantillasPage.jsx';
+import Planificacion from './pages/planificacion/Planificacion.jsx';
 
 
 const AppContent = () => {
@@ -128,6 +127,10 @@ const AppContent = () => {
             
             <Route path="/plantillas-checklist" element={<GestionPlantillasPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
+
+            {/* Rutas planificacion */}
+            <Route path="/planificacion-turnos" element={<Planificacion />} />
+
           </Route>
 
           {/* Rutas solo para Analistas */}
@@ -135,6 +138,7 @@ const AppContent = () => {
             <Route path="/tareas/disponibles" element={<TareasDisponiblesPage />} />
             <Route path="/mis-solicitudes-hhee" element={<MisSolicitudesHHEEPage />} />
           </Route>
+
 
           {/* Rutas solo para roles de HHEE */}
           <Route element={<ProtectedRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE', 'SUPERVISOR_OPERACIONES']} />}>

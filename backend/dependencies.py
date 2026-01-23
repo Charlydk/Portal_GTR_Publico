@@ -65,6 +65,7 @@ async def get_current_analista_full(
         select(models.Analista).filter(models.Analista.email == email)
         .options(
             selectinload(models.Analista.campanas_asignadas),
+            selectinload(models.Analista.equipo),
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
             selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
             selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
@@ -81,8 +82,8 @@ async def get_current_analista_full(
                 selectinload(models.Incidencia.creador),
                 selectinload(models.Incidencia.asignado_a)
             ),
-            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
+            selectinload(models.Analista.solicitudes_hhee).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.planificaciones).selectinload(models.PlanificacionDiaria.cluster)
         )
     )
     

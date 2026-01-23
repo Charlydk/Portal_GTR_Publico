@@ -26,7 +26,7 @@ from .security import verify_password, get_password_hash, create_access_token, d
 from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
-from .routers import gtr_router, hhee_router
+from .routers import gtr_router, hhee_router, wfm_router
 from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
@@ -82,6 +82,7 @@ app.add_middleware(
 
 app.include_router(gtr_router.router, prefix="/gtr")
 app.include_router(hhee_router.router, prefix="/hhee")
+app.include_router(wfm_router.router)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
@@ -188,5 +189,5 @@ async def read_users_me(current_analista: models.Analista = Depends(get_current_
         # Listas vacías por defecto para evitar MissingGreenlet
         tareas=[], avisos_creados=[], acuses_recibo_avisos=[],
         tareas_generadas_por_avisos=[], incidencias_creadas=[], incidencias_asignadas=[],
-        solicitudes_realizadas=[], solicitudes_gestionadas=[]
+        solicitudes_hhee=[], planificaciones=[]
     )
