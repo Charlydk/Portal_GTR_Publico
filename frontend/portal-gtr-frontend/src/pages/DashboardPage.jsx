@@ -141,6 +141,7 @@ function DashboardPage() {
     // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPLETO)
     // ========================================================================
     const renderIncidentWidgetsSupervisor = () => (
+        <>
         <Row className="g-2 mb-3">
             <Col xs={6} md={3}>
                 <Card className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}>
@@ -192,6 +193,7 @@ function DashboardPage() {
                 </Card>
             </Col>
         </Row>
+        </>
     );
 
     // ========================================================================
