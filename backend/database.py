@@ -15,12 +15,19 @@ print("--- [CONFIGURACIÓN PRO] Iniciando DB optimizada para concurrencia ---")
 if not DATABASE_URL:
     raise ValueError("La variable de entorno DATABASE_URL no está configurada.")
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=False,
-    poolclass=NullPool,
-    connect_args={"timeout": 30}
-)
+# --- CONFIGURACIÓN DE CONEXIÓN ---
+# Si usas el puerto 6543 (Transaction Pooler), debemos desactivar prepared statements.
+engine_kwargs = {
+    "echo": False,
+    "poolclass": NullPool,
+    "connect_args": {"timeout": 30}
+}
+
+if ":6543" in DATABASE_URL:
+    # Necesario para Supabase Transaction Pooler (PgBouncer/Supavisor)
+    engine_kwargs["prepared_statement_cache_size"] = 0
+
+engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
 AsyncSessionLocal = sessionmaker(
     autocommit=False,
