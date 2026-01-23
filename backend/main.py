@@ -27,7 +27,7 @@ from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
 from .routers import gtr_router, hhee_router
-from .dependencies import get_current_analista, get_current_analista_full, require_role
+from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
 @asynccontextmanager
@@ -170,8 +170,23 @@ async def refresh_access_token(
     }
 
 @app.get("/users/me/", response_model=Analista, summary="Obtener información del Analista actual")
-async def read_users_me(current_analista: models.Analista = Depends(get_current_analista_full)):
+async def read_users_me(current_analista: models.Analista = Depends(get_current_analista_with_campaigns)):
     """
-    Obtiene la información completa del analista actual utilizando la carga optimizada.
+    Obtiene la información básica del analista actual con sus campañas.
+    Construye la respuesta manualmente para asegurar que no haya errores de carga perezosa.
     """
-    return current_analista
+    return Analista(
+        id=current_analista.id,
+        nombre=current_analista.nombre,
+        apellido=current_analista.apellido,
+        email=current_analista.email,
+        bms_id=current_analista.bms_id,
+        role=current_analista.role,
+        esta_activo=current_analista.esta_activo,
+        fecha_creacion=current_analista.fecha_creacion,
+        campanas_asignadas=[CampanaSimple.model_validate(c) for c in current_analista.campanas_asignadas],
+        # Listas vacías por defecto para evitar MissingGreenlet
+        tareas=[], avisos_creados=[], acuses_recibo_avisos=[],
+        tareas_generadas_por_avisos=[], incidencias_creadas=[], incidencias_asignadas=[],
+        solicitudes_realizadas=[], solicitudes_gestionadas=[]
+    )

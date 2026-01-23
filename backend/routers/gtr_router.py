@@ -4,7 +4,6 @@ import pandas as pd
 import io
 import bleach
 import pytz
-import traceback
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.models import Campana, AnalistaConCampanas
@@ -59,24 +58,6 @@ router = APIRouter(
 )
 
 
-@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
-async def obtener_tareas(
-    background_tasks: BackgroundTasks,
-    skip: int = 0, 
-    limit: int = 100, 
-    estado: Optional[ProgresoTarea] = None, 
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
-):
-    """
-    Muestra las tareas de cualquier campaña con TODA su información cargada.
-    Incluye una LIMPIEZA AUTOMÁTICA de tareas vencidas en segundo plano.
-    """
-    # Ejecutamos la limpieza en segundo plano para no ralentizar la respuesta GET
-    # No pasamos 'db' directamente porque la sesión se cierra al terminar el request.
-    background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
-
-    return await TareaService.get_tareas_globales(db, skip, limit, estado)
 
 
 @router.get("/campanas/listado-simple/", response_model=List[CampanaSimple], summary="Obtener una lista simple de campañas para selectores")
@@ -658,18 +639,7 @@ async def obtener_tareas_disponibles_campana(
     Endpoint específico para evitar conflicto con rutas dinámicas.
     Redirige a la lógica general de obtener tareas.
     """
-    # Reutilizamos la misma lógica que /tareas/
-    query = select(models.Tarea).options(
-        selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
-    ).order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
-    
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
-    return result.scalars().all()
+    return await TareaService.get_tareas_globales(db, skip, limit)
 
 @router.get("/campanas/{campana_id}", response_model=Campana, summary="Obtener Campana por ID (Protegido)")
 async def obtener_campana_por_id(
@@ -799,18 +769,7 @@ async def obtener_tarea_por_id(
     Obtiene una tarea específica por su ID con todas sus relaciones cargadas.
     Permite el acceso si eres el dueño O si tienes una sesión activa en la campaña (Colaborativo).
     """
-    result = await db.execute(
-        select(models.Tarea)
-        .options(
-            selectinload(models.Tarea.campana),
-            selectinload(models.Tarea.analista),
-            selectinload(models.Tarea.checklist_items),
-            selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
-            selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
-        )
-        .filter(models.Tarea.id == tarea_id)
-    )
-    tarea_db = result.scalars().first()
+    tarea_db = await TareaService.get_tarea_detalle(db, tarea_id)
     
     if not tarea_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
@@ -2405,7 +2364,7 @@ async def get_all_tareas_generadas_por_avisos(
     query = select(models.TareaGeneradaPorAviso).options(
         selectinload(models.TareaGeneradaPorAviso.analista_asignado),
         selectinload(models.TareaGeneradaPorAviso.aviso_origen),
-        selectinload(models.TareaGeneradaPorAviso.historial_estados)
+        selectinload(models.TareaGeneradaPorAviso.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista)
     )
 
     if current_analista.role == UserRole.ANALISTA:
@@ -2718,47 +2677,11 @@ async def get_recientes_incidencias_activas(
     Devuelve una lista optimizada de TODAS las incidencias activas,
     cargando solo los datos necesarios para el widget del dashboard.
     """
-    # Subconsulta para obtener la última actualización de cada incidencia
-    latest_update_subq = select(
-        models.ActualizacionIncidencia.incidencia_id,
-        func.max(models.ActualizacionIncidencia.id).label('max_id')
-    ).group_by(models.ActualizacionIncidencia.incidencia_id).subquery()
-
-    latest_comment_q = select(
-        models.ActualizacionIncidencia.incidencia_id,
-        models.ActualizacionIncidencia.comentario,
-        models.ActualizacionIncidencia.fecha_actualizacion
-    ).join(
-        latest_update_subq, models.ActualizacionIncidencia.id == latest_update_subq.c.max_id
-    ).subquery()
-
-    # Consulta principal
-    query = select(
-        models.Incidencia,
-        latest_comment_q.c.comentario.label('ultimo_comentario_texto'),
-        latest_comment_q.c.fecha_actualizacion.label('ultimo_comentario_fecha')
-    ).outerjoin(
-        latest_comment_q, models.Incidencia.id == latest_comment_q.c.incidencia_id
-    ).options(
-        selectinload(models.Incidencia.campana),
-        selectinload(models.Incidencia.asignado_a)
-    ).filter(
-        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
-    ).order_by(
-        case(
-            (models.Incidencia.gravedad == GravedadIncidencia.ALTA, 1),
-            (models.Incidencia.gravedad == GravedadIncidencia.MEDIA, 2),
-            (models.Incidencia.gravedad == GravedadIncidencia.BAJA, 3),
-            else_=4
-        ),
-        models.Incidencia.fecha_apertura.desc()
-    )
-    
-    result = await db.execute(query)
+    result = await IncidenciaService.get_incidencias_activas_widget(db)
     
     # Construimos la respuesta manualmente para formatear el último comentario
     response_list = []
-    for inc, comentario, fecha in result.all():
+    for inc, comentario, fecha in result:
         widget_item = DashboardIncidenciaWidget.model_validate(inc)
         if comentario and fecha:
             fecha_str = fecha.strftime('%d/%m %H:%M')
@@ -2803,19 +2726,7 @@ async def get_incidencia_by_id(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    result = await db.execute(
-        select(models.Incidencia)
-        .options(
-            selectinload(models.Incidencia.creador),
-            selectinload(models.Incidencia.campana),
-            selectinload(models.Incidencia.actualizaciones).selectinload(models.ActualizacionIncidencia.autor),
-            selectinload(models.Incidencia.asignado_a),
-            selectinload(models.Incidencia.lobs),
-            selectinload(models.Incidencia.cerrado_por)
-        )
-        .filter(models.Incidencia.id == incidencia_id)
-    )
-    incidencia = result.scalars().first()
+    incidencia = await IncidenciaService.get_incidencias_detalle(db, incidencia_id)
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
     
@@ -3177,8 +3088,8 @@ async def get_tareas_monitor(
         selectinload(models.Tarea.campana),
         selectinload(models.Tarea.analista),
         selectinload(models.Tarea.checklist_items), 
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
+        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
     )
 
     # 3. Filtros
@@ -3360,8 +3271,9 @@ async def check_in_campana(
     return result_final.scalars().first()
 
 
-@router.get("/tareas/listado", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Propias + Campaña Activa)")
-async def read_tareas_listado(
+@router.get("/tareas/", response_model=List[Tarea], summary="Obtener lista de tareas (Propias + Campaña Activa)")
+async def read_tareas(
+    background_tasks: BackgroundTasks,
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
@@ -3369,8 +3281,10 @@ async def read_tareas_listado(
     current_analista: models.Analista = Depends(get_current_analista) 
 ):
     """
-    Versión optimizada de obtención de tareas, delegando la lógica al servicio.
+    Obtiene la lista de tareas filtrada por visibilidad (propias, asignadas o activas).
+    Incluye limpieza automática de tareas vencidas.
     """
+    background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
     return await TareaService.get_tareas_analista(db, current_analista, skip, limit, estado)
 
 

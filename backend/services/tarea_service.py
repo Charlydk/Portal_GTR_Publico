@@ -41,8 +41,8 @@ class TareaService:
             selectinload(models.Tarea.campana),
             selectinload(models.Tarea.analista),
             selectinload(models.Tarea.checklist_items),
-            selectinload(models.Tarea.historial_estados),
-            selectinload(models.Tarea.comentarios)
+            selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+            selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
         )
         if estado:
             query = query.filter(models.Tarea.progreso == estado)
@@ -50,6 +50,21 @@ class TareaService:
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         return result.scalars().all()
+
+    @staticmethod
+    async def get_tarea_detalle(db: AsyncSession, tarea_id: int):
+        result = await db.execute(
+            select(models.Tarea)
+            .options(
+                selectinload(models.Tarea.campana),
+                selectinload(models.Tarea.analista),
+                selectinload(models.Tarea.checklist_items),
+                selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+                selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
+            )
+            .filter(models.Tarea.id == tarea_id)
+        )
+        return result.scalars().first()
 
     @staticmethod
     async def get_tareas_analista(db: AsyncSession, analista: models.Analista, skip: int = 0, limit: int = 100, estado=None):

@@ -71,11 +71,15 @@ async def get_current_analista_full(
             selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
             selectinload(models.Analista.incidencias_creadas).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.incidencias_asignadas).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
             selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
@@ -87,14 +91,32 @@ async def get_current_analista_full(
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     return analista
 
+async def get_current_analista_with_campaigns(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> models.Analista:
+    """
+    Versión intermedia que solo carga las campañas asignadas.
+    Ideal para el endpoint /users/me/.
+    """
+    email = await _get_authenticated_email(token)
+    result = await db.execute(
+        select(models.Analista).filter(models.Analista.email == email)
+        .options(selectinload(models.Analista.campanas_asignadas))
+    )
+    analista = result.scalars().first()
+    if analista is None:
+        raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    return analista
+
 def require_role(required_roles: List[UserRole], use_simple_auth: bool = True):
     """
-    Validador de roles. Por defecto usa la dependencia ligera.
+    Validador de roles.
     """
     dependency = get_current_analista if use_simple_auth else get_current_analista_full
 
     async def role_checker(current_analista: models.Analista = Depends(dependency)):
-        if current_analista.role.value not in [r.value for r in required_roles]:
+        if current_analista.role not in required_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permiso para realizar esta acción."
