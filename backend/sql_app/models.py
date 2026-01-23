@@ -2,15 +2,13 @@
 from sqlalchemy import (Column, Integer, String, Boolean, DateTime, ForeignKey, 
                         Enum as SQLEnum, Enum, Date, Time, Text, Float, Date, DateTime, TIMESTAMP, text)
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from ..database import Base
 from sqlalchemy import Table
 from sqlalchemy.sql import func
 from datetime import datetime, timezone
 from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
 
 import sqlalchemy as sa
-
-Base = declarative_base()
 
 incidencias_lobs = Table('incidencias_lobs', Base.metadata,
     Column('incidencia_id', Integer, ForeignKey('incidencias.id'), primary_key=True),

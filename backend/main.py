@@ -27,7 +27,7 @@ from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
 from .routers import gtr_router, hhee_router
-from .dependencies import get_current_analista, require_role
+from .dependencies import get_current_analista, get_current_analista_full, require_role
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
 @asynccontextmanager
@@ -170,35 +170,8 @@ async def refresh_access_token(
     }
 
 @app.get("/users/me/", response_model=Analista, summary="Obtener información del Analista actual")
-async def read_users_me(current_analista: models.Analista = Depends(get_current_analista)):
+async def read_users_me(current_analista: models.Analista = Depends(get_current_analista_full)):
     """
-    Obtiene la información del analista actual.
-    Construye la respuesta Pydantic manualmente para evitar errores de carga asíncrona.
+    Obtiene la información completa del analista actual utilizando la carga optimizada.
     """
-    # La dependencia 'get_current_analista' ya nos da el objeto de la base de datos
-    # con las 'campanas_asignadas' cargadas.
-
-    # Ahora, en lugar de devolverlo directamente, lo usamos para construir un objeto Pydantic limpio.
-    analista_response = Analista(
-        id=current_analista.id,
-        nombre=current_analista.nombre,
-        apellido=current_analista.apellido,
-        email=current_analista.email,
-        bms_id=current_analista.bms_id,
-        role=current_analista.role,
-        esta_activo=current_analista.esta_activo,
-        fecha_creacion=current_analista.fecha_creacion,
-        
-        # Convertimos la lista de objetos de BD a una lista de objetos Pydantic
-        campanas_asignadas=[CampanaSimple.model_validate(c) for c in current_analista.campanas_asignadas],
-        
-        # Dejamos las otras listas vacías porque no las cargamos en get_current_analista para ser eficientes
-        tareas=[],
-        avisos_creados=[],
-        acuses_recibo_avisos=[],
-        tareas_generadas_por_avisos=[],
-        incidencias_creadas=[],
-        incidencias_asignadas=[]
-    )
-        
-    return analista_response
+    return current_analista

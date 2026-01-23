@@ -47,6 +47,10 @@ from ..schemas.models import (
     CoberturaCampana,
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
+from ..services.tarea_service import TareaService
+from ..services.incidencia_service import IncidenciaService
+from ..services.analista_service import AnalistaService
+from fastapi import BackgroundTasks
 
 
 # --- Creación del Router ---
@@ -57,6 +61,7 @@ router = APIRouter(
 
 @router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
 async def obtener_tareas(
+    background_tasks: BackgroundTasks,
     skip: int = 0, 
     limit: int = 100, 
     estado: Optional[ProgresoTarea] = None, 
@@ -65,51 +70,13 @@ async def obtener_tareas(
 ):
     """
     Muestra las tareas de cualquier campaña con TODA su información cargada.
-    Incluye una LIMPIEZA AUTOMÁTICA de tareas vencidas.
+    Incluye una LIMPIEZA AUTOMÁTICA de tareas vencidas en segundo plano.
     """
-    
-    # --- 🧹 BARRENDERO AUTOMÁTICO ---
-    # Si una tarea ya venció (fecha_vencimiento < ahora) y sigue PENDIENTE o EN_PROGRESO,
-    # la cerramos automáticamente como CANCELADA para que no moleste hoy.
-    now = datetime.now()
-    
-    # Nota: Asegúrate de que tu servidor tenga la hora correcta o usa datetime.utcnow() si guardas en UTC.
-    # Aquí asumimos que fecha_vencimiento es "naive" o compatible con 'now'.
-    
-    query_limpieza = (
-        update(models.Tarea)
-        .where(
-            models.Tarea.fecha_vencimiento < now,
-            models.Tarea.progreso.in_([ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO])
-        )
-        .values(progreso=ProgresoTarea.CANCELADA)
-        .execution_options(synchronize_session=False)
-    )
-    
-    # Ejecutamos la limpieza (es muy rápida)
-    await db.execute(query_limpieza)
-    await db.commit()
-    # -------------------------------
+    # Ejecutamos la limpieza en segundo plano para no ralentizar la respuesta GET
+    # No pasamos 'db' directamente porque la sesión se cierra al terminar el request.
+    background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
 
-    # Consulta base con carga PROFUNDA de relaciones (Código original sigue aquí...)
-    query = select(models.Tarea).options(
-        selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
-    )
-
-    # Filtro opcional por estado
-    if estado:
-        query = query.filter(models.Tarea.progreso == estado)
-
-    # Ordenamos por vencimiento más próximo o creación
-    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
-    
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
-    return result.scalars().all()
+    return await TareaService.get_tareas_globales(db, skip, limit, estado)
 
 
 @router.get("/campanas/listado-simple/", response_model=List[CampanaSimple], summary="Obtener una lista simple de campañas para selectores")
@@ -234,43 +201,13 @@ async def obtener_analista_por_id(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # SOLUCIÓN 1: Evitamos la doble consulta si se pide el perfil propio
-    if analista_id == current_analista.id:
-        return current_analista
+    if current_analista.role == UserRole.ANALISTA and current_analista.id != analista_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver este perfil.")
 
-    # SOLUCIÓN 2: Consulta ultra-completa para cargar todas las relaciones anidadas necesarias
-    result = await db.execute(
-        select(models.Analista)
-        .filter(models.Analista.id == analista_id, models.Analista.esta_activo == True)
-        .options(
-            selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
-            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
-            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
-            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
-            
-            # --- Corrección Definitiva para Incidencias ---
-            selectinload(models.Analista.incidencias_creadas).options(
-                selectinload(models.Incidencia.campana), 
-                selectinload(models.Incidencia.lobs)
-            ),
-            selectinload(models.Analista.incidencias_asignadas).options(
-                selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
-            ),
-            # --- Fin de la Corrección ---
-
-            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
-        )
-    )
-    analista = result.scalars().first()
+    analista = await AnalistaService.get_analista_full(db, analista_id)
     if not analista:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado o inactivo.")
     
-    if current_analista.role == UserRole.ANALISTA.value and current_analista.id != analista_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver este perfil.")
-
     return analista
 
 
@@ -312,10 +249,10 @@ async def actualizar_analista(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado")
 
 
-    if current_analista.role == UserRole.RESPONSABLE.value and analista_existente.role != UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.RESPONSABLE and analista_existente.role != UserRole.ANALISTA.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede editar perfiles de Analistas normales.")
     
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Los analistas no pueden usar este endpoint para actualizar su perfil.")
 
 
@@ -389,10 +326,10 @@ async def update_analista_password(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado.")
 
     # Lógica de permisos
-    if current_analista.role == UserRole.ANALISTA.value and current_analista.id != analista_id:
+    if current_analista.role == UserRole.ANALISTA and current_analista.id != analista_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para actualizar esta contraseña.")
     
-    if current_analista.role == UserRole.RESPONSABLE.value and analista_a_actualizar.role != UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.RESPONSABLE and analista_a_actualizar.role != UserRole.ANALISTA.value:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede actualizar la contraseña de Analistas normales.")
     
     hashed_password = get_password_hash(password_update.new_password)
@@ -479,7 +416,7 @@ async def asignar_campana_a_analista(
     Un Analista solo puede asignarse a sí mismo.
     Un Supervisor o Responsable pueden asignar campañas a cualquier analista.
     """
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         if analista_id != current_analista.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Analista solo puede asignarse campañas a sí mismo.")
 
@@ -505,7 +442,7 @@ async def asignar_campana_a_analista(
     if not campana:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
-    if (current_analista.role == UserRole.RESPONSABLE.value and 
+    if (current_analista.role == UserRole.RESPONSABLE and
         analista.role != UserRole.ANALISTA.value and 
         analista_id != current_analista.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede asignar campañas a analistas de rol ANALISTA o a sí mismo.")
@@ -563,7 +500,7 @@ async def desasignar_campana_de_analista(
     Un Analista solo puede desasignarse a sí mismo.
     Un Supervisor o Responsable pueden desasignar campañas de cualquier analista.
     """
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         if analista_id != current_analista.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Analista solo puede desasignarse campañas a sí mismo.")
 
@@ -587,7 +524,7 @@ async def desasignar_campana_de_analista(
     if not campana:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
-    if (current_analista.role == UserRole.RESPONSABLE.value and 
+    if (current_analista.role == UserRole.RESPONSABLE and
         analista.role != UserRole.ANALISTA.value and 
         analista_id != current_analista.id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un Responsable solo puede desasignar campañas de analistas de rol ANALISTA o a sí mismo.")
@@ -850,36 +787,6 @@ async def eliminar_campana(
 # --- Endpoints para Tareas ---
 
 
-@router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
-async def obtener_tareas(
-    skip: int = 0, 
-    limit: int = 100, 
-    estado: Optional[ProgresoTarea] = None, 
-    db: AsyncSession = Depends(get_db),
-    current_analista: models.Analista = Depends(get_current_analista)
-):
-    """
-    Muestra las tareas de cualquier campaña con TODA su información cargada.
-    """
-    # Consulta base con carga PROFUNDA de relaciones
-    query = select(models.Tarea).options(
-        selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),
-        selectinload(models.Tarea.historial_estados),
-        selectinload(models.Tarea.comentarios)
-    )
-
-    # Filtro opcional por estado
-    if estado:
-        query = query.filter(models.Tarea.progreso == estado)
-
-    # Ordenamos por vencimiento más próximo o creación
-    query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
-    
-    query = query.offset(skip).limit(limit)
-    result = await db.execute(query)
-    return result.scalars().all()
 
 
 @router.get("/tareas/{tarea_id}", response_model=Tarea, summary="Obtener Tarea por ID (Protegido)")
@@ -889,25 +796,30 @@ async def obtener_tarea_por_id(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     """
-    Obtiene una tarea específica por su ID.
+    Obtiene una tarea específica por su ID con todas sus relaciones cargadas.
     Permite el acceso si eres el dueño O si tienes una sesión activa en la campaña (Colaborativo).
     """
-    # Paso 1: Obtener el objeto Tarea
-    result = await db.execute(select(models.Tarea).filter(models.Tarea.id == tarea_id))
+    result = await db.execute(
+        select(models.Tarea)
+        .options(
+            selectinload(models.Tarea.campana),
+            selectinload(models.Tarea.analista),
+            selectinload(models.Tarea.checklist_items),
+            selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
+            selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
+        )
+        .filter(models.Tarea.id == tarea_id)
+    )
     tarea_db = result.scalars().first()
     
     if not tarea_db:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
     
-    # Paso 2: Verificar los permisos (LÓGICA COLABORATIVA ACTUALIZADA)
-    if current_analista.role.value == UserRole.ANALISTA.value:
-        # A. ¿Soy el dueño asignado?
+    # Verificar los permisos
+    if current_analista.role == UserRole.ANALISTA:
         es_dueno = tarea_db.analista_id == current_analista.id
-        
-        # B. ¿Tengo sesión activa en esta campaña? (Para tareas compartidas)
         tiene_acceso_colaborativo = False
         if tarea_db.es_generada_automaticamente and tarea_db.campana_id:
-            # Consultamos si existe una sesión activa para este analista en esta campaña
             session_q = select(models.SesionCampana).filter(
                 models.SesionCampana.analista_id == current_analista.id,
                 models.SesionCampana.campana_id == tarea_db.campana_id,
@@ -918,57 +830,9 @@ async def obtener_tarea_por_id(
                 tiene_acceso_colaborativo = True
 
         if not es_dueno and not tiene_acceso_colaborativo:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver esta tarea (ni dueño ni sesión activa).")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver esta tarea.")
 
-    # Paso 3: Cargar todas las relaciones necesarias (Igual que antes)
-    analista, campana = None, None
-    if tarea_db.analista_id:
-        analista_result = await db.execute(select(models.Analista).filter(models.Analista.id == tarea_db.analista_id))
-        analista = analista_result.scalars().first()
-    if tarea_db.campana_id:
-        campana_result = await db.execute(select(models.Campana).filter(models.Campana.id == tarea_db.campana_id))
-        campana = campana_result.scalars().first()
-    
-    historial_result = await db.execute(
-        select(models.HistorialEstadoTarea)
-        .filter(models.HistorialEstadoTarea.tarea_campana_id == tarea_id)
-        .options(selectinload(models.HistorialEstadoTarea.changed_by_analista))
-    )
-    historial = historial_result.scalars().all()
-
-    checklist_result = await db.execute(
-        select(models.ChecklistItem).filter(models.ChecklistItem.tarea_id == tarea_id)
-    )
-    checklist_items = checklist_result.scalars().all()
-    
-    comentarios_result = await db.execute(
-        select(models.ComentarioTarea)
-        .filter(models.ComentarioTarea.tarea_id == tarea_id)
-        .options(selectinload(models.ComentarioTarea.autor))
-        .order_by(models.ComentarioTarea.fecha_creacion.desc())
-    )
-    comentarios = comentarios_result.scalars().all()
-
-    # Paso 4: Construir respuesta
-    tarea_response = Tarea(
-        id=tarea_db.id,
-        titulo=tarea_db.titulo,
-        descripcion=tarea_db.descripcion,
-        fecha_vencimiento=tarea_db.fecha_vencimiento,
-        progreso=tarea_db.progreso,
-        analista_id=tarea_db.analista_id,
-        campana_id=tarea_db.campana_id,
-        fecha_finalizacion=tarea_db.fecha_finalizacion,
-        fecha_creacion=tarea_db.fecha_creacion,
-        es_generada_automaticamente=tarea_db.es_generada_automaticamente, # ¡Importante!
-        analista=AnalistaSimple.model_validate(analista) if analista else None,
-        campana=CampanaSimple.model_validate(campana) if campana else None,
-        checklist_items=[ChecklistItemSimple.model_validate(item) for item in checklist_items],
-        historial_estados=[HistorialEstadoTarea.model_validate(h) for h in historial],
-        comentarios=[ComentarioTarea.model_validate(c) for c in comentarios]
-    )
-
-    return tarea_response
+    return tarea_db
 
 
 @router.put("/tareas/{tarea_id}", response_model=Tarea, summary="Actualizar una Tarea existente (Protegido)")
@@ -992,7 +856,7 @@ async def actualizar_tarea(
     old_progreso = tarea_existente.progreso
 
     # --- LÓGICA DE ACTUALIZACIÓN MEJORADA ---
-    if current_analista.role.value == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         # Un analista solo puede modificar tareas que le pertenecen o que están sin asignar.
         if tarea_existente.analista_id is not None and tarea_existente.analista_id != current_analista.id:
              raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puedes modificar una tarea que no es tuya.")
@@ -1144,7 +1008,7 @@ async def crear_comentario_tarea(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea no encontrada.")
 
     # 2. Verificar permisos (LÓGICA COLABORATIVA)
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         # A. Soy el dueño
         es_dueno = db_tarea.analista_id == current_analista.id
         
@@ -1203,7 +1067,7 @@ async def crear_checklist_item(
     if tarea_existente is None:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
 
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         es_dueno = tarea_existente.analista_id == current_analista.id
         
         tiene_acceso_colaborativo = False
@@ -1252,7 +1116,7 @@ async def obtener_checklist_item_por_id(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ChecklistItem no encontrado.")
     
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         tarea_result = await db.execute(
             select(models.Tarea)
             .filter(models.Tarea.id == item.tarea_id, models.Tarea.analista_id == current_analista.id)
@@ -1275,7 +1139,7 @@ async def obtener_checklist_items(
     """
     query = select(models.ChecklistItem).options(selectinload(models.ChecklistItem.tarea))
     
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         query = query.join(models.Tarea).where(models.Tarea.analista_id == current_analista.id)
         if tarea_id:
             query = query.where(models.ChecklistItem.tarea_id == tarea_id)
@@ -1308,7 +1172,7 @@ async def actualizar_checklist_item(
 
     update_data = item_update.model_dump(exclude_unset=True)
 
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         # Validación de permisos COLABORATIVA
         es_dueno = item_existente.tarea.analista_id == current_analista.id
         
@@ -1511,7 +1375,7 @@ async def obtener_aviso_por_id(
     if not aviso:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aviso no encontrado.")
     
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         is_creator = aviso.creador_id == current_analista.id
         is_general_aviso = aviso.campana_id is None # NUEVO: Verificar si es un aviso general
         is_assigned_to_campaign = False
@@ -1652,7 +1516,7 @@ async def registrar_acuse_recibo(
 
     analista_id = acuse_data.analista_id
 
-    if current_analista.role == UserRole.ANALISTA.value and analista_id != current_analista.id:
+    if current_analista.role == UserRole.ANALISTA and analista_id != current_analista.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para registrar un acuse de recibo para otro analista.")
 
     analista_result = await db.execute(select(models.Analista).filter(models.Analista.id == analista_id))
@@ -1757,7 +1621,7 @@ async def obtener_acuses_recibo_por_aviso(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aviso no encontrado.")
     
     # Un analista solo puede ver los acuses de recibo de avisos que él creó, o avisos generales, o avisos de sus campañas
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         is_creator = aviso_existente.creador_id == current_analista.id
         is_general_aviso = aviso_existente.campana_id is None
         is_assigned_to_campaign = False
@@ -1797,7 +1661,7 @@ async def obtener_acuses_recibo_por_analista(
     if analista_existente is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analista no encontrado.")
     
-    if current_analista.role == UserRole.ANALISTA.value and analista_id != current_analista.id:
+    if current_analista.role == UserRole.ANALISTA and analista_id != current_analista.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver los acuses de recibo de otro analista.")
 
 
@@ -2071,7 +1935,7 @@ async def get_comentarios_generales_de_campana(
     if not campana_existente:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         analista_with_campanas_result = await db.execute(
             select(models.Analista)
             .filter(models.Analista.id == current_analista.id)
@@ -2544,7 +2408,7 @@ async def get_all_tareas_generadas_por_avisos(
         selectinload(models.TareaGeneradaPorAviso.historial_estados)
     )
 
-    if current_analista.role == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
             query = query.where(models.TareaGeneradaPorAviso.analista_asignado_id == current_analista.id)
     elif analista_id is not None:
         if analista_id == 0: # Las tareas generadas siempre tienen analista, pero mantenemos por consistencia
@@ -2594,7 +2458,7 @@ async def get_tarea_generada_por_aviso_by_id(
     if not tarea:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarea generada por aviso no encontrada.")
     
-    if current_analista.role == UserRole.ANALISTA.value and tarea.analista_asignado_id != current_analista.id:
+    if current_analista.role == UserRole.ANALISTA and tarea.analista_asignado_id != current_analista.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver esta tarea.")
 
     return tarea
@@ -2628,7 +2492,7 @@ async def update_tarea_generada_por_aviso(
 
     # --- 👇 AQUÍ ESTÁ LA CORRECCIÓN, IGUAL QUE EN LA OTRA FUNCIÓN ---
     # Comparamos los valores de texto (.value) para ser 100% seguros
-    if current_analista.role.value == UserRole.ANALISTA.value:
+    if current_analista.role == UserRole.ANALISTA:
         if tarea_existente.analista_asignado_id != current_analista.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Solo puedes actualizar tus propias tareas generadas.")
         
@@ -2735,7 +2599,7 @@ async def get_tarea_historial_estados(
     # Permiso para ver el historial:
     # Supervisor/Responsable: pueden ver cualquier historial
     # Analista: solo si la tarea le pertenece
-    if current_analista.role == UserRole.ANALISTA.value and tarea_existente.analista_id != current_analista.id:
+    if current_analista.role == UserRole.ANALISTA and tarea_existente.analista_id != current_analista.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver el historial de esta tarea.")
 
     result = await db.execute(
@@ -2766,7 +2630,7 @@ async def get_tarea_generada_historial_estados(
     # Permiso para ver el historial:
     # Supervisor/Responsable: pueden ver cualquier historial
     # Analista: solo si la tarea le pertenece
-    if current_analista.role == UserRole.ANALISTA.value and tarea_existente.analista_asignado_id != current_analista.id:
+    if current_analista.role == UserRole.ANALISTA and tarea_existente.analista_asignado_id != current_analista.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permiso para ver el historial de esta tarea.")
 
     result = await db.execute(
@@ -3496,70 +3360,18 @@ async def check_in_campana(
     return result_final.scalars().first()
 
 
-@router.get("/tareas/", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Propias + Campaña Activa)")
-async def read_tareas(
+@router.get("/tareas/listado", response_model=List[TareaListOutput], summary="Obtener lista de tareas (Propias + Campaña Activa)")
+async def read_tareas_listado(
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista) 
 ):
-    # Consulta Base: Cargamos relaciones necesarias
-    query = select(models.Tarea).options(
-        selectinload(models.Tarea.campana),
-        selectinload(models.Tarea.analista),
-        selectinload(models.Tarea.checklist_items),  
-
-        selectinload(models.Tarea.historial_estados).selectinload(models.HistorialEstadoTarea.changed_by_analista),
-        
-        selectinload(models.Tarea.comentarios).selectinload(models.ComentarioTarea.autor)
-    )
-
-    # --- LÓGICA DE VISIBILIDAD (EL CORAZÓN DEL SISTEMA) ---
-    if current_analista.role == UserRole.ANALISTA:
-        # 1. Campañas donde estoy asignado FIJO
-        ids_mis_campanas = [c.id for c in current_analista.campanas_asignadas]
-
-        # 2. Campañas donde tengo Check-in ACTIVO (Sesión temporal)
-        q_sesiones = select(models.SesionCampana.campana_id).filter(
-            models.SesionCampana.analista_id == current_analista.id,
-            models.SesionCampana.fecha_fin.is_(None)
-        )
-        res_sesiones = await db.execute(q_sesiones)
-        ids_sesiones = res_sesiones.scalars().all()
-
-        # 3. Unimos ambas listas (sin duplicados)
-        ids_totales_acceso = list(set(ids_mis_campanas + ids_sesiones))
-
-        # El analista ve tareas si:
-        # A. Son suyas directas (analista_id == mi_id)
-        # B. Son de una campaña a la que tiene acceso (Check-in o Asignado)
-        # C. Son GLOBALES (campana_id IS NULL)
-        query = query.filter(
-            or_(
-                models.Tarea.analista_id == current_analista.id,
-                models.Tarea.campana_id.in_(ids_totales_acceso),
-                models.Tarea.campana_id.is_(None)
-            )
-        )
-    
-    # (Si es Supervisor o Admin, ve todo, así que no aplicamos el filtro anterior)
-
-    # --- Filtros Adicionales ---
-    if estado:
-        query = query.filter(models.Tarea.progreso == estado)
-
-    # Ordenar: Prioridad a las vencidas o pendientes
-    query = query.order_by(models.Tarea.fecha_vencimiento.asc())
-
-    # Paginación
-    query = query.offset(skip).limit(limit)
-
-    # Ejecutar
-    result = await db.execute(query)
-    tareas = result.scalars().all()
-    
-    return tareas
+    """
+    Versión optimizada de obtención de tareas, delegando la lógica al servicio.
+    """
+    return await TareaService.get_tareas_analista(db, current_analista, skip, limit, estado)
 
 
 @router.post("/sesiones/check-out", summary="Dejar de gestionar una campaña")
