@@ -577,7 +577,7 @@ async def crear_campana(
         for nombre_lob in lobs_nombres:
             if nombre_lob:
                 nombre_lob_limpio = bleach.clean(nombre_lob)
-                db_lob = models.LOB(nombre=nombre_lob_limpio, campana_id=db_campana.id)
+                db_lob = models.Lob(nombre=nombre_lob_limpio, campana_id=db_campana.id)
                 db.add(db_lob)
         try:
             await db.commit()
@@ -699,7 +699,7 @@ async def actualizar_campana(
 
             for nombre in nuevos_lobs_nombres:
                 if nombre.strip():
-                    nuevo_lob = models.LOB(nombre=bleach.clean(nombre.strip()), campana_id=campana_existente.id)
+                    nuevo_lob = models.Lob(nombre=bleach.clean(nombre.strip()), campana_id=campana_existente.id)
                     db.add(nuevo_lob)
         
         await db.commit()
@@ -1888,7 +1888,7 @@ async def create_comentario_general_para_campana(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
 
     db_comentario = models.ComentarioGeneralBitacora(
-        comentario=comentario_data.comentario,
+        contenido=comentario_data.contenido,
         campana_id=campana_id,
         autor_id=current_analista.id
     )
@@ -1933,7 +1933,7 @@ async def create_incidencia(
                                     estado=EstadoIncidencia.EN_PROGRESO)
 
     if lob_ids:
-        lobs_result = await db.execute(select(models.LOB).filter(models.LOB.id.in_(lob_ids)))
+        lobs_result = await db.execute(select(models.Lob).filter(models.Lob.id.in_(lob_ids)))
         db_incidencia.lobs = lobs_result.scalars().all()
 
     db.add(db_incidencia)
@@ -1980,7 +1980,7 @@ async def update_incidencia(
     if "lob_ids" in update_dict:
         lob_ids = update_dict.pop("lob_ids")
         if lob_ids:
-            lobs_result = await db.execute(select(models.LOB).filter(models.LOB.id.in_(lob_ids)))
+            lobs_result = await db.execute(select(models.Lob).filter(models.Lob.id.in_(lob_ids)))
             db_incidencia.lobs = lobs_result.scalars().all()
         else:
             db_incidencia.lobs = []
@@ -2573,9 +2573,9 @@ async def get_plantilla_por_campana(
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     result = await db.execute(
-        select(models.PlantillaChecklistItem)
-        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
-        .order_by(models.PlantillaChecklistItem.orden)
+        select(models.ItemPlantillaChecklist)
+        .filter(models.ItemPlantillaChecklist.campana_id == campana_id)
+        .order_by(models.ItemPlantillaChecklist.orden)
     )
     return result.scalars().all()
 
@@ -2588,12 +2588,12 @@ async def add_item_a_plantilla(
 ):
     # (Opcional) Calculamos el orden para que quede al final de la lista
     result = await db.execute(
-        select(func.max(models.PlantillaChecklistItem.orden))
-        .filter(models.PlantillaChecklistItem.campana_id == campana_id)
+        select(func.max(models.ItemPlantillaChecklist.orden))
+        .filter(models.ItemPlantillaChecklist.campana_id == campana_id)
     )
     max_orden = result.scalar() or 0
 
-    nuevo_item = models.PlantillaChecklistItem(
+    nuevo_item = models.ItemPlantillaChecklist(
         descripcion=item_data.descripcion,
         campana_id=campana_id,
         hora_sugerida=item_data.hora_sugerida,
@@ -2620,7 +2620,7 @@ async def delete_item_de_plantilla(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    result = await db.execute(select(models.PlantillaChecklistItem).filter(models.PlantillaChecklistItem.id == item_id))
+    result = await db.execute(select(models.ItemPlantillaChecklist).filter(models.ItemPlantillaChecklist.id == item_id))
     item = result.scalars().first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ítem de plantilla no encontrado.")
@@ -3204,21 +3204,21 @@ async def check_in_campana(
         dia_semana_int = ahora_arg.weekday()
 
         mapa_dias = {
-            0: models.PlantillaChecklistItem.lunes,
-            1: models.PlantillaChecklistItem.martes,
-            2: models.PlantillaChecklistItem.miercoles,
-            3: models.PlantillaChecklistItem.jueves,
-            4: models.PlantillaChecklistItem.viernes,
-            5: models.PlantillaChecklistItem.sabado,
-            6: models.PlantillaChecklistItem.domingo
+            0: models.ItemPlantillaChecklist.lunes,
+            1: models.ItemPlantillaChecklist.martes,
+            2: models.ItemPlantillaChecklist.miercoles,
+            3: models.ItemPlantillaChecklist.jueves,
+            4: models.ItemPlantillaChecklist.viernes,
+            5: models.ItemPlantillaChecklist.sabado,
+            6: models.ItemPlantillaChecklist.domingo
         }
         columna_dia_hoy = mapa_dias[dia_semana_int]
 
         # 2. Traer items activos para HOY (puede estar vacío)
-        q_items_plantilla = select(models.PlantillaChecklistItem).filter(
-            models.PlantillaChecklistItem.campana_id == datos.campana_id,
+        q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
+            models.ItemPlantillaChecklist.campana_id == datos.campana_id,
             columna_dia_hoy == True
-        ).order_by(models.PlantillaChecklistItem.orden)
+        ).order_by(models.ItemPlantillaChecklist.orden)
         
         res_items = await db.execute(q_items_plantilla)
         items_plantilla = res_items.scalars().all()

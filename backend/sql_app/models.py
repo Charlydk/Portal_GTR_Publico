@@ -320,7 +320,7 @@ class ComentarioGeneralBitacora(Base):
     id = Column(Integer, primary_key=True, index=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"))
     autor_id = Column(Integer, ForeignKey("analistas.id"))
-    comentario = Column(String) # Antes 'contenido', unificado con schema
+    contenido = Column(String) # Revertido a 'contenido' para compatibilidad con DB producción
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     campana = relationship("Campana", back_populates="comentarios_generales")
     autor = relationship("Analista", back_populates="comentarios_bitacora")

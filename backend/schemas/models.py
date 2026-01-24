@@ -87,7 +87,7 @@ class BitacoraEntryBase(BaseModel):
     comentario: Optional[str] = None
 
     # Campos para Incidencias
-    es_incidencia: bool = False
+    es_incidencia: Optional[bool] = False
     incidencia_id: Optional[int] = None
     tipo_incidencia: Optional[str] = None
     comentario_incidencia: Optional[str] = None
@@ -102,7 +102,7 @@ class BitacoraEntryUpdate(BaseModel):
     lob_id: Optional[int] = None
 
 class ComentarioGeneralBitacoraCreate(BaseModel):
-    comentario: str
+    contenido: str
 
 class TareaGeneradaPorAvisoBase(BaseModel):
     titulo: str
@@ -181,7 +181,7 @@ class ComentarioTareaCreate(ComentarioTareaBase):
 
 class ComentarioTarea(ComentarioTareaBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     autor: AnalistaSimple
     class Config:
         from_attributes = True
@@ -189,8 +189,8 @@ class ComentarioTarea(ComentarioTareaBase):
 
 class ComentarioGeneralBitacora(BaseModel):
     id: int
-    comentario: str
-    fecha_creacion: datetime
+    contenido: str
+    fecha_creacion: Optional[datetime] = None
     autor: AnalistaSimple
     class Config:
         from_attributes = True
@@ -358,7 +358,7 @@ class Campana(CampanaBase):
 
 class Tarea(TareaBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     fecha_finalizacion: Optional[datetime] = None
     es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
@@ -634,14 +634,6 @@ class DashboardStatsSupervisor(BaseModel):
     incidencias_sin_asignar: int
     incidencias_cerradas_hoy: int
 
-# --- Esquema para LOB ---
-# Define qué campos de un LOB quieres mostrar en la respuesta.
-
-class Lob(LobBase):
-    id: int
-
-    class Config:
-        from_attributes = True # Permite que Pydantic lea los datos desde el modelo ORM
 
 
 # ==========================================
