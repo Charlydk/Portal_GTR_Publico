@@ -283,7 +283,7 @@ BitacoraEntrySimple = BitacoraEntry
 # --- Schemas para Incidencias ---
 class ActualizacionIncidencia(ActualizacionIncidenciaBase):
     id: int
-    fecha_actualizacion: datetime
+    fecha_actualizacion: Optional[datetime] = None
     autor: AnalistaSimple
     class Config:
         from_attributes = True
@@ -449,7 +449,7 @@ class Aviso(AvisoBase):
 
 class AcuseReciboAviso(AcuseReciboCreate):
     id: int
-    fecha_acuse: datetime
+    fecha_acuse: Optional[datetime] = None
     analista: "AnalistaSimple"
     aviso: "AvisoSimple"
     class Config:
@@ -457,7 +457,7 @@ class AcuseReciboAviso(AcuseReciboCreate):
 
 class HistorialEstadoTarea(HistorialEstadoTareaBase):
     id: int
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     changed_by_analista: AnalistaSimple
     class Config:
         from_attributes = True
