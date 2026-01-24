@@ -24,19 +24,18 @@ class IncidenciaService:
 
     @staticmethod
     async def get_incidencias_activas_widget(db: AsyncSession):
-        from ..sql_app.models import ActualizacionIncidencia
 
         latest_update_subq = select(
-            ActualizacionIncidencia.incidencia_id,
-            func.max(ActualizacionIncidencia.id).label('max_id')
-        ).group_by(ActualizacionIncidencia.incidencia_id).subquery()
+            models.ActualizacionIncidencia.incidencia_id,
+            func.max(models.ActualizacionIncidencia.id).label('max_id')
+        ).group_by(models.ActualizacionIncidencia.incidencia_id).subquery()
 
         latest_comment_q = select(
-            ActualizacionIncidencia.incidencia_id,
-            ActualizacionIncidencia.comentario,
-            ActualizacionIncidencia.fecha_actualizacion
+            models.ActualizacionIncidencia.incidencia_id,
+            models.ActualizacionIncidencia.comentario,
+            models.ActualizacionIncidencia.fecha_actualizacion
         ).join(
-            latest_update_subq, ActualizacionIncidencia.id == latest_update_subq.c.max_id
+            latest_update_subq, models.ActualizacionIncidencia.id == latest_update_subq.c.max_id
         ).subquery()
 
         query = select(

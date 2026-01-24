@@ -122,7 +122,7 @@ class Analista(Base):
     bms_id = Column(Integer, nullable=True)
     rut = Column(String, unique=True, nullable=True)
     hashed_password = Column(String, nullable=False)
-    role = Column(SQLEnum(UserRole, native_enum=False), default=UserRole.ANALISTA)
+    role = Column(SQLEnum(UserRole, native_enum=False, create_type=False), default=UserRole.ANALISTA)
     esta_activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -247,7 +247,7 @@ class Tarea(Base):
     descripcion = Column(String)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     fecha_vencimiento = Column(DateTime(timezone=True), nullable=True)
-    progreso = Column(SQLEnum(ProgresoTarea, native_enum=False), default=ProgresoTarea.PENDIENTE)
+    progreso = Column(SQLEnum(ProgresoTarea, native_enum=False, create_type=False), default=ProgresoTarea.PENDIENTE)
     es_generada_automaticamente = Column(Boolean, default=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
@@ -372,9 +372,9 @@ class Incidencia(Base):
     descripcion_inicial = Column(Text)
     herramienta_afectada = Column(String, nullable=True)
     indicador_afectado = Column(String, nullable=True)
-    tipo = Column(SQLEnum(TipoIncidencia, native_enum=False), default=TipoIncidencia.TECNICA)
-    estado = Column(SQLEnum(EstadoIncidencia, native_enum=False), default=EstadoIncidencia.ABIERTA)
-    gravedad = Column(SQLEnum(GravedadIncidencia, native_enum=False), default=GravedadIncidencia.MEDIA)
+    tipo = Column(SQLEnum(TipoIncidencia, native_enum=False, create_type=False), default=TipoIncidencia.TECNICA)
+    estado = Column(SQLEnum(EstadoIncidencia, native_enum=False, create_type=False), default=EstadoIncidencia.ABIERTA)
+    gravedad = Column(SQLEnum(GravedadIncidencia, native_enum=False, create_type=False), default=GravedadIncidencia.MEDIA)
     fecha_apertura = Column(DateTime(timezone=True), server_default=func.now())
     fecha_cierre = Column(DateTime(timezone=True), nullable=True)
     comentario_cierre = Column(Text, nullable=True)
@@ -388,7 +388,7 @@ class Incidencia(Base):
     asignado_a = relationship("Analista", foreign_keys=[asignado_a_id], back_populates="incidencias_asignadas")
     cerrado_por = relationship("Analista", foreign_keys=[cerrado_por_id])
     lobs = relationship("Lob", secondary=incidencias_lobs, back_populates="incidencias")
-    historial = relationship("ActualizacionIncidencia", back_populates="incidencia", cascade="all, delete-orphan")
+    actualizaciones = relationship("ActualizacionIncidencia", back_populates="incidencia", cascade="all, delete-orphan")
 
 class ActualizacionIncidencia(Base):
     __tablename__ = "actualizaciones_incidencia"
@@ -397,7 +397,7 @@ class ActualizacionIncidencia(Base):
     autor_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
     fecha = Column(DateTime(timezone=True), server_default=func.now())
     comentario = Column(Text, nullable=False)
-    incidencia = relationship("Incidencia", back_populates="historial")
+    incidencia = relationship("Incidencia", back_populates="actualizaciones")
     autor = relationship("Analista")
 
 # --- HHEE ---
@@ -428,9 +428,9 @@ class SolicitudHHEE(Base):
     fecha_solicitud = Column(DateTime(timezone=True), server_default=func.now())
     fecha_hhee = Column(Date, nullable=False)
     horas_solicitadas = Column(Float, nullable=False)
-    tipo = Column(SQLEnum(TipoSolicitudHHEE, native_enum=False), default=TipoSolicitudHHEE.DESPUES_TURNO)
+    tipo = Column(SQLEnum(TipoSolicitudHHEE, native_enum=False, create_type=False), default=TipoSolicitudHHEE.DESPUES_TURNO)
     justificacion = Column(Text, nullable=True)
-    estado = Column(SQLEnum(EstadoSolicitudHHEE, native_enum=False), default=EstadoSolicitudHHEE.PENDIENTE)
+    estado = Column(SQLEnum(EstadoSolicitudHHEE, native_enum=False, create_type=False), default=EstadoSolicitudHHEE.PENDIENTE)
     horas_aprobadas = Column(Float, nullable=True)
     comentario_supervisor = Column(Text, nullable=True)
     supervisor_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)

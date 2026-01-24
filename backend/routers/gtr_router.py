@@ -1715,12 +1715,12 @@ async def create_bitacora_entry(
     await db.commit()
     await db.refresh(db_entry)
 
-    # 6. Devolvemos el objeto recargado (SIN cargar la relación .lob que no existe)
+    # 6. Devolvemos el objeto recargado con sus relaciones
     result = await db.execute(
         select(models.BitacoraEntry).options(
             selectinload(models.BitacoraEntry.campana), 
             selectinload(models.BitacoraEntry.autor),
-            # selectinload(models.BitacoraEntry.lob) <--- ELIMINADO PARA EVITAR ERROR
+            selectinload(models.BitacoraEntry.lob)
         ).filter(models.BitacoraEntry.id == db_entry.id)
     )
     return result.scalars().first()

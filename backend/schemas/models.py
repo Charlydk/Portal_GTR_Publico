@@ -84,6 +84,7 @@ class AcuseReciboCreate(BaseModel):
 class BitacoraEntryBase(BaseModel):
     hora: time
     campana_id: int
+    lob_id: Optional[int] = None
     comentario: Optional[str] = None
 
     # Campos para Incidencias
@@ -383,7 +384,7 @@ class TareaListOutput(BaseModel):
 
 class ChecklistItem(ChecklistItemBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     tarea: TareaSimple
     class Config:
         from_attributes = True
@@ -463,7 +464,7 @@ class HistorialEstadoTarea(HistorialEstadoTareaBase):
 
 class TareaGeneradaPorAviso(TareaGeneradaPorAvisoBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     fecha_finalizacion: Optional[datetime] = None
     analista_asignado: AnalistaSimple
     aviso_origen: Optional[AvisoSimple] = None
