@@ -45,7 +45,7 @@ class CampanaUpdate(BaseModel):
 class TareaBase(BaseModel):
     titulo: str
     descripcion: Optional[str] = None
-    fecha_vencimiento: datetime
+    fecha_vencimiento: Optional[datetime] = None
     progreso: ProgresoTarea
     analista_id: Optional[int] = None
     campana_id: Optional[int] = None
@@ -206,7 +206,7 @@ class TareaSimple(BaseModel):
     id: int
     titulo: str
     progreso: ProgresoTarea
-    fecha_vencimiento: datetime
+    fecha_vencimiento: Optional[datetime] = None
     class Config:
         from_attributes = True
 
@@ -223,7 +223,7 @@ class HistorialEstadoTareaSimple(BaseModel):
     id: int
     old_progreso: Optional[ProgresoTarea]
     new_progreso: ProgresoTarea
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     changed_by_analista: AnalistaSimple
     class Config:
         from_attributes = True
@@ -237,7 +237,7 @@ class AvisoSimple(BaseModel):
 
 class AcuseReciboAvisoSimple(BaseModel):
     id: int
-    fecha_acuse: datetime
+    fecha_acuse: Optional[datetime] = None
     analista: AnalistaSimple
     class Config:
         from_attributes = True
@@ -294,12 +294,12 @@ class IncidenciaSimple(BaseModel):
     estado: EstadoIncidencia
     tipo: TipoIncidencia
     gravedad: Optional[GravedadIncidencia] = 'MEDIA'
-    fecha_apertura: datetime
+    fecha_apertura: Optional[datetime] = None
     fecha_cierre: Optional[datetime] = None
-    creador: AnalistaSimple
+    creador: Optional[AnalistaSimple] = None
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-    campana: "CampanaSimple"
+    campana: Optional["CampanaSimple"] = None
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None
     class Config:
@@ -314,12 +314,12 @@ class Incidencia(BaseModel):
     tipo: TipoIncidencia
     gravedad: GravedadIncidencia
     estado: EstadoIncidencia
-    fecha_apertura: datetime
+    fecha_apertura: Optional[datetime] = None
     fecha_cierre: Optional[datetime] = None
-    creador: AnalistaSimple
+    creador: Optional[AnalistaSimple] = None
     cerrado_por: Optional[AnalistaSimple] = None
     asignado_a: Optional[AnalistaSimple] = None
-    campana: "CampanaSimple"
+    campana: Optional["CampanaSimple"] = None
     lobs: List[Lob] = []
     ultimo_comentario: Optional[str] = None 
     actualizaciones: List[ActualizacionIncidencia] = []
@@ -374,7 +374,7 @@ class TareaListOutput(BaseModel):
     id: int
     titulo: str
     progreso: ProgresoTarea
-    fecha_vencimiento: datetime
+    fecha_vencimiento: Optional[datetime] = None
     es_generada_automaticamente: bool = False
     analista: Optional[AnalistaSimple] = None
     campana: Optional[CampanaSimple] = None
@@ -418,7 +418,7 @@ class CheckInCreate(BaseModel):
 # Esquema para responder (mostrando detalles de la campaña)
 class SesionActiva(BaseModel):
     id: int
-    fecha_inicio: datetime
+    fecha_inicio: Optional[datetime] = None
     campana: Campana
     campana_id: int
     campana: CampanaSimple
@@ -430,7 +430,7 @@ class SesionCampanaSchema(BaseModel):
     id: int
     analista_id: int
     campana_id: int
-    fecha_inicio: datetime
+    fecha_inicio: Optional[datetime] = None
     active: bool = True
     
     class Config:
@@ -561,7 +561,7 @@ class SolicitudHHEEDecision(BaseModel):
 class SolicitudHHEE(SolicitudHHEEBase):
     id: int
     estado: EstadoSolicitudHHEE
-    fecha_solicitud: datetime
+    fecha_solicitud: Optional[datetime] = None
     solicitante: AnalistaSimple # Muestra info básica del solicitante
     horas_aprobadas: Optional[float] = None
     comentario_supervisor: Optional[str] = None
