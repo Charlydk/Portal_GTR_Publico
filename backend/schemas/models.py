@@ -349,7 +349,7 @@ class IncidenciaExportFilters(BaseModel):
 
 class Campana(CampanaBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     lobs: List[Lob] = []
     analistas_asignados: List[AnalistaSimple] = []
     
@@ -438,7 +438,7 @@ class SesionCampanaSchema(BaseModel):
 
 class Aviso(AvisoBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     creador: "AnalistaSimple"
     campana: Optional["CampanaSimple"] = None
     acuses_recibo: List["AcuseReciboAvisoSimple"] = []
@@ -473,7 +473,7 @@ class TareaGeneradaPorAviso(TareaGeneradaPorAvisoBase):
 
 class Analista(AnalistaBase):
     id: int
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     campanas_asignadas: List[CampanaSimple] = []
     tareas: List[TareaSimple] = []
     avisos_creados: List[AvisoSimple] = []
@@ -483,6 +483,11 @@ class Analista(AnalistaBase):
     incidencias_asignadas: List[IncidenciaSimple] = []
     solicitudes_realizadas: List["SolicitudHHEE"] = []
     solicitudes_gestionadas: List["SolicitudHHEE"] = []
+
+    # Campos para retrocompatibilidad y WFM
+    solicitudes_hhee: List["SolicitudHHEE"] = []
+    planificaciones: List["Planificacion"] = []
+
     class Config:
         from_attributes = True
 
@@ -618,10 +623,6 @@ class CoberturaCampana(BaseModel):
     nombres_analistas: List[str] = []
 
 
-# --- Forward References Update ---
-Campana.model_rebuild()
-Analista.model_rebuild()
-
 class DashboardStatsAnalista(BaseModel):
     incidencias_sin_asignar: int
     mis_incidencias_asignadas: int
@@ -696,3 +697,6 @@ class Planificacion(PlanificacionBase):
 
     class Config:
         from_attributes = True
+# --- Forward References Update ---
+Campana.model_rebuild()
+Analista.model_rebuild()

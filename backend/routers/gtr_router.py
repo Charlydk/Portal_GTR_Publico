@@ -1708,7 +1708,7 @@ async def create_bitacora_entry(
         **datos_limpios,
         fecha=fecha_correcta, 
         autor_id=current_analista.id,
-        # Nota: No agregamos fecha_creacion/actualizacion porque no están en el modelo SQL actual
+        lob_id=entry.lob_id # Restauramos el LOB ID
     )
     
     db.add(db_entry)
@@ -1940,7 +1940,7 @@ async def create_incidencia(
     await db.commit()
     await db.refresh(db_incidencia)
 
-    return await get_incidencia_by_id(db_incidencia.id, db, current_analista)
+    return await IncidenciaService.get_incidencias_detalle(db, db_incidencia.id)
 
 @router.get("/incidencias/", response_model=List[IncidenciaSimple], summary="Obtener lista de Incidencias")
 async def get_incidencias(
@@ -2025,7 +2025,7 @@ async def update_incidencia(
         db.add(nueva_actualizacion)
 
     await db.commit()
-    return await get_incidencia_by_id(incidencia_id, db, current_analista)
+    return await IncidenciaService.get_incidencias_detalle(db, incidencia_id)
 
 
 @router.get("/incidencias/filtradas/", response_model=List[IncidenciaSimple], summary="[Portal de Control] Obtener incidencias con filtros avanzados")
@@ -2187,7 +2187,7 @@ async def update_incidencia_estado(
         )
     
     # Finalmente, recargamos y devolvemos la incidencia completa y actualizada
-    return await get_incidencia_by_id(incidencia_id, db, current_analista)
+    return await IncidenciaService.get_incidencias_detalle(db, incidencia_id)
 
 @router.put("/incidencias/{incidencia_id}/asignar", response_model=Incidencia, summary="Asignar una incidencia al usuario actual")
 async def asignar_incidencia_a_usuario_actual(
@@ -2226,7 +2226,7 @@ async def asignar_incidencia_a_usuario_actual(
     await db.commit()
     
     # Recargamos la incidencia con todas sus relaciones para la respuesta
-    return await get_incidencia_by_id(incidencia_id, db, current_analista)
+    return await IncidenciaService.get_incidencias_detalle(db, incidencia_id)
 
 
 # --- NUEVOS ENDPOINTS PARA TAREAS GENERADAS POR AVISOS ---

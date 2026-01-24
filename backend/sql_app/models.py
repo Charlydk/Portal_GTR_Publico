@@ -122,7 +122,7 @@ class Analista(Base):
     bms_id = Column(Integer, nullable=True)
     rut = Column(String, unique=True, nullable=True)
     hashed_password = Column(String, nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.ANALISTA)
+    role = Column(SQLEnum(UserRole, native_enum=False), default=UserRole.ANALISTA)
     esta_activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -184,6 +184,7 @@ class Campana(Base):
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     sesiones = relationship("SesionCampana", back_populates="campana")
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
+    plantilla_items = relationship("ItemPlantillaChecklist", back_populates="campana", cascade="all, delete-orphan")
 
 # ==============================================================================
 # RESTO DE MODELOS (SIN CAMBIOS ESTRUCTURALES IMPORTANTES)
@@ -210,10 +211,23 @@ class PlantillaChecklist(Base):
 class ItemPlantillaChecklist(Base):
     __tablename__ = "items_plantilla_checklist"
     id = Column(Integer, primary_key=True, index=True)
-    plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=False)
-    texto = Column(String, nullable=False)
+    plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
+    descripcion = Column(String, nullable=False)
+    hora_sugerida = Column(Time, nullable=True)
     orden = Column(Integer, default=0)
+
+    # Días de la semana
+    lunes = Column(Boolean, default=True)
+    martes = Column(Boolean, default=True)
+    miercoles = Column(Boolean, default=True)
+    jueves = Column(Boolean, default=True)
+    viernes = Column(Boolean, default=True)
+    sabado = Column(Boolean, default=True)
+    domingo = Column(Boolean, default=True)
+
     plantilla = relationship("PlantillaChecklist", back_populates="items")
+    campana = relationship("Campana", back_populates="plantilla_items")
 
 class SesionCampana(Base):
     __tablename__ = "sesiones_campana"
@@ -233,7 +247,7 @@ class Tarea(Base):
     descripcion = Column(String)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     fecha_vencimiento = Column(DateTime(timezone=True), nullable=True)
-    progreso = Column(SQLEnum(ProgresoTarea), default=ProgresoTarea.PENDIENTE)
+    progreso = Column(SQLEnum(ProgresoTarea, native_enum=False), default=ProgresoTarea.PENDIENTE)
     es_generada_automaticamente = Column(Boolean, default=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
@@ -358,9 +372,9 @@ class Incidencia(Base):
     descripcion_inicial = Column(Text)
     herramienta_afectada = Column(String, nullable=True)
     indicador_afectado = Column(String, nullable=True)
-    tipo = Column(SQLEnum(TipoIncidencia), default=TipoIncidencia.TECNICA)
-    estado = Column(SQLEnum(EstadoIncidencia), default=EstadoIncidencia.ABIERTA)
-    gravedad = Column(SQLEnum(GravedadIncidencia), default=GravedadIncidencia.MEDIA)
+    tipo = Column(SQLEnum(TipoIncidencia, native_enum=False), default=TipoIncidencia.TECNICA)
+    estado = Column(SQLEnum(EstadoIncidencia, native_enum=False), default=EstadoIncidencia.ABIERTA)
+    gravedad = Column(SQLEnum(GravedadIncidencia, native_enum=False), default=GravedadIncidencia.MEDIA)
     fecha_apertura = Column(DateTime(timezone=True), server_default=func.now())
     fecha_cierre = Column(DateTime(timezone=True), nullable=True)
     comentario_cierre = Column(Text, nullable=True)
@@ -414,9 +428,9 @@ class SolicitudHHEE(Base):
     fecha_solicitud = Column(DateTime(timezone=True), server_default=func.now())
     fecha_hhee = Column(Date, nullable=False)
     horas_solicitadas = Column(Float, nullable=False)
-    tipo = Column(SQLEnum(TipoSolicitudHHEE), default=TipoSolicitudHHEE.DESPUES_TURNO)
+    tipo = Column(SQLEnum(TipoSolicitudHHEE, native_enum=False), default=TipoSolicitudHHEE.DESPUES_TURNO)
     justificacion = Column(Text, nullable=True)
-    estado = Column(SQLEnum(EstadoSolicitudHHEE), default=EstadoSolicitudHHEE.PENDIENTE)
+    estado = Column(SQLEnum(EstadoSolicitudHHEE, native_enum=False), default=EstadoSolicitudHHEE.PENDIENTE)
     horas_aprobadas = Column(Float, nullable=True)
     comentario_supervisor = Column(Text, nullable=True)
     supervisor_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
