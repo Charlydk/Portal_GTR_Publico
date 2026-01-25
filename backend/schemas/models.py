@@ -406,7 +406,7 @@ class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
 class PlantillaChecklistItem(PlantillaChecklistItemBase):
     id: int
     orden: int
-    # campana_id: int # Removido
+    campana_id: Optional[int] = None
 
     class Config:
         from_attributes = True

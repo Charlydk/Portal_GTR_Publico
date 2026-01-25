@@ -2572,16 +2572,9 @@ async def get_plantilla_por_campana(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
-    # Buscamos la campaña para obtener su plantilla por defecto
-    campana_res = await db.execute(select(models.Campana).filter(models.Campana.id == campana_id))
-    campana = campana_res.scalar_one_or_none()
-
-    if not campana or not campana.plantilla_defecto_id:
-        return []
-
     result = await db.execute(
         select(models.ItemPlantillaChecklist)
-        .filter(models.ItemPlantillaChecklist.plantilla_id == campana.plantilla_defecto_id)
+        .filter(models.ItemPlantillaChecklist.campana_id == campana_id)
         .order_by(models.ItemPlantillaChecklist.orden)
     )
     return result.scalars().all()
@@ -2593,22 +2586,16 @@ async def add_item_a_plantilla(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    campana_res = await db.execute(select(models.Campana).filter(models.Campana.id == campana_id))
-    campana = campana_res.scalar_one_or_none()
-
-    if not campana or not campana.plantilla_defecto_id:
-        raise HTTPException(status_code=400, detail="La campaña no tiene una plantilla asignada.")
-
     # (Opcional) Calculamos el orden para que quede al final de la lista
     result = await db.execute(
         select(func.max(models.ItemPlantillaChecklist.orden))
-        .filter(models.ItemPlantillaChecklist.plantilla_id == campana.plantilla_defecto_id)
+        .filter(models.ItemPlantillaChecklist.campana_id == campana_id)
     )
     max_orden = result.scalar() or 0
 
     nuevo_item = models.ItemPlantillaChecklist(
         descripcion=item_data.descripcion,
-        plantilla_id=campana.plantilla_defecto_id,
+        campana_id=campana_id,
         hora_sugerida=item_data.hora_sugerida,
         orden=max_orden + 1, # Asignamos el siguiente número
 
@@ -3227,21 +3214,19 @@ async def check_in_campana(
         }
         columna_dia_hoy = mapa_dias[dia_semana_int]
 
-        # 2. Buscar la campaña para obtener su plantilla
+        # 2. Traer items activos para HOY
+        q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
+            models.ItemPlantillaChecklist.campana_id == datos.campana_id,
+            columna_dia_hoy == True
+        ).order_by(models.ItemPlantillaChecklist.orden)
+
+        res_items = await db.execute(q_items_plantilla)
+        items_plantilla = res_items.scalars().all()
+
+        # 3. Buscar la campaña para el nombre
         q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
         res_campana = await db.execute(q_campana)
         campana_obj = res_campana.scalars().first()
-
-        items_plantilla = []
-        if campana_obj and campana_obj.plantilla_defecto_id:
-            # 3. Traer items activos para HOY (a través de la plantilla)
-            q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
-                models.ItemPlantillaChecklist.plantilla_id == campana_obj.plantilla_defecto_id,
-                columna_dia_hoy == True
-            ).order_by(models.ItemPlantillaChecklist.orden)
-
-            res_items = await db.execute(q_items_plantilla)
-            items_plantilla = res_items.scalars().all()
 
         # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
         if campana_obj:
