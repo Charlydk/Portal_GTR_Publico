@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func, update
+from sqlalchemy import func, update, or_
 from sqlalchemy.orm import selectinload
 from ..services import geovictoria_service
 from datetime import datetime, date
@@ -99,16 +99,17 @@ async def consultar_empleado(
     if not datos_gv:
         raise HTTPException(status_code=404, detail="No se encontraron datos en GeoVictoria para el RUT y período seleccionados.")
 
+    # Usamos rut y fecha_hhee que son las que seguro están pobladas y son NOT NULL en la DB
     query_guardados = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.rut_analista == consulta.rut,
-        models.ValidacionHHEE.fecha.between(consulta.fecha_inicio, consulta.fecha_fin)
+        models.ValidacionHHEE.rut == consulta.rut,
+        models.ValidacionHHEE.fecha_hhee.between(consulta.fecha_inicio, consulta.fecha_fin)
     )
     result_guardados = await db.execute(query_guardados)
     validaciones_guardadas = result_guardados.scalars().all()
 
     datos_guardados_por_fecha = {}
     for v in validaciones_guardadas:
-        fecha_str = v.fecha.strftime('%Y-%m-%d')
+        fecha_str = v.fecha_hhee.strftime('%Y-%m-%d')
         if fecha_str not in datos_guardados_por_fecha:
             datos_guardados_por_fecha[fecha_str] = []
         datos_guardados_por_fecha[fecha_str].append(v)
@@ -130,20 +131,22 @@ async def consultar_empleado(
 
         if registros_del_dia:
             # Si hay CUALQUIER registro pendiente para el día, el estado general es pendiente
-            registro_pendiente = next((r for r in registros_del_dia if r.estado_validacion == 'Pendiente por Corrección'), None)
+            # Buscamos en ambos campos por si acaso
+            registro_pendiente = next((r for r in registros_del_dia if r.estado_validacion == 'Pendiente por Corrección' or r.estado == 'Pendiente por Corrección'), None)
             if registro_pendiente:
                 datos_dia_completo['estado_final'] = 'Pendiente por Corrección'
-                datos_dia_completo['notas'] = registro_pendiente.comentario_validacion
+                datos_dia_completo['notas'] = registro_pendiente.comentario_validacion or registro_pendiente.notas
             else:
                 # Si no hay pendientes, es Validado y sumamos las horas aprobadas
                 datos_dia_completo['estado_final'] = 'Validado'
                 for registro in registros_del_dia:
+                    hhee_val = registro.hhee_aprobadas_rrhh or registro.cantidad_hhee_aprobadas or 0
                     if registro.tipo_hhee == 'Antes de Turno':
-                        datos_dia_completo['hhee_aprobadas_inicio'] = registro.hhee_aprobadas_rrhh
+                        datos_dia_completo['hhee_aprobadas_inicio'] = hhee_val
                     elif registro.tipo_hhee == 'Después de Turno':
-                        datos_dia_completo['hhee_aprobadas_fin'] = registro.hhee_aprobadas_rrhh
+                        datos_dia_completo['hhee_aprobadas_fin'] = hhee_val
                     elif registro.tipo_hhee == 'Día de Descanso':
-                        datos_dia_completo['hhee_aprobadas_descanso'] = registro.hhee_aprobadas_rrhh
+                        datos_dia_completo['hhee_aprobadas_descanso'] = hhee_val
 
         resultados_finales.append(datos_dia_completo)
 
@@ -164,9 +167,10 @@ async def cargar_horas_extras(
     ruts_lote = {formatear_rut(v.rut_con_formato) for v in request_body.validaciones}
     fechas_lote = {v.fecha for v in request_body.validaciones}
 
+    # Usamos rut y fecha_hhee para la búsqueda masiva por ser las más estables
     query_batch = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.rut_analista.in_(list(ruts_lote)),
-        models.ValidacionHHEE.fecha.in_(list(fechas_lote))
+        models.ValidacionHHEE.rut.in_(list(ruts_lote)),
+        models.ValidacionHHEE.fecha_hhee.in_(list(fechas_lote))
     )
     result_batch = await db.execute(query_batch)
     todos_los_registros = result_batch.scalars().all()
@@ -174,7 +178,7 @@ async def cargar_horas_extras(
     # Mapa para búsqueda rápida: {(rut, fecha): [registros]}
     mapa_registros = {}
     for reg in todos_los_registros:
-        key = (reg.rut_analista, reg.fecha)
+        key = (reg.rut, reg.fecha_hhee)
         if key not in mapa_registros:
             mapa_registros[key] = []
         mapa_registros[key].append(reg)
@@ -204,8 +208,11 @@ async def cargar_horas_extras(
 
         if validacion.turno_es_incorrecto:
             if pendiente_record:
-                if pendiente_record.comentario_validacion != validacion.nota:
-                    pendiente_record.comentario_validacion = bleach.clean(validacion.nota) if validacion.nota else None
+                # Actualizamos ambos campos de notas
+                nota_limpia = bleach.clean(validacion.nota) if validacion.nota else None
+                if pendiente_record.comentario_validacion != nota_limpia:
+                    pendiente_record.comentario_validacion = nota_limpia
+                    pendiente_record.notas = nota_limpia
                     resumen_operaciones.append({"fecha": validacion.fecha.isoformat(), "rut": validacion.rut_con_formato, "accion": "Nota de pendiente actualizada."})
             else:
                 for reg in registros_validados.values():
@@ -214,10 +221,14 @@ async def cargar_horas_extras(
                 db.add(models.ValidacionHHEE(
                     rut=rut_formateado,
                     rut_analista=rut_formateado,
+                    nombre_apellido=validacion.nombre_apellido,
                     nombre_apellido_gv=validacion.nombre_apellido,
                     campaña=validacion.campaña,
                     fecha=validacion.fecha,
+                    fecha_hhee=validacion.fecha,
+                    estado="Pendiente por Corrección",
                     estado_validacion="Pendiente por Corrección",
+                    notas=validacion.nota,
                     comentario_validacion=validacion.nota,
                     supervisor_carga=current_user.email,
                     tipo_hhee="General"
@@ -228,10 +239,13 @@ async def cargar_horas_extras(
         base_datos_bd = {
             "rut": rut_formateado,
             "rut_analista": rut_formateado,
+            "nombre_apellido": validacion.nombre_apellido,
             "nombre_apellido_gv": validacion.nombre_apellido,
             "campaña": validacion.campaña,
             "fecha": validacion.fecha,
+            "fecha_hhee": validacion.fecha,
             "supervisor_carga": current_user.email,
+            "estado": "Validado",
             "estado_validacion": "Validado"
         }
 
@@ -251,10 +265,13 @@ async def cargar_horas_extras(
 
             if aprobadas > 0:
                 if pendiente_record and not pendiente_actualizado_en_este_ciclo:
+                    pendiente_record.estado = "Validado"
                     pendiente_record.estado_validacion = "Validado"
                     pendiente_record.tipo_hhee = tipo
                     pendiente_record.hhee_aprobadas_rrhh = aprobadas
+                    pendiente_record.cantidad_hhee_aprobadas = aprobadas
                     pendiente_record.comentario_validacion = None
+                    pendiente_record.notas = None
                     resumen_operaciones.append({
                         "fecha": validacion.fecha.isoformat(),
                         "rut": validacion.rut_con_formato,
@@ -263,7 +280,12 @@ async def cargar_horas_extras(
                     })
                     pendiente_actualizado_en_este_ciclo = True
                 else:
-                    nueva_validacion = models.ValidacionHHEE(**base_datos_bd, tipo_hhee=tipo, hhee_aprobadas_rrhh=aprobadas)
+                    nueva_validacion = models.ValidacionHHEE(
+                        **base_datos_bd,
+                        tipo_hhee=tipo,
+                        hhee_aprobadas_rrhh=aprobadas,
+                        cantidad_hhee_aprobadas=aprobadas
+                    )
                     db.add(nueva_validacion)
                     resumen_operaciones.append({
                         "fecha": validacion.fecha.isoformat(),
@@ -293,7 +315,10 @@ async def consultar_pendientes(
 ):
     # 1. Consulta Base (Igual que antes)
     base_query = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.estado_validacion == 'Pendiente por Corrección'
+        or_(
+            models.ValidacionHHEE.estado_validacion == 'Pendiente por Corrección',
+            models.ValidacionHHEE.estado == 'Pendiente por Corrección'
+        )
     )
 
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
@@ -302,9 +327,14 @@ async def consultar_pendientes(
         query = base_query
 
     if fecha_inicio and fecha_fin:
-        query = query.filter(models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin))
+        query = query.filter(
+            or_(
+                models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
+                models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+            )
+        )
     
-    query = query.order_by(models.ValidacionHHEE.nombre_apellido_gv.asc(), models.ValidacionHHEE.fecha.asc())
+    query = query.order_by(models.ValidacionHHEE.nombre_apellido_gv.asc(), models.ValidacionHHEE.fecha_hhee.asc())
     
     result = await db.execute(query)
     pendientes = result.scalars().all()
@@ -407,8 +437,11 @@ async def exportar_hhee_a_excel(
     try:
         # Consulta base para obtener registros validados en el rango de fechas
         base_query = select(models.ValidacionHHEE).filter(
-            models.ValidacionHHEE.estado_validacion == 'Validado',
-            models.ValidacionHHEE.fecha.between(request.fecha_inicio, request.fecha_fin)
+            or_(models.ValidacionHHEE.estado_validacion == 'Validado', models.ValidacionHHEE.estado == 'Validado'),
+            or_(
+                models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin),
+                models.ValidacionHHEE.fecha.between(request.fecha_inicio, request.fecha_fin)
+            )
         )
 
         # Filtro adicional si el usuario es Supervisor de Operaciones
@@ -511,8 +544,11 @@ async def get_hhee_metricas(
 
     # --- 1. CONSULTA DE VALIDACIONES (CARGA MANUAL) ---
     base_query = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.estado_validacion == 'Validado',
-        models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+        or_(models.ValidacionHHEE.estado_validacion == 'Validado', models.ValidacionHHEE.estado == 'Validado'),
+        or_(
+            models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
+            models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+        )
     )
 
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
@@ -670,11 +706,19 @@ async def get_hhee_metricas_pendientes(
 
     # 1. Filtramos en la BD Local por estado y fecha
     base_query = select(models.ValidacionHHEE).filter(
-        models.ValidacionHHEE.estado_validacion == 'Pendiente por Corrección'
+        or_(
+            models.ValidacionHHEE.estado_validacion == 'Pendiente por Corrección',
+            models.ValidacionHHEE.estado == 'Pendiente por Corrección'
+        )
     )
 
     if fecha_inicio and fecha_fin:
-        base_query = base_query.filter(models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin))
+        base_query = base_query.filter(
+            or_(
+                models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
+                models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+            )
+        )
 
     # 2. Filtro de Rol
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
@@ -932,13 +976,18 @@ async def procesar_solicitud(
             nueva_validacion = models.ValidacionHHEE(
                 rut=rut_formateado,
                 rut_analista=rut_formateado,
+                fecha=solicitud.fecha_hhee,
+                fecha_hhee=solicitud.fecha_hhee,
+                nombre_apellido=nombre_completo,
                 nombre_apellido_gv=nombre_completo,
                 campaña=solicitud.solicitante.campanas_asignadas[0].nombre if solicitud.solicitante.campanas_asignadas else "General",
-                fecha=solicitud.fecha_hhee,
                 tipo_hhee=tipo_hhee_validacion,
                 hhee_aprobadas_rrhh=solicitud.horas_aprobadas,
+                cantidad_hhee_aprobadas=solicitud.horas_aprobadas,
+                estado="Validado",
                 estado_validacion="Validado",
                 supervisor_carga=current_user.email,
+                notas=f"Aprobado desde solicitud #{solicitud.id}",
                 comentario_validacion=f"Aprobado desde solicitud #{solicitud.id}"
             )
             db.add(nueva_validacion)
@@ -1074,16 +1123,22 @@ async def procesar_solicitudes_lote(
                 
                 if tipo_hhee_validacion:
                     rut_solicitante = formatear_rut(solicitud.solicitante.rut) if hasattr(solicitud.solicitante, 'rut') else ""
+                    nombre_completo = f"{solicitud.solicitante.nombre} {solicitud.solicitante.apellido}"
                     nueva_validacion = models.ValidacionHHEE(
                         rut=rut_solicitante,
                         rut_analista=rut_solicitante,
-                        nombre_apellido_gv=f"{solicitud.solicitante.nombre} {solicitud.solicitante.apellido}",
-                        campaña=solicitud.solicitante.campanas_asignadas[0].nombre if solicitud.solicitante.campanas_asignadas else "General",
                         fecha=solicitud.fecha_hhee,
+                        fecha_hhee=solicitud.fecha_hhee,
+                        nombre_apellido=nombre_completo,
+                        nombre_apellido_gv=nombre_completo,
+                        campaña=solicitud.solicitante.campanas_asignadas[0].nombre if solicitud.solicitante.campanas_asignadas else "General",
                         tipo_hhee=tipo_hhee_validacion,
                         hhee_aprobadas_rrhh=solicitud.horas_aprobadas,
+                        cantidad_hhee_aprobadas=solicitud.horas_aprobadas,
+                        estado="Validado",
                         estado_validacion="Validado",
                         supervisor_carga=current_user.email,
+                        notas=f"Aprobado desde solicitud #{solicitud.id}. Comentario: {decision.comentario_supervisor or ''}".strip(),
                         comentario_validacion=f"Aprobado desde solicitud #{solicitud.id}. Comentario: {decision.comentario_supervisor or ''}".strip()
                     )
                     db.add(nueva_validacion)
@@ -1175,10 +1230,13 @@ async def exportar_y_marcar_rrhh(
     try:
         # 1. Buscamos los registros que cumplen las condiciones (igual que antes)
         query = select(models.ValidacionHHEE).filter(
-            models.ValidacionHHEE.estado_validacion == 'Validado',
-            models.ValidacionHHEE.fecha.between(request.fecha_inicio, request.fecha_fin),
+            or_(models.ValidacionHHEE.estado_validacion == 'Validado', models.ValidacionHHEE.estado == 'Validado'),
+            or_(
+                models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin),
+                models.ValidacionHHEE.fecha.between(request.fecha_inicio, request.fecha_fin)
+            ),
             models.ValidacionHHEE.reportado_a_rrhh == False
-        ).order_by(models.ValidacionHHEE.rut_analista, models.ValidacionHHEE.fecha)
+        ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
         
         result = await db.execute(query)
         validaciones = result.scalars().all()
@@ -1273,8 +1331,11 @@ async def obtener_ids_pendientes_rrhh(
         return []
 
     query = select(models.ValidacionHHEE.id).filter(
-        models.ValidacionHHEE.estado_validacion == 'Validado',
-        models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin),
+        or_(models.ValidacionHHEE.estado_validacion == 'Validado', models.ValidacionHHEE.estado == 'Validado'),
+        or_(
+            models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
+            models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+        ),
         models.ValidacionHHEE.reportado_a_rrhh == False
     )
     result = await db.execute(query)
