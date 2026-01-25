@@ -123,7 +123,8 @@ async def crear_analista(
                 selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
                 selectinload(models.Analista.incidencias_asignadas),
                 selectinload(models.Analista.solicitudes_realizadas),
-                selectinload(models.Analista.solicitudes_gestionadas)
+                selectinload(models.Analista.solicitudes_gestionadas),
+                selectinload(models.Analista.planificaciones)
             )
         )
         analista_to_return = result.scalars().first()
@@ -206,7 +207,12 @@ async def get_all_analistas(
         selectinload(models.Analista.tareas),
         selectinload(models.Analista.avisos_creados),
         selectinload(models.Analista.acuses_recibo_avisos),
-        selectinload(models.Analista.tareas_generadas_por_avisos) # NUEVO
+        selectinload(models.Analista.tareas_generadas_por_avisos),
+        selectinload(models.Analista.incidencias_creadas),
+        selectinload(models.Analista.incidencias_asignadas),
+        selectinload(models.Analista.solicitudes_realizadas),
+        selectinload(models.Analista.solicitudes_gestionadas),
+        selectinload(models.Analista.planificaciones)
     )
     if not include_inactive:
         query = query.where(models.Analista.esta_activo == True)
@@ -222,7 +228,22 @@ async def actualizar_analista(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
-    db_analista_result = await db.execute(select(models.Analista).where(models.Analista.id == analista_id))
+    db_analista_result = await db.execute(
+        select(models.Analista)
+        .where(models.Analista.id == analista_id)
+        .options(
+            selectinload(models.Analista.campanas_asignadas),
+            selectinload(models.Analista.tareas),
+            selectinload(models.Analista.avisos_creados),
+            selectinload(models.Analista.acuses_recibo_avisos),
+            selectinload(models.Analista.tareas_generadas_por_avisos),
+            selectinload(models.Analista.incidencias_creadas),
+            selectinload(models.Analista.incidencias_asignadas),
+            selectinload(models.Analista.solicitudes_realizadas),
+            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.planificaciones)
+        )
+    )
     analista_existente = db_analista_result.scalars().first()
 
     if analista_existente is None:
@@ -271,7 +292,8 @@ async def actualizar_analista(
                 ),
 
                 selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
+                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+                selectinload(models.Analista.planificaciones)
             )
         )
         analista_to_return = result.scalars().first()
@@ -299,7 +321,22 @@ async def update_analista_password(
     Un Responsable puede actualizar la contraseña de un Analista normal.
     Un Supervisor puede actualizar cualquier contraseña.
     """
-    db_analista_result = await db.execute(select(models.Analista).where(models.Analista.id == analista_id))
+    db_analista_result = await db.execute(
+        select(models.Analista)
+        .where(models.Analista.id == analista_id)
+        .options(
+            selectinload(models.Analista.campanas_asignadas),
+            selectinload(models.Analista.tareas),
+            selectinload(models.Analista.avisos_creados),
+            selectinload(models.Analista.acuses_recibo_avisos),
+            selectinload(models.Analista.tareas_generadas_por_avisos),
+            selectinload(models.Analista.incidencias_creadas),
+            selectinload(models.Analista.incidencias_asignadas),
+            selectinload(models.Analista.solicitudes_realizadas),
+            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.planificaciones)
+        )
+    )
     analista_a_actualizar = db_analista_result.scalars().first()
 
     if analista_a_actualizar is None:
@@ -410,7 +447,10 @@ async def asignar_campana_a_analista(
             selectinload(models.Analista.acuses_recibo_avisos),
             selectinload(models.Analista.tareas_generadas_por_avisos),
             selectinload(models.Analista.incidencias_creadas),
-            selectinload(models.Analista.incidencias_asignadas)
+            selectinload(models.Analista.incidencias_asignadas),
+            selectinload(models.Analista.solicitudes_realizadas),
+            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.planificaciones)
         )
     )
     analista = analista_result.scalars().first()
