@@ -405,6 +405,8 @@ class ValidacionHHEE(Base):
     rut_analista = Column(String, nullable=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     nombre_apellido_gv = Column(String)
+    campaña = Column(String) # Nueva
+    tipo_hhee = Column(String) # Nueva
     inicio_turno_teorico = Column(String)
     fin_turno_teorico = Column(String)
     marca_real_inicio = Column(String)
@@ -413,6 +415,8 @@ class ValidacionHHEE(Base):
     hhee_aprobadas_rrhh = Column(Float, default=0.0)
     estado_validacion = Column(String, default="PENDIENTE")
     comentario_validacion = Column(String, nullable=True)
+    supervisor_carga = Column(String) # Nueva
+    fecha_carga = Column(DateTime(timezone=True), server_default=func.now()) # Nueva
     reportado_a_rrhh = Column(Boolean, default=False)
     reportado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     fecha_reportado = Column(DateTime(timezone=True), nullable=True)

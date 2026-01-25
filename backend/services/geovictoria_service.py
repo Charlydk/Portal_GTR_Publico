@@ -43,37 +43,37 @@ def hhmm_to_decimal(time_str):
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     
-    CHUNK_SIZE = 20
+    CHUNK_SIZE = 40 # Aumentamos el tamaño del lote para reducir llamadas
     RETRY_COUNT = 3
-    RETRY_DELAY = 2
+    RETRY_DELAY = 1
     
     # --- FUNCIÓN AUXILIAR INTERNA PARA REALIZAR CONSULTAS EN LOTES ---
     async def ejecutar_consulta_lotes(lista_ruts):
         resultados_lote = []
-        for i in range(0, len(lista_ruts), CHUNK_SIZE):
-            lote_actual = lista_ruts[i:i + CHUNK_SIZE]
-            payload = {
-                "StartDate": fecha_inicio_dt.strftime("%Y%m%d%H%M%S"),
-                "EndDate": fecha_fin_dt.strftime("%Y%m%d%H%M%S"),
-                "UserIds": ",".join(lote_actual)
-            }
-            
-            for attempt in range(RETRY_COUNT):
-                try:
-                    async with httpx.AsyncClient(timeout=45.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client: # Un solo cliente para todos los lotes
+            for i in range(0, len(lista_ruts), CHUNK_SIZE):
+                lote_actual = lista_ruts[i:i + CHUNK_SIZE]
+                payload = {
+                    "StartDate": fecha_inicio_dt.strftime("%Y%m%d%H%M%S"),
+                    "EndDate": fecha_fin_dt.strftime("%Y%m%d%H%M%S"),
+                    "UserIds": ",".join(lote_actual)
+                }
+
+                for attempt in range(RETRY_COUNT):
+                    try:
                         response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
                         response.raise_for_status()
                         respuesta_lote = response.json()
                         if respuesta_lote.get("Users"):
                             resultados_lote.extend(respuesta_lote["Users"])
-                        print(f"Lote de {len(lote_actual)} RUTs procesado con éxito en el intento {attempt + 1}.")
+                        # print(f"Lote de {len(lote_actual)} RUTs procesado con éxito.")
                         break 
-                except Exception as e:
-                    print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
-                    if attempt < RETRY_COUNT - 1:
-                        await asyncio.sleep(RETRY_DELAY)
-                    else:
-                        print(f"FALLO FINAL para el lote de {len(lote_actual)} RUTs después de {RETRY_COUNT} intentos.")
+                    except Exception as e:
+                        print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
+                        if attempt < RETRY_COUNT - 1:
+                            await asyncio.sleep(RETRY_DELAY)
+                        else:
+                            print(f"FALLO FINAL para el lote de {len(lote_actual)} RUTs.")
         return resultados_lote
 
     # --- 1. PRIMERA CONSULTA MASIVA ---
