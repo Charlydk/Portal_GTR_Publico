@@ -2976,7 +2976,7 @@ async def exportar_incidencias(
             "Creador": f"{inc.creador.nombre} {inc.creador.apellido}" if inc.creador else "N/A",
             "Asignado a": f"{inc.asignado_a.nombre} {inc.asignado_a.apellido}" if inc.asignado_a else "Sin Asignar",
             "Cerrado por": f"{inc.cerrado_por.nombre} {inc.cerrado_por.apellido}" if inc.cerrado_por else "N/A",
-            "Fecha Apertura": inc.fecha_apertura.strftime("%d-%m-%Y %H:%M"),
+            "Fecha Apertura": inc.fecha_apertura.strftime("%d-%m-%Y %H:%M") if inc.fecha_apertura else "N/A",
             "Fecha Cierre": inc.fecha_cierre.strftime("%d-%m-%Y %H:%M") if inc.fecha_cierre else "N/A",
             "Herramienta Afectada": inc.herramienta_afectada,
             "Indicador Afectado": inc.indicador_afectado,

@@ -407,6 +407,7 @@ class PlantillaChecklistItem(PlantillaChecklistItemBase):
     id: int
     orden: int
     campana_id: Optional[int] = None
+    plantilla_id: Optional[int] = None
 
     class Config:
         from_attributes = True

@@ -205,14 +205,12 @@ class PlantillaChecklist(Base):
     descripcion = Column(String, nullable=True)
     prioridad = Column(String, default="MEDIA")
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-    # items = relationship("ItemPlantillaChecklist", back_populates="plantilla", cascade="all, delete-orphan")
     campanas_asociadas = relationship("Campana", back_populates="plantilla_defecto")
 
 class ItemPlantillaChecklist(Base):
     __tablename__ = "plantillas_checklist_items"
     id = Column(Integer, primary_key=True, index=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
-    # plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
     descripcion = Column(String, nullable=False)
     hora_sugerida = Column(Time, nullable=True)
     orden = Column(Integer, default=0)
@@ -226,7 +224,6 @@ class ItemPlantillaChecklist(Base):
     sabado = Column(Boolean, default=True)
     domingo = Column(Boolean, default=True)
 
-    # plantilla = relationship("PlantillaChecklist", back_populates="items")
     campana = relationship("Campana", back_populates="plantilla_items")
 
 class SesionCampana(Base):
