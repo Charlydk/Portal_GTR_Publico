@@ -212,7 +212,7 @@ class ItemPlantillaChecklist(Base):
     id = Column(Integer, primary_key=True, index=True)
     plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
     # campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True) # Removido por falta en DB producción
-    descripcion = Column(String, nullable=False)
+    descripcion = Column('texto', String, nullable=False) # Mapeado a 'texto' en DB
     hora_sugerida = Column(Time, nullable=True)
     orden = Column(Integer, default=0)
 
