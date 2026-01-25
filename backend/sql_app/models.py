@@ -208,11 +208,11 @@ class PlantillaChecklist(Base):
     campanas_asociadas = relationship("Campana", back_populates="plantilla_defecto")
 
 class ItemPlantillaChecklist(Base):
-    __tablename__ = "items_plantilla_checklist"
+    __tablename__ = "plantillas_checklist_items"
     id = Column(Integer, primary_key=True, index=True)
     plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
-    # campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True) # Removido por falta en DB producción
-    descripcion = Column('texto', String, nullable=False) # Mapeado a 'texto' en DB
+    # campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
+    descripcion = Column(String, nullable=False)
     hora_sugerida = Column(Time, nullable=True)
     orden = Column(Integer, default=0)
 
