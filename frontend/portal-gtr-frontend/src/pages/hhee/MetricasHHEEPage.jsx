@@ -175,11 +175,11 @@ function MetricasHHEEPage() {
                             </Card>
                         </Col>
 
-                        {/* TABLA DE EMPLEADOS (Solo para OPS SUPERVISOR) */}
-                        {isOpsSupervisor && (
+                        {/* TABLA DE EMPLEADOS (Visible para OPS y GTR ADMIN) */}
+                        {(isOpsSupervisor || isAdminGTR) && (
                             <Col lg={6}>
                                 <Card className="shadow-sm h-100">
-                                    <Card.Header as="h5">Mis Agentes</Card.Header>
+                                    <Card.Header as="h5">{isOpsSupervisor ? 'Mis Agentes' : 'Desglose por Empleado'}</Card.Header>
                                     <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                                         <Table hover responsive size="sm" className="mb-0">
                                             <thead style={{position: 'sticky', top: 0, background: 'white'}}>

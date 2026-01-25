@@ -401,6 +401,7 @@ class ActualizacionIncidencia(Base):
 class ValidacionHHEE(Base):
     __tablename__ = "validaciones_hhee"
     id = Column(Integer, primary_key=True, index=True)
+    rut = Column(String, nullable=False) # Retrocompatibilidad y constraint NOT NULL
     fecha = Column(Date, nullable=False)
     rut_analista = Column(String, nullable=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
