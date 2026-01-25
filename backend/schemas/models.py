@@ -406,7 +406,7 @@ class PlantillaChecklistItemCreate(PlantillaChecklistItemBase):
 class PlantillaChecklistItem(PlantillaChecklistItemBase):
     id: int
     orden: int
-    campana_id: int
+    # campana_id: int # Removido
 
     class Config:
         from_attributes = True
@@ -464,7 +464,7 @@ class HistorialEstadoTarea(HistorialEstadoTareaBase):
 
 class TareaGeneradaPorAviso(TareaGeneradaPorAvisoBase):
     id: int
-    fecha_creacion: Optional[datetime] = None
+    fecha_generacion: Optional[datetime] = None
     fecha_finalizacion: Optional[datetime] = None
     analista_asignado: AnalistaSimple
     aviso_origen: Optional[AvisoSimple] = None

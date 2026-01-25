@@ -210,7 +210,7 @@ function DetalleTareaGeneradaPage() {
             <strong>Estado:</strong> <Badge bg={tarea.progreso === 'PENDIENTE' ? 'danger' : 'success'}>{tarea.progreso}</Badge>
           </Card.Text>
           <Card.Text>
-            <strong>Fecha de Creación:</strong> {formatDateTime(tarea.fecha_creacion)}
+            <strong>Fecha de Creación:</strong> {formatDateTime(tarea.fecha_generacion)}
           </Card.Text>
           <Card.Text>
             <strong>Fecha de Vencimiento:</strong> {formatDateTime(tarea.fecha_vencimiento)}

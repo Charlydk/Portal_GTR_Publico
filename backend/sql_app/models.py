@@ -184,7 +184,6 @@ class Campana(Base):
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     sesiones = relationship("SesionCampana", back_populates="campana")
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
-    plantilla_items = relationship("ItemPlantillaChecklist", back_populates="campana", cascade="all, delete-orphan")
 
 # ==============================================================================
 # RESTO DE MODELOS (SIN CAMBIOS ESTRUCTURALES IMPORTANTES)
@@ -212,7 +211,7 @@ class ItemPlantillaChecklist(Base):
     __tablename__ = "items_plantilla_checklist"
     id = Column(Integer, primary_key=True, index=True)
     plantilla_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)
-    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
+    # campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True) # Removido por falta en DB producción
     descripcion = Column(String, nullable=False)
     hora_sugerida = Column(Time, nullable=True)
     orden = Column(Integer, default=0)
@@ -227,7 +226,6 @@ class ItemPlantillaChecklist(Base):
     domingo = Column(Boolean, default=True)
 
     plantilla = relationship("PlantillaChecklist", back_populates="items")
-    campana = relationship("Campana", back_populates="plantilla_items")
 
 class SesionCampana(Base):
     __tablename__ = "sesiones_campana"
@@ -324,7 +322,7 @@ class TareaGeneradaPorAviso(Base):
     aviso_id = Column(Integer, ForeignKey("avisos.id"))
     analista_id = Column(Integer, ForeignKey("analistas.id"))
     tarea_id = Column(Integer, ForeignKey("tareas.id"))
-    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_generacion = Column(DateTime(timezone=True), server_default=func.now())
     analista = relationship("Analista", back_populates="tareas_generadas_por_avisos")
     aviso_origen = relationship("Aviso")
     tarea = relationship("Tarea")
