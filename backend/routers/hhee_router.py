@@ -502,21 +502,33 @@ async def get_hhee_metricas(
     fecha_inicio = request.fecha_inicio
     fecha_fin = request.fecha_fin
 
-    # --- 1. CONSULTA DE VALIDACIONES (CARGA MANUAL) ---
-    base_query = select(models.ValidacionHHEE).filter(
+    # --- 1. CONSULTA DE VALIDACIONES (CARGA MANUAL) - Agregada por día/tipo ---
+    # Optimizamos trayendo solo los campos necesarios y agrupando si hay duplicados
+    base_query = select(
+        models.ValidacionHHEE.rut,
+        models.ValidacionHHEE.nombre_apellido,
+        models.ValidacionHHEE.campaña,
+        models.ValidacionHHEE.fecha_hhee,
+        models.ValidacionHHEE.tipo_hhee,
+        func.sum(models.ValidacionHHEE.cantidad_hhee_aprobadas).label("cantidad_hhee_aprobadas")
+    ).filter(
         models.ValidacionHHEE.estado == 'Validado',
         models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
     )
 
     if current_user.role == UserRole.SUPERVISOR_OPERACIONES:
-        # Filtro personal para Ops: solo ven lo que ellos cargaron
-        query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
-    else:
-        # Global para Supervisores GTR y Responsables: ven todo
-        query = base_query
+        base_query = base_query.filter(models.ValidacionHHEE.supervisor_carga == current_user.email)
+
+    query = base_query.group_by(
+        models.ValidacionHHEE.rut,
+        models.ValidacionHHEE.nombre_apellido,
+        models.ValidacionHHEE.campaña,
+        models.ValidacionHHEE.fecha_hhee,
+        models.ValidacionHHEE.tipo_hhee
+    )
     
     result = await db.execute(query)
-    validaciones_periodo = result.scalars().all()
+    validaciones_periodo = result.all()
 
     # --- 2. CONSULTA DE SOLICITUDES (Optimizado con agregación en DB) ---
     solicitudes_pendientes = 0
@@ -544,7 +556,8 @@ async def get_hhee_metricas(
                 horas_rechazadas_sol = float(row.sum_solicitadas or 0)
 
     # --- 3. CONSULTA A GEOVICTORIA (API ANTIGUA / SEGURA) ---
-    ruts_unicos = {v.rut.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
+    # Usamos set comprehension para obtener RUTs únicos ya formateados
+    ruts_unicos = {v.rut.strip().replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
     datos_gv_lista = []
     
     if ruts_unicos:
