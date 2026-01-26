@@ -157,18 +157,30 @@ async def cargar_horas_extras(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
-    # 1. CAMBIO: Renombramos la lista para mayor claridad
     resumen_operaciones = []
+
+    # Optimización: Obtener todos los registros existentes en un solo query (Batch)
+    ruts_lote = {formatear_rut(v.rut_con_formato) for v in request_body.validaciones}
+    fechas_lote = {v.fecha for v in request_body.validaciones}
+
+    query_batch = select(models.ValidacionHHEE).filter(
+        models.ValidacionHHEE.rut.in_(list(ruts_lote)),
+        models.ValidacionHHEE.fecha_hhee.in_(list(fechas_lote))
+    )
+    result_batch = await db.execute(query_batch)
+    todos_los_registros = result_batch.scalars().all()
+
+    # Mapa para búsqueda rápida: {(rut, fecha): [registros]}
+    mapa_registros = {}
+    for reg in todos_los_registros:
+        key = (reg.rut, reg.fecha_hhee)
+        if key not in mapa_registros:
+            mapa_registros[key] = []
+        mapa_registros[key].append(reg)
 
     for validacion in request_body.validaciones:
         rut_formateado = formatear_rut(validacion.rut_con_formato)
-
-        query_existentes = select(models.ValidacionHHEE).filter_by(
-            rut=rut_formateado,
-            fecha_hhee=validacion.fecha
-        )
-        result_existentes = await db.execute(query_existentes)
-        registros_del_dia = result_existentes.scalars().all()
+        registros_del_dia = mapa_registros.get((rut_formateado, validacion.fecha), [])
 
         registros_validados = {r.tipo_hhee: r for r in registros_del_dia if r.estado == 'Validado'}
         pendiente_record = next((r for r in registros_del_dia if r.estado == 'Pendiente por Corrección'), None)
@@ -506,26 +518,30 @@ async def get_hhee_metricas(
     result = await db.execute(query)
     validaciones_periodo = result.scalars().all()
 
-    # --- 2. CONSULTA DE SOLICITUDES (NUEVO FLUJO) ---
+    # --- 2. CONSULTA DE SOLICITUDES (Optimizado con agregación en DB) ---
     solicitudes_pendientes = 0
     horas_aprobadas_sol = 0
     horas_rechazadas_sol = 0
 
-    # Los Supervisores de Operaciones NO ven el control general de solicitudes
     if current_user.role != UserRole.SUPERVISOR_OPERACIONES:
-        query_solicitudes = select(models.SolicitudHHEE).filter(
+        stats_query = select(
+            models.SolicitudHHEE.estado,
+            func.count(models.SolicitudHHEE.id).label("cantidad"),
+            func.sum(models.SolicitudHHEE.horas_aprobadas).label("sum_aprobadas"),
+            func.sum(models.SolicitudHHEE.horas_solicitadas).label("sum_solicitadas")
+        ).filter(
             models.SolicitudHHEE.fecha_hhee.between(fecha_inicio, fecha_fin)
-        )
-        result_sol = await db.execute(query_solicitudes)
-        solicitudes_periodo = result_sol.scalars().all()
+        ).group_by(models.SolicitudHHEE.estado)
 
-        for sol in solicitudes_periodo:
-            if sol.estado == EstadoSolicitudHHEE.PENDIENTE:
-                solicitudes_pendientes += 1
-            elif sol.estado == EstadoSolicitudHHEE.APROBADA:
-                horas_aprobadas_sol += (sol.horas_aprobadas or 0)
-            elif sol.estado == EstadoSolicitudHHEE.RECHAZADA:
-                horas_rechazadas_sol += (sol.horas_solicitadas or 0)
+        stats_result = await db.execute(stats_query)
+        for row in stats_result.all():
+            estado = row[0]
+            if estado == EstadoSolicitudHHEE.PENDIENTE:
+                solicitudes_pendientes = row.cantidad
+            elif estado == EstadoSolicitudHHEE.APROBADA:
+                horas_aprobadas_sol = float(row.sum_aprobadas or 0)
+            elif estado == EstadoSolicitudHHEE.RECHAZADA:
+                horas_rechazadas_sol = float(row.sum_solicitadas or 0)
 
     # --- 3. CONSULTA A GEOVICTORIA (API ANTIGUA / SEGURA) ---
     ruts_unicos = {v.rut.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut}
