@@ -80,9 +80,13 @@ app.add_middleware(
     allow_headers=["*"],         # Permite todos los encabezados
 )
 
-app.include_router(gtr_router.router, prefix="/gtr")
+# --- CONFIGURACIÓN DE SEGURIDAD PARA ROUTERS ---
+# SUPERVISOR_OPERACIONES solo puede acceder a HHEE.
+gtr_wfm_restriction = [Depends(require_role([UserRole.ANALISTA, UserRole.SUPERVISOR, UserRole.RESPONSABLE]))]
+
+app.include_router(gtr_router.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(hhee_router.router, prefix="/hhee")
-app.include_router(wfm_router.router)
+app.include_router(wfm_router.router, dependencies=gtr_wfm_restriction)
 
 
 @app.get("/health", status_code=status.HTTP_200_OK)
