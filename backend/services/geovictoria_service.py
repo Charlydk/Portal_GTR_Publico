@@ -43,23 +43,35 @@ def hhmm_to_decimal(time_str):
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     
-    CHUNK_SIZE = 40 # Aumentamos el tamaño del lote para reducir llamadas
+    CHUNK_SIZE = 40 # Tamaño de lote por RUTs
     RETRY_COUNT = 3
     RETRY_DELAY = 1
+    MAX_CONCURRENCY = 3 # Límite de peticiones simultáneas para evitar 429
     
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+
     # --- FUNCIÓN AUXILIAR INTERNA PARA REALIZAR CONSULTAS EN LOTES (EN PARALELO) ---
     async def realizar_peticion_lote(client, payload):
-        for attempt in range(RETRY_COUNT):
-            try:
-                response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
-                response.raise_for_status()
-                respuesta_lote = response.json()
-                return respuesta_lote.get("Users") or []
-            except Exception as e:
-                print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
-                if attempt < RETRY_COUNT - 1:
-                    await asyncio.sleep(RETRY_DELAY)
-        return []
+        async with semaphore:
+            for attempt in range(RETRY_COUNT):
+                try:
+                    response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
+
+                    if response.status_code == 429:
+                        # Si hay un rate limit, esperamos más tiempo en cada reintento
+                        espera = (attempt + 1) * 2
+                        print(f"ADVERTENCIA: Rate Limit (429) en GeoVictoria. Reintentando en {espera}s...")
+                        await asyncio.sleep(espera)
+                        continue
+
+                    response.raise_for_status()
+                    respuesta_lote = response.json()
+                    return respuesta_lote.get("Users") or []
+                except Exception as e:
+                    print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
+                    if attempt < RETRY_COUNT - 1:
+                        await asyncio.sleep(RETRY_DELAY)
+            return []
 
     async def ejecutar_consulta_lotes(lista_ruts):
         async with httpx.AsyncClient(timeout=60.0) as client:
