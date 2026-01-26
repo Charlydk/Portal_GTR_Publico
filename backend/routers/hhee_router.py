@@ -326,12 +326,10 @@ async def consultar_pendientes(
     else:
         query = base_query
 
-    # Si no se pasan fechas, para GTR (Supervisor/Responsable) traemos solo el periodo actual
-    # Para OPS traemos TODO lo que el usuario cargó (histórico pendiente)
+    # Si no se pasan fechas, traemos solo el periodo actual para todos
     filtro_inicio, filtro_fin = fecha_inicio, fecha_fin
     if not filtro_inicio or not filtro_fin:
-        if current_user.role != UserRole.SUPERVISOR_OPERACIONES:
-            filtro_inicio, filtro_fin = get_current_hhee_period()
+        filtro_inicio, filtro_fin = get_current_hhee_period()
 
     if filtro_inicio and filtro_fin:
         query = query.filter(
@@ -442,6 +440,10 @@ async def exportar_hhee_a_excel(
     db: AsyncSession = Depends(get_db),
     current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
 ):
+    # El reporte de RRHH es exclusivo para GTR
+    if request.formato == ExportFormat.RRHH and current_user.role == UserRole.SUPERVISOR_OPERACIONES:
+        raise HTTPException(status_code=403, detail="No tiene permisos para exportar el reporte de RRHH.")
+
     try:
         # Consulta base para obtener registros validados en el rango de fechas
         base_query = select(models.ValidacionHHEE).filter(
@@ -460,7 +462,12 @@ async def exportar_hhee_a_excel(
 
         # Si el formato es para RRHH, solo mostramos los que aún no han sido reportados
         if request.formato == ExportFormat.RRHH:
-            query = query.filter(models.ValidacionHHEE.reportado_a_rrhh == False)
+            query = query.filter(
+                or_(
+                    models.ValidacionHHEE.reportado_a_rrhh == False,
+                    models.ValidacionHHEE.reportado_a_rrhh == None
+                )
+            )
 
         result = await db.execute(query.order_by(models.ValidacionHHEE.rut_analista, models.ValidacionHHEE.fecha))
         validaciones = result.scalars().all()
@@ -668,11 +675,11 @@ async def get_hhee_metricas(
     desglose_por_empleado_lista = sorted(
         [
             MetricasPorEmpleado(
-                nombre_empleado=str(val["nombre"]),
-                rut=str(rut),
-                total_horas_declaradas=val["declaradas"], 
-                total_horas_rrhh=val["rrhh"]
-            ) for rut, val in desglose_empleado.items() if rut and val["nombre"]
+                nombre_empleado=str(val.get("nombre") or "Desconocido"),
+                rut=str(rut or "S/R"),
+                total_horas_declaradas=float(val.get("declaradas") or 0),
+                total_horas_rrhh=float(val.get("rrhh") or 0)
+            ) for rut, val in desglose_empleado.items() if rut is not None
         ],
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
@@ -1231,7 +1238,7 @@ async def obtener_historial_solicitudes(
 async def exportar_y_marcar_rrhh(
     request: ExportRequest, # Reutilizamos el mismo modelo de solicitud
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE], use_simple_auth=True))
 ):
     """
     Genera el reporte para RRHH (formato ADP), marca los registros
@@ -1246,7 +1253,10 @@ async def exportar_y_marcar_rrhh(
                 models.ValidacionHHEE.fecha_hhee.between(request.fecha_inicio, request.fecha_fin),
                 models.ValidacionHHEE.fecha.between(request.fecha_inicio, request.fecha_fin)
             ),
-            models.ValidacionHHEE.reportado_a_rrhh == False
+            or_(
+                models.ValidacionHHEE.reportado_a_rrhh == False,
+                models.ValidacionHHEE.reportado_a_rrhh == None
+            )
         ).order_by(models.ValidacionHHEE.rut, models.ValidacionHHEE.fecha_hhee)
         
         result = await db.execute(query)
@@ -1258,8 +1268,8 @@ async def exportar_y_marcar_rrhh(
         # 2. Generamos los datos para el Excel (lógica sin cambios)
         permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
         datos_para_excel = [{
-            "Cod Funcionario": v.rut_analista or v.rut,
-            "Nombre": v.nombre_apellido_gv or v.nombre_apellido or "Desconocido",
+            "Cod Funcionario": v.rut or v.rut_analista,
+            "Nombre": v.nombre_apellido or v.nombre_apellido_gv or "Desconocido",
             "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
             "Fecha Inicio": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
             "Fecha Fin": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
@@ -1303,7 +1313,7 @@ class ConfirmacionEnvio(BaseModel):
 async def marcar_rrhh_como_reportado(
     confirmacion: ConfirmacionPorIDs, # <-- Usamos el nuevo modelo
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE], use_simple_auth=True))
 ):
     """
     Marca una lista específica de registros (por ID) como 'reportado_a_rrhh = true'.
@@ -1333,7 +1343,7 @@ async def obtener_ids_pendientes_rrhh(
     fecha_inicio: Optional[date] = Query(None),
     fecha_fin: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES], use_simple_auth=True))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE], use_simple_auth=True))
 ):
     """
     Devuelve una lista de IDs de validaciones que están pendientes de ser reportadas a RRHH
@@ -1348,7 +1358,10 @@ async def obtener_ids_pendientes_rrhh(
             models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
             models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
         ),
-        models.ValidacionHHEE.reportado_a_rrhh == False
+        or_(
+            models.ValidacionHHEE.reportado_a_rrhh == False,
+            models.ValidacionHHEE.reportado_a_rrhh == None
+        )
     )
     result = await db.execute(query)
     return result.scalars().all()
