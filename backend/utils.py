@@ -1,3 +1,5 @@
+from datetime import datetime, date
+
 def decimal_to_hhmm(decimal_hours):
     """Convierte un número decimal de horas a formato HH:MM."""
     if decimal_hours is None or not isinstance(decimal_hours, (int, float)):
@@ -19,3 +21,23 @@ def formatear_rut(rut: str) -> str:
     dv = rut_limpio[-1]
     # 4. Devolver en el formato estándar
     return f"{cuerpo}-{dv}"
+
+def get_current_hhee_period():
+    """
+    Calcula el periodo actual de HHEE (26 del mes anterior al 25 del mes actual).
+    Si hoy es >= 26, el periodo termina el 25 del mes siguiente.
+    """
+    today = date.today()
+    if today.day >= 26:
+        start = date(today.year, today.month, 26)
+        if today.month == 12:
+            end = date(today.year + 1, 1, 25)
+        else:
+            end = date(today.year, today.month + 1, 25)
+    else:
+        if today.month == 1:
+            start = date(today.year - 1, 12, 26)
+        else:
+            start = date(today.year, today.month - 1, 26)
+        end = date(today.year, today.month, 25)
+    return start, end

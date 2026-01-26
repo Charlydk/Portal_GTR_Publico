@@ -22,7 +22,7 @@ from enum import Enum
 
 from ..schemas.models import DashboardHHEEMetricas, MetricasPorEmpleado, MetricasPorCampana, MetricasPendientesHHEE, SolicitudHHEECreate, SolicitudHHEE, SolicitudHHEEDecision, SolicitudHHEELote
 
-from ..utils import decimal_to_hhmm, formatear_rut
+from ..utils import decimal_to_hhmm, formatear_rut, get_current_hhee_period
 
 import bleach
 import pandas as pd
@@ -326,11 +326,18 @@ async def consultar_pendientes(
     else:
         query = base_query
 
-    if fecha_inicio and fecha_fin:
+    # Si no se pasan fechas, para GTR (Supervisor/Responsable) traemos solo el periodo actual
+    # Para OPS traemos TODO lo que el usuario cargó (histórico pendiente)
+    filtro_inicio, filtro_fin = fecha_inicio, fecha_fin
+    if not filtro_inicio or not filtro_fin:
+        if current_user.role != UserRole.SUPERVISOR_OPERACIONES:
+            filtro_inicio, filtro_fin = get_current_hhee_period()
+
+    if filtro_inicio and filtro_fin:
         query = query.filter(
             or_(
-                models.ValidacionHHEE.fecha_hhee.between(fecha_inicio, fecha_fin),
-                models.ValidacionHHEE.fecha.between(fecha_inicio, fecha_fin)
+                models.ValidacionHHEE.fecha_hhee.between(filtro_inicio, filtro_fin),
+                models.ValidacionHHEE.fecha.between(filtro_inicio, filtro_fin)
             )
         )
     
@@ -353,14 +360,14 @@ async def consultar_pendientes(
     lookup_data = {}
     
     if debe_consultar_gv:
-        ruts_limpios_unicos = list({p.rut_analista.strip().replace('-', '').replace('.', '').upper() for p in pendientes})
+        ruts_limpios_unicos = list({(p.rut_analista or p.rut or "").strip().replace('-', '').replace('.', '').upper() for p in pendientes if (p.rut_analista or p.rut)})
         
         if fecha_inicio and fecha_fin:
             start_date = fecha_inicio
             end_date = fecha_fin
         else:
-            start_date = min(p.fecha for p in pendientes)
-            end_date = max(p.fecha for p in pendientes)
+            start_date = min(p.fecha_hhee or p.fecha for p in pendientes)
+            end_date = max(p.fecha_hhee or p.fecha for p in pendientes)
 
         fecha_inicio_dt = datetime.combine(start_date, datetime.min.time())
         fecha_fin_dt = datetime.combine(end_date, datetime.max.time())
@@ -382,8 +389,9 @@ async def consultar_pendientes(
     # Construimos la respuesta
     resultados_enriquecidos = []
     for p in pendientes:
-        rut_limpio = p.rut_analista.strip().replace('-', '').replace('.', '').upper()
-        fecha_str = p.fecha.strftime('%Y-%m-%d')
+        rut_actual = p.rut_analista or p.rut or ""
+        rut_limpio = rut_actual.strip().replace('-', '').replace('.', '').upper()
+        fecha_str = (p.fecha_hhee or p.fecha).strftime('%Y-%m-%d')
         
         # Si no consultamos GV, lookup_data estará vacío y usará valores por defecto (00:00)
         datos_dia_gv = lookup_data.get((rut_limpio, fecha_str), {})
@@ -396,7 +404,7 @@ async def consultar_pendientes(
             # Datos mínimos para visualización sin GV
             datos_combinados = {
                 "rut_limpio": rut_limpio,
-                "rut": p.rut_analista,
+                "rut": rut_actual,
                 "campaña": p.campaña,
                 "inicio_turno_teorico": p.inicio_turno_teorico or "N/A", # Recuperamos de BD si existe
                 "fin_turno_teorico": p.fin_turno_teorico or "N/A",
@@ -411,11 +419,11 @@ async def consultar_pendientes(
         
         datos_dia_completo = {
             **datos_combinados,
-            "nombre_apellido": p.nombre_apellido_gv,
-            "rut_con_formato": p.rut_analista,
+            "nombre_apellido": p.nombre_apellido_gv or p.nombre_apellido or "Desconocido",
+            "rut_con_formato": rut_actual,
             "fecha": fecha_str, 
             "estado_final": 'Pendiente por Corrección',
-            "notas": p.comentario_validacion,
+            "notas": p.comentario_validacion or p.notas,
             "hhee_aprobadas_inicio": 0,
             "hhee_aprobadas_fin": 0, 
             "hhee_aprobadas_descanso": 0,
@@ -660,11 +668,11 @@ async def get_hhee_metricas(
     desglose_por_empleado_lista = sorted(
         [
             MetricasPorEmpleado(
-                nombre_empleado=val["nombre"], 
-                rut=rut, 
+                nombre_empleado=str(val["nombre"]),
+                rut=str(rut),
                 total_horas_declaradas=val["declaradas"], 
                 total_horas_rrhh=val["rrhh"]
-            ) for rut, val in desglose_empleado.items()
+            ) for rut, val in desglose_empleado.items() if rut and val["nombre"]
         ],
         key=lambda x: x.total_horas_declaradas, reverse=True
     )
@@ -885,7 +893,7 @@ async def obtener_solicitudes_pendientes(
     if not solicitudes:
         return []
 
-    ruts_unicos = {sol.solicitante.rut.replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
+    ruts_unicos = {(sol.solicitante.rut or "").replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
     
     fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
     fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
@@ -913,7 +921,7 @@ async def obtener_solicitudes_pendientes(
     
     respuesta_enriquecida = []
     for sol in solicitudes:
-        rut_limpio_solicitud = sol.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
+        rut_limpio_solicitud = (sol.solicitante.rut or "").replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
         fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
         
         datos_gv_del_dia = mapa_datos_gv.get((rut_limpio_solicitud, fecha_str_solicitud), {})
@@ -1068,7 +1076,7 @@ async def procesar_solicitudes_lote(
         solicitudes_map = {s.id: s for s in solicitudes_a_procesar}
 
         # 2. Obtenemos los datos de GeoVictoria para estas solicitudes para verificar los máximos
-        ruts_unicos = {s.solicitante.rut.replace('-', '').replace('.', '').upper() for s in solicitudes_a_procesar if hasattr(s.solicitante, 'rut') and s.solicitante.rut}
+        ruts_unicos = {(s.solicitante.rut or "").replace('-', '').replace('.', '').upper() for s in solicitudes_a_procesar if hasattr(s.solicitante, 'rut') and s.solicitante.rut}
         if ruts_unicos:
             fecha_min = min(s.fecha_hhee for s in solicitudes_a_procesar)
             fecha_max = max(s.fecha_hhee for s in solicitudes_a_procesar)
@@ -1089,7 +1097,7 @@ async def procesar_solicitudes_lote(
                 continue
 
             # Validamos que las horas aprobadas no excedan el máximo calculado desde GeoVictoria
-            rut_limpio = solicitud.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(solicitud.solicitante, 'rut') and solicitud.solicitante.rut else None
+            rut_limpio = (solicitud.solicitante.rut or "").replace('-', '').replace('.', '').upper() if hasattr(solicitud.solicitante, 'rut') and solicitud.solicitante.rut else None
             fecha_str = solicitud.fecha_hhee.strftime('%Y-%m-%d')
             gv_data = mapa_datos_gv.get((rut_limpio, fecha_str), {})
             
@@ -1189,7 +1197,7 @@ async def obtener_historial_solicitudes(
         return []
 
     # 2. La lógica para enriquecer con datos de GeoVictoria es la misma que ya usamos
-    ruts_unicos = {sol.solicitante.rut.replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
+    ruts_unicos = {(sol.solicitante.rut or "").replace('-', '').replace('.', '').upper() for sol in solicitudes if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut}
     
     fecha_inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
     fecha_fin_dt = datetime.combine(fecha_fin, datetime.max.time())
@@ -1208,7 +1216,7 @@ async def obtener_historial_solicitudes(
     # 3. Unimos los datos para la respuesta
     respuesta_enriquecida = []
     for sol in solicitudes:
-        rut_limpio_solicitud = sol.solicitante.rut.replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
+        rut_limpio_solicitud = (sol.solicitante.rut or "").replace('-', '').replace('.', '').upper() if hasattr(sol.solicitante, 'rut') and sol.solicitante.rut else None
         fecha_str_solicitud = sol.fecha_hhee.strftime('%Y-%m-%d')
         datos_gv_del_dia = mapa_datos_gv.get((rut_limpio_solicitud, fecha_str_solicitud), {})
         
