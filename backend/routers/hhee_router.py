@@ -462,7 +462,7 @@ async def exportar_hhee_a_excel(
 
         # Lógica para generar el formato de Operaciones
         if request.formato == ExportFormat.OPERACIONES:
-            ruts_unicos = list({v.rut_analista.replace('.', '').replace('-', '') for v in validaciones})
+            ruts_unicos = list({(v.rut_analista or v.rut or "").replace('.', '').replace('-', '') for v in validaciones})
             token_gv = await geovictoria_service.obtener_token_geovictoria()
             if not token_gv: raise HTTPException(status_code=503, detail="No se pudo conectar con GeoVictoria.")
 
@@ -480,8 +480,9 @@ async def exportar_hhee_a_excel(
             
             datos_para_excel = []
             for v in validaciones:
-                rut_limpio_actual = v.rut_analista.replace('.', '').replace('-', '')
-                fecha_actual_str = v.fecha.strftime('%Y-%m-%d')
+                rut_actual = v.rut_analista or v.rut
+                rut_limpio_actual = rut_actual.replace('.', '').replace('-', '') if rut_actual else ""
+                fecha_actual_str = (v.fecha_hhee or v.fecha).strftime('%Y-%m-%d')
                 horas_rrhh_dict = rrhh_lookup.get((rut_limpio_actual, fecha_actual_str), {"antes": 0, "despues": 0})
                 
                 horas_rrhh_especificas = 0
@@ -493,11 +494,11 @@ async def exportar_hhee_a_excel(
                     horas_rrhh_especificas = horas_rrhh_dict.get("antes", 0) + horas_rrhh_dict.get("despues", 0)
 
                 datos_para_excel.append({
-                    "ID": v.id, "RUT": v.rut_analista, "Nombre Completo": v.nombre_apellido_gv, "Campaña": v.campaña,
-                    "Fecha HHEE": v.fecha.strftime('%d-%m-%Y'), "Tipo HHEE": v.tipo_hhee,
-                    "Horas Aprobadas (Operaciones)": decimal_to_hhmm(v.hhee_aprobadas_rrhh),
+                    "ID": v.id, "RUT": rut_actual, "Nombre Completo": v.nombre_apellido_gv or v.nombre_apellido or "Desconocido", "Campaña": v.campaña or "General",
+                    "Fecha HHEE": (v.fecha_hhee or v.fecha).strftime('%d-%m-%Y'), "Tipo HHEE": v.tipo_hhee,
+                    "Horas Aprobadas (Operaciones)": decimal_to_hhmm(v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas),
                     "Horas Aprobadas (RRHH)": decimal_to_hhmm(horas_rrhh_especificas),
-                    "Estado": v.estado_validacion, "Validado Por": v.supervisor_carga,
+                    "Estado": v.estado_validacion or v.estado, "Validado Por": v.supervisor_carga,
                     "Fecha de Carga": v.fecha_carga.strftime('%d-%m-%Y %H:%M') if v.fecha_carga else None
                 })
         
@@ -505,11 +506,12 @@ async def exportar_hhee_a_excel(
         elif request.formato == ExportFormat.RRHH:
             permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
             datos_para_excel = [{
-                "Cod Funcionario": v.rut_analista, "Nombre": v.nombre_apellido_gv,
+                "Cod Funcionario": v.rut_analista or v.rut,
+                "Nombre": v.nombre_apellido_gv or v.nombre_apellido or "Desconocido",
                 "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
-                "Fecha Inicio": v.fecha.strftime('%d/%m/%Y'),
-                "Fecha Fin": v.fecha.strftime('%d/%m/%Y'),
-                "Cant Horas": decimal_to_hhmm(v.hhee_aprobadas_rrhh)
+                "Fecha Inicio": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
+                "Fecha Fin": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
+                "Cant Horas": decimal_to_hhmm(v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas)
             } for v in validaciones]
 
         # Creación y envío del archivo Excel
@@ -587,7 +589,7 @@ async def get_hhee_metricas(
                 horas_rechazadas_sol = float(row.sum_solicitadas or 0)
 
     # --- 3. CONSULTA A GEOVICTORIA (API ANTIGUA / SEGURA) ---
-    ruts_unicos = {v.rut_analista.replace('-', '').replace('.', '').upper() for v in validaciones_periodo if v.rut_analista}
+    ruts_unicos = { (v.rut_analista or v.rut).replace('-', '').replace('.', '').upper() for v in validaciones_periodo if (v.rut_analista or v.rut) }
     datos_gv_lista = []
     
     if ruts_unicos:
@@ -616,8 +618,9 @@ async def get_hhee_metricas(
     desglose_campana = {}
 
     for v in validaciones_periodo:
-        rut_limpio = v.rut_analista.replace('-', '').replace('.', '').upper() if v.rut_analista else None
-        fecha_str = v.fecha.strftime('%Y-%m-%d')
+        rut_actual = v.rut_analista or v.rut
+        rut_limpio = rut_actual.replace('-', '').replace('.', '').upper() if rut_actual else None
+        fecha_str = (v.fecha_hhee or v.fecha).strftime('%Y-%m-%d')
         
         # Obtenemos los datos de GeoVictoria para ese día específico
         gv_dia = mapa_datos_gv.get((rut_limpio, fecha_str), {})
@@ -632,25 +635,25 @@ async def get_hhee_metricas(
             horas_rrhh_dia = (gv_dia.get('hhee_autorizadas_antes_gv', 0) or 0) + (gv_dia.get('hhee_autorizadas_despues_gv', 0) or 0)
         
         # --- ACUMULADORES GLOBALES ---
-        total_declaradas += v.hhee_aprobadas_rrhh
+        total_declaradas += v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas or 0
         total_rrhh += horas_rrhh_dia
 
         # --- DESGLOSE POR EMPLEADO ---
-        if v.rut_analista not in desglose_empleado:
-            desglose_empleado[v.rut_analista] = {
-                "nombre": v.nombre_apellido_gv,
+        if rut_actual not in desglose_empleado:
+            desglose_empleado[rut_actual] = {
+                "nombre": v.nombre_apellido_gv or v.nombre_apellido or "Desconocido",
                 "declaradas": 0, 
                 "rrhh": 0
             }
-        desglose_empleado[v.rut_analista]["declaradas"] += v.hhee_aprobadas_rrhh
-        desglose_empleado[v.rut_analista]["rrhh"] += horas_rrhh_dia
+        desglose_empleado[rut_actual]["declaradas"] += v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas or 0
+        desglose_empleado[rut_actual]["rrhh"] += horas_rrhh_dia
 
         # --- DESGLOSE POR CAMPAÑA ---
         campana_nombre = v.campaña or "Sin Campaña"
         if campana_nombre not in desglose_campana:
             desglose_campana[campana_nombre] = {"declaradas": 0, "rrhh": 0}
         
-        desglose_campana[campana_nombre]["declaradas"] += v.hhee_aprobadas_rrhh
+        desglose_campana[campana_nombre]["declaradas"] += v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas or 0
         desglose_campana[campana_nombre]["rrhh"] += horas_rrhh_dia
 
     # --- 5. ORDENAMIENTO Y RESPUESTA ---
@@ -1247,11 +1250,12 @@ async def exportar_y_marcar_rrhh(
         # 2. Generamos los datos para el Excel (lógica sin cambios)
         permiso_map = {"Antes de Turno": 10, "Después de Turno": 5, "Día de Descanso": 10}
         datos_para_excel = [{
-            "Cod Funcionario": v.rut_analista, "Nombre": v.nombre_apellido_gv,
+            "Cod Funcionario": v.rut_analista or v.rut,
+            "Nombre": v.nombre_apellido_gv or v.nombre_apellido or "Desconocido",
             "Num Permiso": permiso_map.get(v.tipo_hhee, ''),
-            "Fecha Inicio": v.fecha.strftime('%d/%m/%Y'),
-            "Fecha Fin": v.fecha.strftime('%d/%m/%Y'),
-            "Cant Horas": decimal_to_hhmm(v.hhee_aprobadas_rrhh)
+            "Fecha Inicio": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
+            "Fecha Fin": (v.fecha_hhee or v.fecha).strftime('%d/%m/%Y'),
+            "Cant Horas": decimal_to_hhmm(v.hhee_aprobadas_rrhh or v.cantidad_hhee_aprobadas)
         } for v in validaciones]
 
         df = pd.DataFrame(datos_para_excel)

@@ -455,7 +455,7 @@ function PortalHHEEPage() {
                         <Row className="justify-content-center mt-3">
                             <Col xs="auto">
                                 <Button variant="primary" type="submit" disabled={loading} className="me-2">{loading && !isPendientesView ? <Spinner as="span" animation="border" size="sm" /> : 'Consultar'}</Button>
-                                <Button variant="warning" type="button" onClick={handleCargarPendientes} disabled={loading}>{loading && isPendientesView ? <Spinner as="span" animation="border" size="sm" /> : 'Mostrar Pendientes'}</Button>
+                                <Button variant="warning" type="button" onClick={() => handleCargarPendientes()} disabled={loading}>{loading && isPendientesView ? <Spinner as="span" animation="border" size="sm" /> : 'Mostrar Pendientes'}</Button>
                             </Col>
                         </Row>
                     </Form>
