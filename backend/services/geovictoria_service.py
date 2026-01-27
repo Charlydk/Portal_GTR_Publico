@@ -57,7 +57,15 @@ async def obtener_datos_consolidados(token: str, ruts_limpios: list[str], fecha_
     start_date = fecha_inicio_dt.strftime("%Y%m%d000000")
     end_date = fecha_fin_dt.strftime("%Y%m%d235959")
 
-    CHUNK_SIZE = 50 # Reducimos el tamaño para mayor seguridad contra 400 y límites de payload
+    # GeoVictoria tiene un límite de 1500 registros por petición (días * usuarios)
+    # Calculamos el tamaño del lote dinámicamente según el rango de fechas
+    delta = fecha_fin_dt - fecha_inicio_dt
+    num_dias = max(1, delta.days + 1)
+    # Usamos 1400 como margen de seguridad
+    CHUNK_SIZE = max(1, 1400 // num_dias)
+    # Limitamos a un máximo de 100 por lote por estabilidad general
+    CHUNK_SIZE = min(CHUNK_SIZE, 100)
+
     RETRY_COUNT = 3
     RETRY_DELAY = 1
     MAX_CONCURRENCY = 3
