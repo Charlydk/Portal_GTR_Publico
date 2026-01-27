@@ -24,10 +24,12 @@ if ":6543" in DATABASE_URL:
     from sqlalchemy.pool import NullPool
     engine_kwargs["poolclass"] = NullPool
     # Para asyncpg con Transaction Pooler, debemos desactivar el cache de prepared statements
+    # 'statement_cache_size' es el parámetro nativo de asyncpg.
     engine_kwargs["connect_args"] = {
-        "prepared_statement_cache_size": 0,
         "statement_cache_size": 0
     }
+    # Nota: No incluimos prepared_statement_cache_size aquí porque algunas versiones de
+    # SQLAlchemy/NullPool lanzan TypeError al recibirlo. statement_cache_size es suficiente.
 else:
     # Configuración para conexión directa o Session Pooler
     engine_kwargs["pool_size"] = 20
