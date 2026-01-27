@@ -2814,67 +2814,82 @@ async def get_dashboard_stats(
     today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    # Conteo de "Total Activas" (Abiertas o En Progreso)
-    query_activas = select(func.count(models.Incidencia.id)).filter(
-        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
-    )
-    total_activas = (await db.execute(query_activas)).scalar_one()
-
-    if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
-        # Conteo de "Sin Asignar"
-        unassigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-            models.Incidencia.asignado_a_id.is_(None)
+    try:
+        # Conteo de "Total Activas" (Abiertas o En Progreso)
+        query_activas = select(func.count(models.Incidencia.id)).filter(
+            models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
         )
-        unassigned_count = (await db.execute(unassigned_query)).scalar_one()
+        total_activas = (await db.execute(query_activas)).scalar_one()
 
-        # Conteo de "Cerradas Hoy" (por cualquier analista)
-        closed_today_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.CERRADA,
-            models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
-        )
-        closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            # Conteo de "Sin Asignar"
+            unassigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
+                models.Incidencia.asignado_a_id.is_(None)
+            )
+            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
 
-        return DashboardStatsSupervisor(
-            total_incidencias_activas=total_activas,
-            incidencias_sin_asignar=unassigned_count,
-            incidencias_cerradas_hoy=closed_today_count
-        )
+            # Conteo de "Cerradas Hoy" (por cualquier analista)
+            closed_today_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.CERRADA,
+                models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
+            )
+            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+
+            return DashboardStatsSupervisor(
+                total_incidencias_activas=total_activas,
+                incidencias_sin_asignar=unassigned_count,
+                incidencias_cerradas_hoy=closed_today_count
+            )
+    except Exception as e:
+        print(f"Error cargando estadísticas del dashboard: {e}")
+        # Devolvemos valores en 0 para no romper la interfaz
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            return DashboardStatsSupervisor(total_incidencias_activas=0, incidencias_sin_asignar=0, incidencias_cerradas_hoy=0)
 
     elif current_analista.role == UserRole.ANALISTA:
-        # Definimos el rango de "hoy" en UTC para la consulta
-        today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
+        try:
+            # Definimos el rango de "hoy" en UTC para la consulta
+            today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Conteo de "Sin Asignar" (no cambia)
-        unassigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-            models.Incidencia.asignado_a_id.is_(None)
-        )
-        unassigned_count = (await db.execute(unassigned_query)).scalar_one()
+            # Conteo de "Sin Asignar" (no cambia)
+            unassigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
+                models.Incidencia.asignado_a_id.is_(None)
+            )
+            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
 
-        # Conteo de "Mis Incidencias Asignadas" (no cambia)
-        my_assigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.asignado_a_id == current_analista.id,
-            models.Incidencia.estado == EstadoIncidencia.EN_PROGRESO
-        )
-        my_assigned_count = (await db.execute(my_assigned_query)).scalar_one()
+            # Conteo de "Mis Incidencias Asignadas" (no cambia)
+            my_assigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.asignado_a_id == current_analista.id,
+                models.Incidencia.estado == EstadoIncidencia.EN_PROGRESO
+            )
+            my_assigned_count = (await db.execute(my_assigned_query)).scalar_one()
 
-        # --- INICIO DE LA NUEVA LÓGICA ---
-        # Conteo de incidencias CERRADAS HOY por el analista actual
-        closed_today_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.cerrado_por_id == current_analista.id,
-            models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
-        )
-        closed_today_count = (await db.execute(closed_today_query)).scalar_one()
-        # --- FIN DE LA NUEVA LÓGICA ---
+            # --- INICIO DE LA NUEVA LÓGICA ---
+            # Conteo de incidencias CERRADAS HOY por el analista actual
+            closed_today_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.cerrado_por_id == current_analista.id,
+                models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
+            )
+            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+            # --- FIN DE LA NUEVA LÓGICA ---
 
-        return DashboardStatsAnalista(
-            total_incidencias_activas=total_activas,
-            incidencias_sin_asignar=unassigned_count,
-            mis_incidencias_asignadas=my_assigned_count,
-            incidencias_cerradas_hoy=closed_today_count # <-- Devolvemos el nuevo dato
-        )
+            return DashboardStatsAnalista(
+                total_incidencias_activas=total_activas,
+                incidencias_sin_asignar=unassigned_count,
+                mis_incidencias_asignadas=my_assigned_count,
+                incidencias_cerradas_hoy=closed_today_count
+            )
+        except Exception as e:
+            print(f"Error cargando estadísticas de analista: {e}")
+            return DashboardStatsAnalista(
+                total_incidencias_activas=total_activas,
+                incidencias_sin_asignar=0,
+                mis_incidencias_asignadas=0,
+                incidencias_cerradas_hoy=0
+            )
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard GTR definido.")
 

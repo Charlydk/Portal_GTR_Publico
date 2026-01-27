@@ -1,6 +1,7 @@
 import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,30 +16,31 @@ if not DATABASE_URL:
     raise ValueError("La variable de entorno DATABASE_URL no está configurada.")
 
 # --- CONFIGURACIÓN DE CONEXIÓN ---
-engine_kwargs = {
-    "echo": False,
-}
-
+# Detectamos si estamos usando el Transaction Pooler de Supabase (puerto 6543)
 if ":6543" in DATABASE_URL:
-    # Necesario para Supabase Transaction Pooler (PgBouncer/Supavisor)
-    from sqlalchemy.pool import NullPool
-    engine_kwargs["poolclass"] = NullPool
-    # Para asyncpg con Transaction Pooler, debemos desactivar el cache de prepared statements
-    # 'statement_cache_size' es el parámetro nativo de asyncpg.
-    engine_kwargs["connect_args"] = {
-        "statement_cache_size": 0
-    }
-    # Nota: No incluimos prepared_statement_cache_size aquí porque algunas versiones de
-    # SQLAlchemy/NullPool lanzan TypeError al recibirlo. statement_cache_size es suficiente.
+    # MODO TRANSACTION POOLER (SUPABASE)
+    # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
+    # Usamos NullPool para que no haya reuso de conexiones a nivel de app.
+    engine = create_async_engine(
+        DATABASE_URL,
+        poolclass=NullPool,
+        prepared_statement_cache_size=0,
+        connect_args={
+            "prepared_statement_cache_size": 0,
+            "statement_cache_size": 0
+        }
+    )
 else:
-    # Configuración para conexión directa o Session Pooler
-    engine_kwargs["pool_size"] = 20
-    engine_kwargs["max_overflow"] = 20
-    engine_kwargs["pool_timeout"] = 30
-    engine_kwargs["pool_recycle"] = 1800
-    engine_kwargs["pool_pre_ping"] = True
-
-engine = create_async_engine(DATABASE_URL, **engine_kwargs)
+    # MODO CONEXIÓN DIRECTA O SESSION POOLER
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_size=20,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800,
+        pool_pre_ping=True
+    )
 
 AsyncSessionLocal = sessionmaker(
     autocommit=False,
