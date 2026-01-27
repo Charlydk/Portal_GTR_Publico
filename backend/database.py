@@ -20,8 +20,14 @@ if not DATABASE_URL:
 if ":6543" in DATABASE_URL:
     # MODO TRANSACTION POOLER (SUPABASE)
     # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
-    # Usamos NullPool para delegar el pooling completamente a Supabase/PgBouncer.
-    # Desactivamos el cache en el driver asyncpg.
+
+    # 1. Aseguramos que el URL tenga el parámetro para desactivar el cache de sentencias en el dialecto SQLAlchemy
+    if "prepared_statement_cache_size" not in DATABASE_URL:
+        separator = "&" if "?" in DATABASE_URL else "?"
+        DATABASE_URL += f"{separator}prepared_statement_cache_size=0"
+
+    # 2. Usamos NullPool para delegar el pooling completamente a Supabase/Supavisor.
+    # 3. Desactivamos el cache en el driver asyncpg mediante connect_args.
     engine = create_async_engine(
         DATABASE_URL,
         poolclass=NullPool,

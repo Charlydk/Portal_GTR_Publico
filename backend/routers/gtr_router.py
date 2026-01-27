@@ -2871,7 +2871,10 @@ async def get_dashboard_stats(
             # Lista de incidencias para la tabla central
             incidencias_query = select(models.Incidencia).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.asignado_a)
+                selectinload(models.Incidencia.asignado_a),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.cerrado_por)
             ).filter(
                 or_(
                     models.Incidencia.asignado_a_id == current_analista.id,
