@@ -60,7 +60,9 @@ const AppContent = () => {
   return (
     <div className="d-flex flex-column min-vh-100">
       <Navbar />
-      {showBetaNotice && (
+      
+      {/* Mensaje de version Beta */}
+      {/* {showBetaNotice && (
         <Container className="mt-3">
             <Alert variant="info" onClose={() => setShowBetaNotice(false)} dismissible>
                 <Alert.Heading as="h6">¡Aplicación en Versión Beta!</Alert.Heading>
@@ -70,6 +72,7 @@ const AppContent = () => {
             </Alert>
         </Container>
       )}
+        */}
       <div className="container mt-4 main-content flex-grow-1">
         <Routes>
           {/* Rutas Públicas */}

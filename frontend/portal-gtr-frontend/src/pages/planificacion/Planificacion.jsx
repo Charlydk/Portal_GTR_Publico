@@ -172,7 +172,7 @@ const Planificacion = () => {
       </ToastContainer>
 
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="text-primary fw-bold">📅 Planificación de Turnos</h2>
+        <h2 className="text-primary fw-bold">📅 Planificación de Turnos (en construcción)</h2>
         <Button variant="outline-primary" onClick={cargarDatos} disabled={loading}>
             {loading ? <Spinner size="sm" animation="border" /> : 'Refrescar'}
         </Button>
