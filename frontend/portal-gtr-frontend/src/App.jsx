@@ -7,6 +7,7 @@ import { AuthProvider } from './context/AuthProvider.jsx';
 import { useAuth } from './hooks/useAuth.js';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import Navbar from './components/Navbar';
+import Footer from './components/Footer';
 
 // Importación de páginas
 import LoginPage from './pages/LoginPage';
@@ -57,7 +58,7 @@ const AppContent = () => {
   }, [user, navigate, location]);
 
   return (
-    <>
+    <div className="d-flex flex-column min-vh-100">
       <Navbar />
       {showBetaNotice && (
         <Container className="mt-3">
@@ -69,7 +70,7 @@ const AppContent = () => {
             </Alert>
         </Container>
       )}
-      <div className="container mt-4 main-content">
+      <div className="container mt-4 main-content flex-grow-1">
         <Routes>
           {/* Rutas Públicas */}
           <Route path="/" element={<HomePage />} />
@@ -148,7 +149,8 @@ const AppContent = () => {
           <Route path="*" element={<div>404 - Página no encontrada</div>} />
         </Routes>
       </div>
-    </>
+      <Footer />
+    </div>
   );
 };
 
