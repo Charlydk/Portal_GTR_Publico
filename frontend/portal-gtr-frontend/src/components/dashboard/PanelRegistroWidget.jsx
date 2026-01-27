@@ -22,6 +22,7 @@ function PanelRegistroWidget({ onUpdate }) {
         campanas: true, log: false, lobs: false, submitBitacora: false, submitIncidencia: false
     });
     const [error, setError] = useState({ campanas: null, log: null, lobs: null, submit: null });
+    const [success, setSuccess] = useState(null);
 
     const fetchCampanas = useCallback(async () => {
         setLoading(prev => ({ ...prev, campanas: true }));
@@ -184,6 +185,7 @@ function PanelRegistroWidget({ onUpdate }) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || `Error al registrar la incidencia.`);
             }
+            setSuccess("Se realizo la carga de la incidencia con Exito");
             setIncidenciaData({
                 titulo: '', descripcion_inicial: '', herramienta_afectada: '',
                 indicador_afectado: '', tipo: 'TECNICA', gravedad: 'MEDIA', campana_id: selectedCampana
@@ -214,6 +216,7 @@ function PanelRegistroWidget({ onUpdate }) {
             <Card.Body>
                 {error.campanas && <Alert variant="danger">{error.campanas}</Alert>}
                 {error.submit && <Alert variant="danger" onClose={() => setError(prev => ({...prev, submit: null}))} dismissible>{error.submit}</Alert>}
+                {success && <Alert variant="success" onClose={() => setSuccess(null)} dismissible>{success}</Alert>}
                 
                 {!selectedCampana ? (
                     <Alert variant="info" className="text-center">Por favor, seleccione una campaña para comenzar.</Alert>
