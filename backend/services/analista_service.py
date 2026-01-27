@@ -24,11 +24,15 @@ class AnalistaService:
                 selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
                 selectinload(models.Analista.incidencias_creadas).options(
                     selectinload(models.Incidencia.campana),
-                    selectinload(models.Incidencia.lobs)
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
                 ),
                 selectinload(models.Analista.incidencias_asignadas).options(
                     selectinload(models.Incidencia.campana),
-                    selectinload(models.Incidencia.lobs)
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
                 ),
                 selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
                 selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),

@@ -25,6 +25,7 @@ if ":6543" in DATABASE_URL:
     engine = create_async_engine(
         DATABASE_URL,
         poolclass=NullPool,
+        prepared_statement_cache_size=0,
         connect_args={
             "statement_cache_size": 0
         }

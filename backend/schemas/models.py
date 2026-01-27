@@ -443,7 +443,6 @@ class SesionActiva(BaseModel):
     fecha_inicio: Optional[datetime] = None
     campana: Campana
     campana_id: int
-    campana: CampanaSimple
     
     class Config:
         from_attributes = True

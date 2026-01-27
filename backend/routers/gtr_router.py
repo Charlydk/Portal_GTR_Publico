@@ -116,14 +116,24 @@ async def crear_analista(
             .filter(models.Analista.id == db_analista.id)
             .options(
                 selectinload(models.Analista.campanas_asignadas),
-                selectinload(models.Analista.tareas),
-                selectinload(models.Analista.avisos_creados),
-                selectinload(models.Analista.acuses_recibo_avisos),
-                selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-                selectinload(models.Analista.incidencias_asignadas),
-                selectinload(models.Analista.solicitudes_realizadas),
-                selectinload(models.Analista.solicitudes_gestionadas),
+                selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+                selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+                selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+                selectinload(models.Analista.incidencias_creadas).options(
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
+                ),
+                selectinload(models.Analista.incidencias_asignadas).options(
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
+                ),
+                selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
                 selectinload(models.Analista.planificaciones)
             )
         )
@@ -204,14 +214,24 @@ async def get_all_analistas(
     """
     query = select(models.Analista).options(
         selectinload(models.Analista.campanas_asignadas),
-        selectinload(models.Analista.tareas),
-        selectinload(models.Analista.avisos_creados),
-        selectinload(models.Analista.acuses_recibo_avisos),
-        selectinload(models.Analista.tareas_generadas_por_avisos),
-        selectinload(models.Analista.incidencias_creadas),
-        selectinload(models.Analista.incidencias_asignadas),
-        selectinload(models.Analista.solicitudes_realizadas),
-        selectinload(models.Analista.solicitudes_gestionadas),
+        selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+        selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+        selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+        selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+        selectinload(models.Analista.incidencias_creadas).options(
+            selectinload(models.Incidencia.campana),
+            selectinload(models.Incidencia.lobs),
+            selectinload(models.Incidencia.creador),
+            selectinload(models.Incidencia.asignado_a)
+        ),
+        selectinload(models.Analista.incidencias_asignadas).options(
+            selectinload(models.Incidencia.campana),
+            selectinload(models.Incidencia.lobs),
+            selectinload(models.Incidencia.creador),
+            selectinload(models.Incidencia.asignado_a)
+        ),
+        selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+        selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
         selectinload(models.Analista.planificaciones)
     )
     if not include_inactive:
@@ -233,14 +253,24 @@ async def actualizar_analista(
         .where(models.Analista.id == analista_id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos),
-            selectinload(models.Analista.incidencias_creadas),
-            selectinload(models.Analista.incidencias_asignadas),
-            selectinload(models.Analista.solicitudes_realizadas),
-            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
             selectinload(models.Analista.planificaciones)
         )
     )
@@ -283,12 +313,16 @@ async def actualizar_analista(
                 selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
                 
                 selectinload(models.Analista.incidencias_creadas).options(
-                    selectinload(models.Incidencia.campana), 
-                    selectinload(models.Incidencia.lobs)
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
                 ),
                 selectinload(models.Analista.incidencias_asignadas).options(
                     selectinload(models.Incidencia.campana),
-                    selectinload(models.Incidencia.lobs)
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
                 ),
 
                 selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
@@ -326,14 +360,24 @@ async def update_analista_password(
         .where(models.Analista.id == analista_id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos),
-            selectinload(models.Analista.incidencias_creadas),
-            selectinload(models.Analista.incidencias_asignadas),
-            selectinload(models.Analista.solicitudes_realizadas),
-            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
             selectinload(models.Analista.planificaciones)
         )
     )
@@ -362,14 +406,24 @@ async def update_analista_password(
             .filter(models.Analista.id == analista_a_actualizar.id)
             .options(
                 selectinload(models.Analista.campanas_asignadas),
-                selectinload(models.Analista.tareas),
-                selectinload(models.Analista.avisos_creados),
-                selectinload(models.Analista.acuses_recibo_avisos),
-                selectinload(models.Analista.tareas_generadas_por_avisos),
-                selectinload(models.Analista.incidencias_creadas).selectinload(models.Incidencia.campana),
-                selectinload(models.Analista.incidencias_asignadas),
-                selectinload(models.Analista.solicitudes_realizadas),
-                selectinload(models.Analista.solicitudes_gestionadas)
+                selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+                selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+                selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+                selectinload(models.Analista.incidencias_creadas).options(
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
+                ),
+                selectinload(models.Analista.incidencias_asignadas).options(
+                    selectinload(models.Incidencia.campana),
+                    selectinload(models.Incidencia.lobs),
+                    selectinload(models.Incidencia.creador),
+                    selectinload(models.Incidencia.asignado_a)
+                ),
+                selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+                selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
             )
         )
         analista_to_return = result.scalars().first()
@@ -442,14 +496,24 @@ async def asignar_campana_a_analista(
         .filter(models.Analista.id == analista_id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos),
-            selectinload(models.Analista.incidencias_creadas),
-            selectinload(models.Analista.incidencias_asignadas),
-            selectinload(models.Analista.solicitudes_realizadas),
-            selectinload(models.Analista.solicitudes_gestionadas),
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
             selectinload(models.Analista.planificaciones)
         )
     )
@@ -491,15 +555,20 @@ async def asignar_campana_a_analista(
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
             selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
             selectinload(models.Analista.incidencias_creadas).options(
-                selectinload(models.Incidencia.campana), 
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.incidencias_asignadas).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+            selectinload(models.Analista.planificaciones)
         )
     )
     analista_to_return = result.scalars().first()
@@ -529,10 +598,25 @@ async def desasignar_campana_de_analista(
         .filter(models.Analista.id == analista_id)
         .options(
             selectinload(models.Analista.campanas_asignadas),
-            selectinload(models.Analista.tareas),
-            selectinload(models.Analista.avisos_creados),
-            selectinload(models.Analista.acuses_recibo_avisos),
-            selectinload(models.Analista.tareas_generadas_por_avisos) # NUEVO
+            selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
+            selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
+            selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
+            selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
+            selectinload(models.Analista.incidencias_creadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.incidencias_asignadas).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
+            ),
+            selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+            selectinload(models.Analista.planificaciones)
         )
     )
     analista = analista_result.scalars().first()
@@ -572,15 +656,20 @@ async def desasignar_campana_de_analista(
             selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
             selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
             selectinload(models.Analista.incidencias_creadas).options(
-                selectinload(models.Incidencia.campana), 
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.incidencias_asignadas).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.lobs)
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.asignado_a)
             ),
             selectinload(models.Analista.solicitudes_realizadas).selectinload(models.SolicitudHHEE.supervisor),
-            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante)
+            selectinload(models.Analista.solicitudes_gestionadas).selectinload(models.SolicitudHHEE.solicitante),
+            selectinload(models.Analista.planificaciones)
         )
     )
     analista_to_return = result.scalars().first()
@@ -691,12 +780,6 @@ async def obtener_campana_por_id(
         .filter(models.Campana.id == campana_id)
         .options(
             selectinload(models.Campana.analistas_asignados),
-            selectinload(models.Campana.tareas),
-            selectinload(models.Campana.avisos),
-            selectinload(models.Campana.bitacora_entries),
-            selectinload(models.Campana.comentarios_generales).selectinload(models.ComentarioGeneralBitacora.autor),
-            selectinload(models.Campana.incidencias).selectinload(models.Incidencia.creador),
-            # --- ESTA ES LA LÍNEA CLAVE Y CORREGIDA ---
             selectinload(models.Campana.lobs)
         )
     )
@@ -1878,6 +1961,8 @@ async def get_log_de_hoy(
             select(models.BitacoraEntry)
             .options(
                 selectinload(models.BitacoraEntry.autor),
+                selectinload(models.BitacoraEntry.lob),
+                selectinload(models.BitacoraEntry.campana),
                 selectinload(models.BitacoraEntry.incidencia) # Agregamos incidencia por si el front lo pide
             )
             .where(
@@ -2871,7 +2956,10 @@ async def get_dashboard_stats(
             # Lista de incidencias para la tabla central
             incidencias_query = select(models.Incidencia).options(
                 selectinload(models.Incidencia.campana),
-                selectinload(models.Incidencia.asignado_a)
+                selectinload(models.Incidencia.asignado_a),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.cerrado_por)
             ).filter(
                 or_(
                     models.Incidencia.asignado_a_id == current_analista.id,
