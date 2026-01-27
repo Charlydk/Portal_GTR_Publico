@@ -2815,11 +2815,12 @@ async def get_dashboard_stats(
     today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
     try:
-        # Conteo de "Total Activas" (Abiertas o En Progreso)
+        # 1. Conteo de "Total Activas" (Común a todos)
         query_activas = select(func.count(models.Incidencia.id)).filter(
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
         )
-        total_activas = (await db.execute(query_activas)).scalar_one()
+        res_activas = await db.execute(query_activas)
+        total_activas = res_activas.scalar_one()
 
         if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
             # Conteo de "Sin Asignar"
@@ -2841,18 +2842,8 @@ async def get_dashboard_stats(
                 incidencias_sin_asignar=unassigned_count,
                 incidencias_cerradas_hoy=closed_today_count
             )
-    except Exception as e:
-        print(f"Error cargando estadísticas del dashboard: {e}")
-        # Devolvemos valores en 0 para no romper la interfaz
-        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
-            return DashboardStatsSupervisor(total_incidencias_activas=0, incidencias_sin_asignar=0, incidencias_cerradas_hoy=0)
 
-    elif current_analista.role == UserRole.ANALISTA:
-        try:
-            # Definimos el rango de "hoy" en UTC para la consulta
-            today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
-
+        elif current_analista.role == UserRole.ANALISTA:
             # Conteo de "Sin Asignar" (no cambia)
             unassigned_query = select(func.count(models.Incidencia.id)).filter(
                 models.Incidencia.estado == EstadoIncidencia.ABIERTA,
@@ -2870,25 +2861,46 @@ async def get_dashboard_stats(
             # --- INICIO DE LA NUEVA LÓGICA ---
             # Conteo de incidencias CERRADAS HOY por el analista actual
             closed_today_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.CERRADA,
                 models.Incidencia.cerrado_por_id == current_analista.id,
                 models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
             )
             closed_today_count = (await db.execute(closed_today_query)).scalar_one()
             # --- FIN DE LA NUEVA LÓGICA ---
 
+            # Lista de incidencias para la tabla central
+            incidencias_query = select(models.Incidencia).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.asignado_a)
+            ).filter(
+                or_(
+                    models.Incidencia.asignado_a_id == current_analista.id,
+                    models.Incidencia.asignado_a_id.is_(None)
+                ),
+                models.Incidencia.estado != EstadoIncidencia.CERRADA
+            ).order_by(models.Incidencia.fecha_apertura.desc())
+            incidencias_result = await db.execute(incidencias_query)
+            incidencias_list = incidencias_result.scalars().unique().all()
+
             return DashboardStatsAnalista(
                 total_incidencias_activas=total_activas,
                 incidencias_sin_asignar=unassigned_count,
                 mis_incidencias_asignadas=my_assigned_count,
-                incidencias_cerradas_hoy=closed_today_count
+                incidencias_cerradas_hoy=closed_today_count,
+                incidencias_del_dia=incidencias_list
             )
-        except Exception as e:
-            print(f"Error cargando estadísticas de analista: {e}")
+    except Exception as e:
+        print(f"Error cargando estadísticas del dashboard: {e}")
+        # Devolver valores por defecto según el rol para evitar 500
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            return DashboardStatsSupervisor(total_incidencias_activas=0, incidencias_sin_asignar=0, incidencias_cerradas_hoy=0)
+        else:
             return DashboardStatsAnalista(
-                total_incidencias_activas=total_activas,
+                total_incidencias_activas=0,
                 incidencias_sin_asignar=0,
                 mis_incidencias_asignadas=0,
-                incidencias_cerradas_hoy=0
+                incidencias_cerradas_hoy=0,
+                incidencias_del_dia=[]
             )
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard GTR definido.")

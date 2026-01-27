@@ -21,6 +21,7 @@ if ":6543" in DATABASE_URL:
     # MODO TRANSACTION POOLER (SUPABASE)
     # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
     # Usamos NullPool para delegar el pooling completamente a Supabase/PgBouncer.
+    # Desactivamos el cache en el driver asyncpg.
     engine = create_async_engine(
         DATABASE_URL,
         poolclass=NullPool,
