@@ -405,45 +405,7 @@ function DashboardPage() {
                 </Col>
             </Row>
 
-            {/* 1. MIS CAMPAÑAS ASIGNADAS */}
-            <Row className="mb-4">
-                <Col xs={12}>
-                    <Card className="shadow-sm border-0 border-start border-primary border-4">
-                        <Card.Header className="bg-white fw-bold text-primary d-flex justify-content-between align-items-center">
-                            <span>📋 Mis Campañas Asignadas</span>
-                            <Badge bg="primary">{user.campanas_asignadas?.length || 0}</Badge>
-                        </Card.Header>
-                        <Card.Body className="py-2">
-                            {user.campanas_asignadas && user.campanas_asignadas.length > 0 ? (
-                                <Row className="g-2">
-                                    {user.campanas_asignadas.map(c => {
-                                        const estaActivo = misSesionesActivas.some(s => s.campana_id === c.id);
-                                        return (
-                                            <Col xs={6} md={3} lg={2} key={c.id}>
-                                                <Card className={`shadow-sm h-100 border-0 ${estaActivo ? 'bg-success text-white' : 'bg-light text-dark'}`}>
-                                                    <Card.Body className="text-center p-2">
-                                                        <div className="fs-4 mb-1">{estaActivo ? '🟢' : '⚪'}</div>
-                                                        <div className="fw-bold text-truncate small" title={c.nombre}>
-                                                            {c.nombre}
-                                                        </div>
-                                                        <div style={{fontSize: '0.65rem'}} className={estaActivo ? 'text-white-50' : 'text-muted'}>
-                                                            {estaActivo ? 'Gestionando' : 'No iniciada'}
-                                                        </div>
-                                                    </Card.Body>
-                                                </Card>
-                                            </Col>
-                                        );
-                                    })}
-                                </Row>
-                            ) : (
-                                <div className="text-muted small">No tienes campañas asignadas permanentemente.</div>
-                            )}
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* 2. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
+            {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
             <Row className="mb-4">
                 <Col xs={12}>
                     <Card className="shadow-sm border-0 border-start border-danger border-4">
