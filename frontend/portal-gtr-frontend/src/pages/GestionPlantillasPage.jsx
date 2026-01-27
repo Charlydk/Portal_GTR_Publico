@@ -78,11 +78,10 @@ function GestionPlantillasPage() {
                 ...diasSeleccionados
             };
 
-            const response = await fetch(`${GTR_API_URL}/campanas/${selectedCampanaId}/plantilla`, {
+            const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${selectedCampanaId}/plantilla`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(payload)
             });

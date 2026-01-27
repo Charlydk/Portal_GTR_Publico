@@ -123,9 +123,8 @@ class TareaGeneradaPorAvisoUpdate(BaseModel):
 class HistorialEstadoTareaBase(BaseModel):
     old_progreso: Optional[ProgresoTarea] = None
     new_progreso: ProgresoTarea
-    changed_by_analista_id: int
-    tarea_campana_id: Optional[int] = None
-    tarea_generada_id: Optional[int] = None
+    changed_by: int
+    tarea_id: Optional[int] = None
 
 class ActualizacionIncidenciaBase(BaseModel):
     comentario: str
@@ -252,6 +251,7 @@ class TareaGeneradaPorAvisoSimple(BaseModel):
 
 class LobBase(BaseModel):
     nombre: str
+    esta_activo: bool = True
 
 class LobCreate(LobBase):
     pass

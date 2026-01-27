@@ -37,6 +37,10 @@ function DashboardPage() {
     }, [user]);
 
     const cargarDatosDashboard = async () => {
+        if (user.role === 'SUPERVISOR_OPERACIONES') {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             // 1. Datos Comunes
@@ -195,6 +199,41 @@ function DashboardPage() {
         </Row>
         </>
     );
+
+    // ========================================================================
+    // VISTA SUPERVISOR OPERACIONES (PORTAL WORKFORCE HHEE)
+    // ========================================================================
+    if (user.role === 'SUPERVISOR_OPERACIONES') {
+        return (
+            <Container fluid className="p-4">
+                <Card className="shadow-sm border-0 bg-light">
+                    <Card.Body className="text-center py-5">
+                        <div className="fs-1 mb-3">🛠️</div>
+                        <h2 className="fw-bold mb-3">Panel de Operaciones</h2>
+                        <p className="lead mb-4">Bienvenido al módulo de gestión operativa.</p>
+                        <hr className="my-4" />
+                        <div className="text-start mx-auto" style={{maxWidth: '600px'}}>
+                            <h5 className="fw-bold mb-3">Accesos Directos:</h5>
+                            <ListGroup variant="flush" className="bg-transparent">
+                                <ListGroup.Item className="bg-transparent border-0 ps-0">
+                                    <span className="me-2">🔹</span>
+                                    Utiliza el menú <strong>GESTION HHEE</strong> para acceder a las opciones disponibles.
+                                </ListGroup.Item>
+                                <ListGroup.Item className="bg-transparent border-0 ps-0">
+                                    <span className="me-2">🔹</span>
+                                    Gestiona las HHEE y Exporta la informacion.
+                                </ListGroup.Item>
+                                <ListGroup.Item className="bg-transparent border-0 ps-0">
+                                    <span className="me-2">🔹</span>
+                                    Consulta las metricas de carga de HHEE.
+                                </ListGroup.Item>
+                            </ListGroup>
+                        </div>
+                    </Card.Body>
+                </Card>
+            </Container>
+        );
+    }
 
     // ========================================================================
     // VISTA SUPERVISOR
