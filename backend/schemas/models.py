@@ -1,5 +1,5 @@
 # schemas/models.py
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime, date, time
 from typing import List, Optional
 from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
@@ -57,6 +57,13 @@ class TareaUpdate(BaseModel):
     progreso: Optional[ProgresoTarea] = None
     analista_id: Optional[int] = None
     campana_id: Optional[int] = None
+
+    @field_validator('analista_id', 'campana_id', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 class ChecklistItemBase(BaseModel):
     descripcion: str
@@ -338,12 +345,26 @@ class IncidenciaUpdate(BaseModel):
     lob_ids: Optional[List[int]] = []
     fecha_apertura: Optional[datetime] = None
 
+    @field_validator('campana_id', 'asignado_a_id', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
 class IncidenciaExportFilters(BaseModel):
     fecha_inicio: Optional[date] = None
     fecha_fin: Optional[date] = None
     campana_id: Optional[int] = None
     estado: Optional[EstadoIncidencia] = None
     asignado_a_id: Optional[int] = None
+
+    @field_validator('campana_id', 'asignado_a_id', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 
 # --- Actualización de relaciones en schemas existentes ---
@@ -588,6 +609,13 @@ class BitacoraExportFilters(BaseModel):
     campana_id: Optional[int] = None
     autor_id: Optional[int] = None
     lob_id: Optional[int] = None
+
+    @field_validator('campana_id', 'autor_id', 'lob_id', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 
 # --- SCHEMAS OPTIMIZADOS PARA WIDGETS DEL DASHBOARD ---
