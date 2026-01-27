@@ -394,7 +394,7 @@ function DashboardPage() {
                     <Card className="border-0 shadow-sm text-white" style={{background: 'linear-gradient(45deg, #198754, #20c997)'}}>
                         <Card.Body className="d-flex justify-content-between align-items-center p-2 px-3">
                             <div>
-                                <h6 className="mb-0 fw-bold">🗓️ Mi Planificación Semanal (en construcción)</h6>
+                                <h6 className="mb-0 fw-bold">🗓️ Mi Planificación Semanal</h6>
                                 <small className="opacity-75">Consulta tus turnos y clusters asignados.</small>
                             </div>
                             <Button variant="light" size="sm" className="fw-bold" onClick={() => navigate('/planificacion-turnos')}>
