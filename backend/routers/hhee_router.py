@@ -8,7 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, update, or_
 from sqlalchemy.orm import selectinload
 from ..services import geovictoria_service
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Optional
 
 from ..database import get_db
@@ -907,7 +907,7 @@ async def procesar_solicitud(
     # Actualizamos la solicitud con la decisión
     solicitud.estado = decision.estado
     solicitud.supervisor_id = current_user.id
-    solicitud.fecha_decision = datetime.utcnow()
+    solicitud.fecha_decision = datetime.now(timezone.utc)
     solicitud.comentario_supervisor = decision.comentario_supervisor
     solicitud.horas_aprobadas = decision.horas_aprobadas
 
@@ -1060,7 +1060,7 @@ async def procesar_solicitudes_lote(
             solicitud.horas_aprobadas = decision.horas_aprobadas
             solicitud.comentario_supervisor = decision.comentario_supervisor
             solicitud.supervisor_id = current_user.id
-            solicitud.fecha_decision = datetime.utcnow()
+            solicitud.fecha_decision = datetime.now(timezone.utc)
 
             # Si se aprueba, creamos la entrada en la tabla de validaciones
             if solicitud.estado == EstadoSolicitudHHEE.APROBADA and solicitud.horas_aprobadas > 0:

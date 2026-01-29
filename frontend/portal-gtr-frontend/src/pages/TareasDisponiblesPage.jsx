@@ -26,9 +26,9 @@ const TareasDisponiblesPage = () => {
             try {
                 setLoading(true);
                 
-                // 1. Petición paralela
+                // 1. Petición paralela con FILTRO DE FECHA en backend
                 const [resTareas, resSesiones] = await Promise.all([
-                    fetchWithAuth(`${API_BASE_URL}/gtr/tareas/`),
+                    fetchWithAuth(`${API_BASE_URL}/gtr/tareas/?fecha=${fechaFiltro}`),
                     fetchWithAuth(`${API_BASE_URL}/gtr/sesiones/activas`) 
                 ]);
 
