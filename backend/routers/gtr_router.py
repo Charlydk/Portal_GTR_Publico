@@ -894,6 +894,7 @@ async def obtener_tareas(
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
+    fecha: Optional[date] = Query(None, description="Filtrar por fecha de creación (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
@@ -902,7 +903,7 @@ async def obtener_tareas(
     Incluye limpieza automática de tareas vencidas.
     """
     background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
-    return await TareaService.get_tareas_globales(db, skip, limit, estado)
+    return await TareaService.get_tareas_globales(db, skip, limit, estado, fecha)
 
 
 @router.get("/tareas/{tarea_id}", response_model=Tarea, summary="Obtener Tarea por ID (Protegido)")
@@ -1006,7 +1007,7 @@ async def actualizar_tarea(
         db.add(historial_entry)
 
         if tarea_existente.progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA]:
-            tarea_existente.fecha_finalizacion = datetime.utcnow().replace(tzinfo=None)
+            tarea_existente.fecha_finalizacion = datetime.now(timezone.utc)
         elif old_progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA] and \
              tarea_existente.progreso in [ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO]:
             tarea_existente.fecha_finalizacion = None
@@ -1398,7 +1399,7 @@ async def obtener_avisos(
     Muestra los avisos vigentes.
     Visibilidad total.
     """
-    hoy = datetime.now()
+    hoy = datetime.now(timezone.utc)
     
     # Traemos avisos que no hayan vencido (o que no tengan fecha de vencimiento)
     query = select(models.Aviso).options(
@@ -1887,7 +1888,7 @@ async def update_bitacora_entry(
     for field, value in update_data.items():
         setattr(db_entry, field, value)
     
-    db_entry.fecha_ultima_actualizacion = datetime.now(pytz.utc)
+    db_entry.fecha_ultima_actualizacion = datetime.now(timezone.utc)
 
     try:
         await db.commit()
@@ -2588,7 +2589,7 @@ async def update_tarea_generada_por_aviso(
         db.add(historial_entry)
 
         if tarea_existente.progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA]:
-            tarea_existente.fecha_finalizacion = datetime.utcnow().replace(tzinfo=None)
+            tarea_existente.fecha_finalizacion = datetime.now(timezone.utc)
         elif old_progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA] and \
              tarea_existente.progreso in [ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO]:
             tarea_existente.fecha_finalizacion = None
@@ -2896,8 +2897,8 @@ async def get_dashboard_stats(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     # Definimos el rango de "hoy" en UTC
-    today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
+    today_start_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end_utc = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
     try:
         # 1. Conteo de "Total Activas" (Común a todos)
@@ -3259,7 +3260,8 @@ async def get_tareas_monitor(
 ):
     # 1. Configuración de Fechas
     if not fecha:
-        fecha = datetime.now().date()
+        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+        fecha = datetime.now(tz_argentina).date()
         
     inicio_dia = datetime.combine(fecha, time.min)
     fin_dia = datetime.combine(fecha, time.max)
@@ -3299,15 +3301,17 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Definir "Hoy" (Inicio del día a las 00:00)
-    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir "Hoy" en Argentina para la limpieza de sesiones
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    hoy_inicio_arg = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
     # Buscamos sesiones abiertas que sean de AYER o antes
     q_zombis = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.fecha_fin.is_(None),
-        models.SesionCampana.fecha_inicio < hoy_inicio
+        models.SesionCampana.fecha_inicio < hoy_inicio_arg
     )
     result_zombis = await db.execute(q_zombis)
     sesiones_zombis = result_zombis.scalars().all()
@@ -3348,7 +3352,7 @@ async def check_in_campana(
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
         campana_id=datos.campana_id,
-        fecha_inicio=datetime.now()
+        fecha_inicio=datetime.now(timezone.utc)
     )
     db.add(nueva_sesion)
     await db.commit()
@@ -3402,13 +3406,14 @@ async def check_in_campana(
         # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
         if campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
-            vencimiento_naive = ahora_arg.replace(hour=23, minute=59, second=59, tzinfo=None)
+            # El vencimiento es al final del día operativo (Argentina)
+            vencimiento_arg = ahora_arg.replace(hour=23, minute=59, second=59, microsecond=999999)
 
             nueva_tarea = models.Tarea(
                 titulo=nombre_tarea,
                 descripcion="Rutina operativa compartida del día.",
-                fecha_vencimiento=vencimiento_naive,
-                fecha_creacion=datetime.now(),
+                fecha_vencimiento=vencimiento_arg, # Se guarda como UTC-aware
+                fecha_creacion=datetime.now(timezone.utc),
                 progreso=ProgresoTarea.PENDIENTE,
                 analista_id=None,
                 campana_id=datos.campana_id,
@@ -3435,7 +3440,7 @@ async def check_in_campana(
                 new_progreso=ProgresoTarea.PENDIENTE,
                 changed_by=current_analista.id,
                 tarea=nueva_tarea,  # ✅ Usamos la relación
-                timestamp=datetime.now()
+                timestamp=datetime.now(timezone.utc)
             )
             db.add(historial)
             await db.commit()
@@ -3458,6 +3463,7 @@ async def read_tareas_listado(
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
+    fecha: Optional[date] = Query(None, description="Filtrar por fecha de creación (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista) 
 ):
@@ -3465,7 +3471,7 @@ async def read_tareas_listado(
     Obtiene la lista de tareas filtrada por visibilidad.
     """
     background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
-    return await TareaService.get_tareas_analista(db, current_analista, skip, limit, estado)
+    return await TareaService.get_tareas_analista(db, current_analista, skip, limit, estado, fecha)
 
 
 @router.post("/sesiones/check-out", summary="Dejar de gestionar una campaña")
@@ -3490,7 +3496,7 @@ async def check_out_campana(
         raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
 
     # Cerrar sesión
-    sesion.fecha_fin = datetime.now()
+    sesion.fecha_fin = datetime.now(timezone.utc)
     await db.commit()
     
     return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
@@ -3646,7 +3652,7 @@ async def obtener_mis_sesiones_activas(
         # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
         if inicio_sesion_aware < inicio_dia_hoy:
             # ¡Es una sesión Zombie de ayer! La cerramos.
-            sesion.fecha_fin = datetime.now() # Check-out forzado
+            sesion.fecha_fin = datetime.now(timezone.utc) # Check-out forzado
             hubo_cierre_automatico = True
             print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer para {current_analista.email} en campaña {sesion.campana.nombre}")
         else:

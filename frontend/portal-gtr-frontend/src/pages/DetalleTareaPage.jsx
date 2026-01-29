@@ -453,7 +453,9 @@ const DetalleTareaPage = () => {
                                     <div key={c.id} className="mb-3 border-bottom pb-2">
                                         <div className="d-flex justify-content-between">
                                             <strong style={{fontSize: '0.9rem'}}>{c.autor?.nombre}</strong>
-                                            <small className="text-muted" style={{fontSize: '0.75rem'}}>{new Date(c.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small>
+                                            <small className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                {new Date(c.fecha_creacion + (c.fecha_creacion.includes('Z') || c.fecha_creacion.includes('+') ? '' : 'Z')).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                            </small>
                                         </div>
                                         <p className="mb-0 small text-secondary">{c.texto}</p>
                                     </div>

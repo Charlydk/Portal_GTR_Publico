@@ -1,8 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update, or_
+from sqlalchemy import update, or_, func
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import datetime, timezone, date
 from ..sql_app import models
 from ..enums import ProgresoTarea, UserRole
 
@@ -21,7 +21,7 @@ class TareaService:
 
     @staticmethod
     async def _ejecutar_limpieza(db: AsyncSession):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         query_limpieza = (
             update(models.Tarea)
             .where(
@@ -35,7 +35,7 @@ class TareaService:
         await db.commit()
 
     @staticmethod
-    async def get_tareas_globales(db: AsyncSession, skip: int = 0, limit: int = 100, estado=None):
+    async def get_tareas_globales(db: AsyncSession, skip: int = 0, limit: int = 100, estado=None, fecha: date = None):
         query = select(models.Tarea).options(
             selectinload(models.Tarea.campana),
             selectinload(models.Tarea.analista),
@@ -45,6 +45,8 @@ class TareaService:
         )
         if estado:
             query = query.filter(models.Tarea.progreso == estado)
+        if fecha:
+            query = query.filter(func.date(models.Tarea.fecha_creacion) == fecha)
         query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
@@ -66,7 +68,7 @@ class TareaService:
         return result.scalars().first()
 
     @staticmethod
-    async def get_tareas_analista(db: AsyncSession, analista: models.Analista, skip: int = 0, limit: int = 100, estado=None):
+    async def get_tareas_analista(db: AsyncSession, analista: models.Analista, skip: int = 0, limit: int = 100, estado=None, fecha: date = None):
         query = select(models.Tarea).options(
             selectinload(models.Tarea.campana),
             selectinload(models.Tarea.analista),
@@ -100,6 +102,8 @@ class TareaService:
 
         if estado:
             query = query.filter(models.Tarea.progreso == estado)
+        if fecha:
+            query = query.filter(func.date(models.Tarea.fecha_creacion) == fecha)
 
         query = query.order_by(models.Tarea.fecha_vencimiento.asc())
         query = query.offset(skip).limit(limit)
