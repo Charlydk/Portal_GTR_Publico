@@ -74,7 +74,7 @@ async def get_malla_turnos(
 async def upsert_turno(
     turno: schemas.PlanificacionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     """
     Crea o actualiza un turno para un analista en una fecha específica.
@@ -85,7 +85,7 @@ async def upsert_turno(
 async def bulk_upsert_planificaciones(
     planificaciones: List[schemas.PlanificacionCreate],
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     """
     Crea o actualiza múltiples turnos en una sola transacción.
@@ -97,7 +97,7 @@ async def delete_turno(
     analista_id: int = Query(..., description="ID del analista"),
     fecha: date = Query(..., description="Fecha del turno a borrar (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
-    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.SUPERVISOR_OPERACIONES]))
+    current_user: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     """
     Elimina una planificación específica.
