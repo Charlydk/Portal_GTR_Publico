@@ -43,14 +43,39 @@ def hhmm_to_decimal(time_str):
 async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], fecha_inicio_dt: datetime, fecha_fin_dt: datetime):
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     
-    CHUNK_SIZE = 40 # Aumentamos el tamaño del lote para reducir llamadas
+    CHUNK_SIZE = 40 # Tamaño de lote por RUTs
     RETRY_COUNT = 3
     RETRY_DELAY = 1
+    MAX_CONCURRENCY = 3 # Límite de peticiones simultáneas para evitar 429
     
-    # --- FUNCIÓN AUXILIAR INTERNA PARA REALIZAR CONSULTAS EN LOTES ---
+    semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+
+    # --- FUNCIÓN AUXILIAR INTERNA PARA REALIZAR CONSULTAS EN LOTES (EN PARALELO) ---
+    async def realizar_peticion_lote(client, payload):
+        async with semaphore:
+            for attempt in range(RETRY_COUNT):
+                try:
+                    response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
+
+                    if response.status_code == 429:
+                        # Si hay un rate limit, esperamos más tiempo en cada reintento
+                        espera = (attempt + 1) * 2
+                        print(f"ADVERTENCIA: Rate Limit (429) en GeoVictoria. Reintentando en {espera}s...")
+                        await asyncio.sleep(espera)
+                        continue
+
+                    response.raise_for_status()
+                    respuesta_lote = response.json()
+                    return respuesta_lote.get("Users") or []
+                except Exception as e:
+                    print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
+                    if attempt < RETRY_COUNT - 1:
+                        await asyncio.sleep(RETRY_DELAY)
+            return []
+
     async def ejecutar_consulta_lotes(lista_ruts):
-        resultados_lote = []
-        async with httpx.AsyncClient(timeout=60.0) as client: # Un solo cliente para todos los lotes
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            tasks = []
             for i in range(0, len(lista_ruts), CHUNK_SIZE):
                 lote_actual = lista_ruts[i:i + CHUNK_SIZE]
                 payload = {
@@ -58,23 +83,10 @@ async def obtener_datos_completos_periodo(token: str, ruts_limpios: list[str], f
                     "EndDate": fecha_fin_dt.strftime("%Y%m%d%H%M%S"),
                     "UserIds": ",".join(lote_actual)
                 }
+                tasks.append(realizar_peticion_lote(client, payload))
 
-                for attempt in range(RETRY_COUNT):
-                    try:
-                        response = await client.post(GEOVICTORIA_ATTENDANCE_URL, json=payload, headers=headers)
-                        response.raise_for_status()
-                        respuesta_lote = response.json()
-                        if respuesta_lote.get("Users"):
-                            resultados_lote.extend(respuesta_lote["Users"])
-                        # print(f"Lote de {len(lote_actual)} RUTs procesado con éxito.")
-                        break 
-                    except Exception as e:
-                        print(f"Error en lote, intento {attempt + 1}/{RETRY_COUNT}: {e}")
-                        if attempt < RETRY_COUNT - 1:
-                            await asyncio.sleep(RETRY_DELAY)
-                        else:
-                            print(f"FALLO FINAL para el lote de {len(lote_actual)} RUTs.")
-        return resultados_lote
+            resultados_anidados = await asyncio.gather(*tasks)
+            return [user for sublist in resultados_anidados for user in sublist]
 
     # --- 1. PRIMERA CONSULTA MASIVA ---
     todos_los_usuarios_gv = await ejecutar_consulta_lotes(ruts_limpios)

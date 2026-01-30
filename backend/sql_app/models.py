@@ -139,7 +139,6 @@ class Analista(Base):
     acuses_recibo_avisos = relationship("AcuseReciboAviso", back_populates="analista")
     tareas_generadas_por_avisos = relationship("TareaGeneradaPorAviso", back_populates="analista")
     sesiones = relationship("SesionCampana", back_populates="analista")
-    validaciones_hhee = relationship("ValidacionHHEE", back_populates="analista", foreign_keys="[ValidacionHHEE.analista_id]")
     solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
     solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
 
@@ -400,51 +399,51 @@ class ActualizacionIncidencia(Base):
 # --- HHEE ---
 class ValidacionHHEE(Base):
     __tablename__ = "validaciones_hhee"
+
     id = Column(Integer, primary_key=True, index=True)
-    rut = Column(String, nullable=False) # Retrocompatibilidad y constraint NOT NULL
-    fecha_hhee = Column(Date, nullable=False) # Retrocompatibilidad y constraint NOT NULL
-
-    # Campos redundantes para compatibilidad con diferentes versiones de la app
-    fecha = Column(Date, nullable=False)
-    rut_analista = Column(String, nullable=False)
-    nombre_apellido = Column(String) # Retrocompatibilidad
-    estado = Column(String) # Retrocompatibilidad
-    notas = Column(String) # Retrocompatibilidad
-    cantidad_hhee_aprobadas = Column(Float) # Retrocompatibilidad
-
-    analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
-    nombre_apellido_gv = Column(String)
-    campaña = Column(String)
-    tipo_hhee = Column(String)
-    inicio_turno_teorico = Column(String)
-    fin_turno_teorico = Column(String)
-    marca_real_inicio = Column(String)
-    marca_real_fin = Column(String)
-    hhee_calculadas_sistema = Column(Float, default=0.0)
-    hhee_aprobadas_rrhh = Column(Float, default=0.0)
-    estado_validacion = Column(String, default="PENDIENTE")
-    comentario_validacion = Column(String, nullable=True)
+    rut = Column(String, index=True, nullable=False)
+    nombre_apellido = Column(String)
+    campaña = Column(String, nullable=True)
+    fecha_hhee = Column(Date, nullable=False, index=True)
+    tipo_hhee = Column(String, nullable=True) # "Antes de Turno", "Después de Turno", "Día de Descanso"
+    cantidad_hhee_declaradas = Column(Float, default=0.0)
+    cantidad_hhee_aprobadas = Column(Float, default=0.0)
+    estado = Column(String, default="No Guardado", index=True) # "Validado", "Pendiente por Corrección"
+    notas = Column(String, nullable=True)
     supervisor_carga = Column(String)
     fecha_carga = Column(DateTime(timezone=True), server_default=func.now())
-    reportado_a_rrhh = Column(Boolean, default=False)
-    reportado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    # Campos de GV para referencia
+    turno_teorico_inicio = Column(String, nullable=True)
+    turno_teorico_fin = Column(String, nullable=True)
+    marca_real_inicio = Column(String, nullable=True)
+    marca_real_fin = Column(String, nullable=True)
+    # campos para bandera de hhee enviadas a ADP
+    reportado_a_rrhh = Column(Boolean, default=False, nullable=False, index=True)
+    reportado_por_id = Column(Integer, ForeignKey('analistas.id'), nullable=True)
     fecha_reportado = Column(DateTime(timezone=True), nullable=True)
-    analista = relationship("Analista", foreign_keys=[analista_id], back_populates="validaciones_hhee")
+    reportado_por = relationship("Analista")
 
 class SolicitudHHEE(Base):
-    __tablename__ = "solicitudes_hhee"
+    __tablename__ = 'solicitudes_hhee'
+
     id = Column(Integer, primary_key=True, index=True)
-    analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
-    fecha_solicitud = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Datos de la solicitud
     fecha_hhee = Column(Date, nullable=False)
+    tipo = Column(SQLEnum(TipoSolicitudHHEE, native_enum=False, create_type=False), nullable=False)
     horas_solicitadas = Column(Float, nullable=False)
-    tipo = Column(SQLEnum(TipoSolicitudHHEE, native_enum=False, create_type=False), default=TipoSolicitudHHEE.DESPUES_TURNO)
-    justificacion = Column(Text, nullable=True)
-    estado = Column(SQLEnum(EstadoSolicitudHHEE, native_enum=False, create_type=False), default=EstadoSolicitudHHEE.PENDIENTE)
+    justificacion = Column(Text, nullable=False)
+    estado = Column(SQLEnum(EstadoSolicitudHHEE, native_enum=False, create_type=False), nullable=False, default=EstadoSolicitudHHEE.PENDIENTE)
+    fecha_solicitud = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Datos de la decisión del supervisor
     horas_aprobadas = Column(Float, nullable=True)
     comentario_supervisor = Column(Text, nullable=True)
-    supervisor_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     fecha_decision = Column(DateTime(timezone=True), nullable=True)
+
+    # Relaciones con la tabla Analista
+    analista_id = Column(Integer, ForeignKey('analistas.id'), nullable=False)
+    supervisor_id = Column(Integer, ForeignKey('analistas.id'), nullable=True)
 
     solicitante = relationship("Analista", foreign_keys=[analista_id], back_populates="solicitudes_realizadas")
     supervisor = relationship("Analista", foreign_keys=[supervisor_id], back_populates="solicitudes_gestionadas")
