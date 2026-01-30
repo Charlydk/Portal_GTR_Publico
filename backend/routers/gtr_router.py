@@ -734,12 +734,21 @@ async def actualizar_campana(
             setattr(campana_existente, key, value)
 
         if nuevos_lobs_nombres is not None:
-            campana_existente.lobs.clear()
-            await db.flush()
+            # Normalizamos nombres recibidos
+            nombres_normalizados = [bleach.clean(n.strip()) for n in nuevos_lobs_nombres if n.strip()]
 
-            for nombre in nuevos_lobs_nombres:
-                if nombre.strip():
-                    nuevo_lob = models.Lob(nombre=bleach.clean(nombre.strip()), campana_id=campana_existente.id)
+            # 1. Actualizar LOBs existentes: activar si están en la lista, desactivar si no
+            lobs_dict = {lob.nombre: lob for lob in campana_existente.lobs}
+            for nombre, lob in lobs_dict.items():
+                if nombre in nombres_normalizados:
+                    lob.esta_activo = True
+                else:
+                    lob.esta_activo = False
+
+            # 2. Añadir nuevos LOBs que no existen en la base de datos para esta campaña
+            for nombre in nombres_normalizados:
+                if nombre not in lobs_dict:
+                    nuevo_lob = models.Lob(nombre=nombre, campana_id=campana_existente.id, esta_activo=True)
                     db.add(nuevo_lob)
         
         await db.commit()
@@ -908,8 +917,8 @@ async def actualizar_tarea(
         historial_entry = models.HistorialEstadoTarea(
             old_progreso=old_progreso,
             new_progreso=tarea_existente.progreso,
-            changed_by_analista_id=current_analista_id,
-            tarea_campana_id=tarea_existente.id
+            changed_by=current_analista_id,
+            tarea_id=tarea_existente.id
         )
         db.add(historial_entry)
 
@@ -950,7 +959,7 @@ async def eliminar_tarea(
     try:
         await db.delete(tarea_a_eliminar)
         # Opcional: Eliminar los historial_estados relacionados si no se hace en cascada a nivel de DB
-        # await db.execute(delete(models.HistorialEstadoTarea).where(models.HistorialEstadoTarea.tarea_campana_id == tarea_id))
+        # await db.execute(delete(models.HistorialEstadoTarea).where(models.HistorialEstadoTarea.tarea_id == tarea_id))
         await db.commit()
     except Exception as e:
         await db.rollback()
@@ -1541,8 +1550,8 @@ async def registrar_acuse_recibo(
             # Registrar el estado inicial de la tarea generada
             historial_entry = models.HistorialEstadoTarea(
                 new_progreso=new_generated_task.progreso,
-                changed_by_analista_id=current_analista_id, # El analista que acusa recibo es quien "crea" la tarea generada
-                tarea_generada_id=new_generated_task.id # El ID de la tarea generada aún no está disponible aquí
+                changed_by=current_analista_id, # El analista que acusa recibo es quien "crea" la tarea generada
+                tarea=new_generated_task
             )
             db.add(historial_entry)
 
@@ -1702,8 +1711,12 @@ async def obtener_lobs_por_campana(
 ):
     """
     Devuelve una lista de todos los LOBs asociados a una campaña específica.
+    Solo devuelve LOBs activos.
     """
-    query = select(models.Lob).where(models.Lob.campana_id == campana_id)
+    query = select(models.Lob).where(
+        models.Lob.campana_id == campana_id,
+        models.Lob.esta_activo == True
+    )
     result = await db.execute(query)
     lobs = result.scalars().all()
     
@@ -2036,9 +2049,12 @@ async def update_incidencia(
             # Si el campo es una fecha, la formateamos
             if isinstance(value, datetime):
                 # Aseguramos que el valor antiguo tenga zona horaria para poder convertirlo
-                old_value_aware = old_value.astimezone(pytz.utc) if old_value.tzinfo is None else old_value
+                if old_value:
+                    old_value_aware = old_value.astimezone(pytz.utc) if old_value.tzinfo is None else old_value
+                    old_value_str = old_value_aware.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
+                else:
+                    old_value_str = "N/A"
                 
-                old_value_str = old_value_aware.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
                 new_value_str = value.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
                 historial_comentarios.append(f"Campo '{key}' cambiado de '{old_value_str}' a '{new_value_str}'.")
 
@@ -2319,8 +2335,8 @@ async def create_tarea_generada_por_aviso(
     historial_entry = models.HistorialEstadoTarea(
         old_progreso=None, # El primer estado no tiene un estado anterior
         new_progreso=new_tarea_progreso, # Usar la variable escalar capturada
-        changed_by_analista_id=current_analista_id, # Usar la variable local
-        tarea_generada_id=new_tarea_id # Usar la variable local
+        changed_by=current_analista_id, # Usar la variable local
+        tarea_id=new_tarea_id # Usar la variable local
     )
     db.add(historial_entry)
     try:
@@ -2481,8 +2497,8 @@ async def update_tarea_generada_por_aviso(
         historial_entry = models.HistorialEstadoTarea(
             old_progreso=old_progreso,
             new_progreso=tarea_existente.progreso,
-            changed_by_analista_id=current_analista_id,
-            tarea_generada_id=tarea_existente.id
+            changed_by=current_analista_id,
+            tarea_id=tarea_existente.id
         )
         db.add(historial_entry)
 
@@ -2532,7 +2548,7 @@ async def delete_tarea_generada_por_aviso(
     try:
         await db.delete(tarea_a_eliminar)
         # Opcional: Eliminar los historial_estados relacionados si no se hace en cascada a nivel de DB
-        # await db.execute(delete(models.HistorialEstadoTarea).where(models.HistorialEstadoTarea.tarea_generada_id == tarea_id))
+        # await db.execute(delete(models.HistorialEstadoTarea).where(models.HistorialEstadoTarea.tarea_id == tarea_id))
         await db.commit()
     except Exception as e:
         await db.rollback()
@@ -2566,7 +2582,7 @@ async def get_tarea_historial_estados(
 
     result = await db.execute(
         select(models.HistorialEstadoTarea)
-        .filter(models.HistorialEstadoTarea.tarea_campana_id == tarea_id)
+        .filter(models.HistorialEstadoTarea.tarea_id == tarea_id)
         .options(selectinload(models.HistorialEstadoTarea.changed_by_analista)) # Cargar el analista que hizo el cambio
         .order_by(models.HistorialEstadoTarea.timestamp) # Ordenar por fecha para ver la secuencia
     )
@@ -2597,7 +2613,7 @@ async def get_tarea_generada_historial_estados(
 
     result = await db.execute(
         select(models.HistorialEstadoTarea)
-        .filter(models.HistorialEstadoTarea.tarea_generada_id == tarea_id)
+        .filter(models.HistorialEstadoTarea.tarea_id == tarea_id)
         .options(selectinload(models.HistorialEstadoTarea.changed_by_analista)) # Cargar el analista que hizo el cambio
         .order_by(models.HistorialEstadoTarea.timestamp) # Ordenar por fecha para ver la secuencia
     )
@@ -2798,67 +2814,97 @@ async def get_dashboard_stats(
     today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
-    # Conteo de "Total Activas" (Abiertas o En Progreso)
-    query_activas = select(func.count(models.Incidencia.id)).filter(
-        models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
-    )
-    total_activas = (await db.execute(query_activas)).scalar_one()
-
-    if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
-        # Conteo de "Sin Asignar"
-        unassigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-            models.Incidencia.asignado_a_id.is_(None)
+    try:
+        # 1. Conteo de "Total Activas" (Común a todos)
+        query_activas = select(func.count(models.Incidencia.id)).filter(
+            models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
         )
-        unassigned_count = (await db.execute(unassigned_query)).scalar_one()
+        res_activas = await db.execute(query_activas)
+        total_activas = res_activas.scalar_one()
 
-        # Conteo de "Cerradas Hoy" (por cualquier analista)
-        closed_today_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.CERRADA,
-            models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
-        )
-        closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            # Conteo de "Sin Asignar"
+            unassigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
+                models.Incidencia.asignado_a_id.is_(None)
+            )
+            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
 
-        return DashboardStatsSupervisor(
-            total_incidencias_activas=total_activas,
-            incidencias_sin_asignar=unassigned_count,
-            incidencias_cerradas_hoy=closed_today_count
-        )
+            # Conteo de "Cerradas Hoy" (por cualquier analista)
+            closed_today_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.CERRADA,
+                models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
+            )
+            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
 
-    elif current_analista.role == UserRole.ANALISTA:
-        # Definimos el rango de "hoy" en UTC para la consulta
-        today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
+            return DashboardStatsSupervisor(
+                total_incidencias_activas=total_activas,
+                incidencias_sin_asignar=unassigned_count,
+                incidencias_cerradas_hoy=closed_today_count
+            )
 
-        # Conteo de "Sin Asignar" (no cambia)
-        unassigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-            models.Incidencia.asignado_a_id.is_(None)
-        )
-        unassigned_count = (await db.execute(unassigned_query)).scalar_one()
+        elif current_analista.role == UserRole.ANALISTA:
+            # Conteo de "Sin Asignar" (no cambia)
+            unassigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
+                models.Incidencia.asignado_a_id.is_(None)
+            )
+            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
 
-        # Conteo de "Mis Incidencias Asignadas" (no cambia)
-        my_assigned_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.asignado_a_id == current_analista.id,
-            models.Incidencia.estado == EstadoIncidencia.EN_PROGRESO
-        )
-        my_assigned_count = (await db.execute(my_assigned_query)).scalar_one()
+            # Conteo de "Mis Incidencias Asignadas" (no cambia)
+            my_assigned_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.asignado_a_id == current_analista.id,
+                models.Incidencia.estado == EstadoIncidencia.EN_PROGRESO
+            )
+            my_assigned_count = (await db.execute(my_assigned_query)).scalar_one()
 
-        # --- INICIO DE LA NUEVA LÓGICA ---
-        # Conteo de incidencias CERRADAS HOY por el analista actual
-        closed_today_query = select(func.count(models.Incidencia.id)).filter(
-            models.Incidencia.cerrado_por_id == current_analista.id,
-            models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
-        )
-        closed_today_count = (await db.execute(closed_today_query)).scalar_one()
-        # --- FIN DE LA NUEVA LÓGICA ---
+            # --- INICIO DE LA NUEVA LÓGICA ---
+            # Conteo de incidencias CERRADAS HOY por el analista actual
+            closed_today_query = select(func.count(models.Incidencia.id)).filter(
+                models.Incidencia.estado == EstadoIncidencia.CERRADA,
+                models.Incidencia.cerrado_por_id == current_analista.id,
+                models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
+            )
+            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+            # --- FIN DE LA NUEVA LÓGICA ---
 
-        return DashboardStatsAnalista(
-            total_incidencias_activas=total_activas,
-            incidencias_sin_asignar=unassigned_count,
-            mis_incidencias_asignadas=my_assigned_count,
-            incidencias_cerradas_hoy=closed_today_count # <-- Devolvemos el nuevo dato
-        )
+            # Lista de incidencias para la tabla central
+            incidencias_query = select(models.Incidencia).options(
+                selectinload(models.Incidencia.campana),
+                selectinload(models.Incidencia.asignado_a),
+                selectinload(models.Incidencia.lobs),
+                selectinload(models.Incidencia.creador),
+                selectinload(models.Incidencia.cerrado_por)
+            ).filter(
+                or_(
+                    models.Incidencia.asignado_a_id == current_analista.id,
+                    models.Incidencia.asignado_a_id.is_(None)
+                ),
+                models.Incidencia.estado != EstadoIncidencia.CERRADA
+            ).order_by(models.Incidencia.fecha_apertura.desc())
+            incidencias_result = await db.execute(incidencias_query)
+            incidencias_list = incidencias_result.scalars().unique().all()
+
+            return DashboardStatsAnalista(
+                total_incidencias_activas=total_activas,
+                incidencias_sin_asignar=unassigned_count,
+                mis_incidencias_asignadas=my_assigned_count,
+                incidencias_cerradas_hoy=closed_today_count,
+                incidencias_del_dia=incidencias_list
+            )
+    except Exception as e:
+        print(f"Error cargando estadísticas del dashboard: {e}")
+        # Devolver valores por defecto según el rol para evitar 500
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            return DashboardStatsSupervisor(total_incidencias_activas=0, incidencias_sin_asignar=0, incidencias_cerradas_hoy=0)
+        else:
+            return DashboardStatsAnalista(
+                total_incidencias_activas=0,
+                incidencias_sin_asignar=0,
+                mis_incidencias_asignadas=0,
+                incidencias_cerradas_hoy=0,
+                incidencias_del_dia=[]
+            )
     
     raise HTTPException(status_code=403, detail="Rol de usuario no tiene un dashboard GTR definido.")
 
@@ -3302,8 +3348,8 @@ async def check_in_campana(
             historial = models.HistorialEstadoTarea(
                 old_progreso=None,
                 new_progreso=ProgresoTarea.PENDIENTE,
-                changed_by_analista_id=current_analista.id,
-                tarea_campana_id=nueva_tarea.id,  # ✅ ESTA ES LA CLAVE
+                changed_by=current_analista.id,
+                tarea=nueva_tarea,  # ✅ Usamos la relación
                 timestamp=datetime.now()
             )
             db.add(historial)

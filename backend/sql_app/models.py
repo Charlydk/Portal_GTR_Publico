@@ -193,6 +193,7 @@ class Lob(Base):
     __tablename__ = "lobs"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String, nullable=False)
+    esta_activo = Column(Boolean, default=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"))
     campana = relationship("Campana", back_populates="lobs")
     incidencias = relationship("Incidencia", secondary=incidencias_lobs, back_populates="lobs")
