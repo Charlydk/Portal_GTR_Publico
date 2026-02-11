@@ -5,7 +5,7 @@ import io
 import bleach
 import pytz
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.models import Campana, AnalistaConCampanas
 from sqlalchemy.future import select
@@ -49,6 +49,7 @@ from ..schemas.models import (
     CoberturaCampana,
 )
 from ..security import get_password_hash # El endpoint crear_analista la necesita
+from ..utils import get_client_timezone, get_now_local, get_today_range_utc
 
 
 # --- Creación del Router ---
@@ -1813,6 +1814,7 @@ async def obtener_lobs_por_campana(
 @router.post("/bitacora_entries/", response_model=BitacoraEntry, status_code=status.HTTP_201_CREATED, summary="Crear una nueva Entrada de Bitácora")
 async def create_bitacora_entry(
     entry: BitacoraEntryCreate, # Usa el schema de creación para la entrada
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
@@ -1821,13 +1823,13 @@ async def create_bitacora_entry(
     if not campana_existente_result.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
-    # 1. Definimos la zona horaria de referencia
-    tucuman_tz = pytz.timezone("America/Argentina/Tucuman")
-    now_arg = datetime.now(tucuman_tz)
+    # 1. Obtenemos la zona horaria del cliente
+    client_tz = get_client_timezone(request)
+    now_local = get_now_local(client_tz)
 
-    # 2. Calculamos la fecha y hora correctas
-    fecha_correcta = now_arg.date()
-    hora_correcta = entry.hora # O usamos now_arg.time() si prefieres la hora del servidor
+    # 2. Calculamos la fecha y hora correctas basándonos en su PC
+    fecha_correcta = now_local.date()
+    hora_correcta = entry.hora # O usamos now_local.time() si prefieres la hora del servidor
 
     # 3. Verificamos duplicados (Opcional, según tu lógica de negocio)
     # Nota: He simplificado esto para evitar bloqueos si quieres permitir múltiples logs
@@ -1941,21 +1943,22 @@ async def delete_bitacora_entry(
         )
     return
 
-@router.get("/bitacora/log_de_hoy/{campana_id}", summary="Obtiene el log del día operativo actual (Hora de Argentina)")
+@router.get("/bitacora/log_de_hoy/{campana_id}", summary="Obtiene el log del día operativo actual (Hora Local del Cliente)")
 async def get_log_de_hoy(
     campana_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Obtiene las entradas de la bitácora para el día operativo actual,
-    comparando solo la FECHA (Date) en zona horaria Argentina.
+    comparando solo la FECHA (Date) en la zona horaria local del cliente.
     """
     try:
-        # 1. Configurar Zona Horaria
-        tz_argentina = pytz.timezone("America/Argentina/Buenos_Aires")
+        # 1. Obtener zona horaria del cliente
+        client_tz = get_client_timezone(request)
 
-        # 2. Obtener solo la FECHA de hoy en Argentina (sin hora)
-        fecha_hoy_arg = datetime.now(tz_argentina).date()
+        # 2. Obtener solo la FECHA de hoy localmente (sin hora)
+        fecha_hoy_local = get_now_local(client_tz).date()
 
         # 3. Consulta usando las columnas correctas: 'fecha' y 'hora'
         query = (
@@ -1968,7 +1971,7 @@ async def get_log_de_hoy(
             )
             .where(
                 models.BitacoraEntry.campana_id == campana_id,
-                models.BitacoraEntry.fecha == fecha_hoy_arg  # <--- CORRECCIÓN AQUÍ: Usamos .fecha
+                models.BitacoraEntry.fecha == fecha_hoy_local  # <--- CORRECCIÓN AQUÍ: Usamos .fecha
             )
             .order_by(
                 models.BitacoraEntry.hora.desc() # Ordenamos por la columna 'hora'
@@ -2101,6 +2104,7 @@ async def get_incidencias(
 async def update_incidencia(
     incidencia_id: int,
     update_data: IncidenciaUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
@@ -2126,7 +2130,8 @@ async def update_incidencia(
 
 
     historial_comentarios = []
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman") # Zona horaria de referencia
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
 
     for key, value in update_dict.items():
         old_value = getattr(db_incidencia, key)
@@ -2137,11 +2142,11 @@ async def update_incidencia(
                 # Aseguramos que el valor antiguo tenga zona horaria para poder convertirlo
                 if old_value:
                     old_value_aware = old_value.astimezone(pytz.utc) if old_value.tzinfo is None else old_value
-                    old_value_str = old_value_aware.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
+                    old_value_str = old_value_aware.astimezone(client_tz).strftime('%d/%m/%Y %H:%M')
                 else:
                     old_value_str = "N/A"
                 
-                new_value_str = value.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
+                new_value_str = value.astimezone(client_tz).strftime('%d/%m/%Y %H:%M')
                 historial_comentarios.append(f"Campo '{key}' cambiado de '{old_value_str}' a '{new_value_str}'.")
 
             # Si es el ID del analista, buscamos su nombre
@@ -2775,6 +2780,7 @@ async def delete_item_de_plantilla(
 
 @router.get("/incidencias/activas/recientes", response_model=List[DashboardIncidenciaWidget], summary="Obtener todas las incidencias activas (Optimizado)")
 async def get_recientes_incidencias_activas(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.ANALISTA, UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
@@ -2822,10 +2828,13 @@ async def get_recientes_incidencias_activas(
     
     # Construimos la respuesta manualmente para formatear el último comentario
     response_list = []
+    client_tz = pytz.timezone(get_client_timezone(request))
     for inc, comentario, fecha in result.all():
         widget_item = DashboardIncidenciaWidget.model_validate(inc)
         if comentario and fecha:
-            fecha_str = fecha.strftime('%d/%m %H:%M')
+            # Convertimos a la zona horaria del cliente para que coincida con su PC
+            fecha_local = fecha.astimezone(client_tz)
+            fecha_str = fecha_local.strftime('%d/%m %H:%M')
             widget_item.ultimo_comentario = f"({fecha_str}) {comentario}"
         response_list.append(widget_item)
         
@@ -2893,12 +2902,13 @@ async def get_incidencia_by_id(
     summary="Obtener estadísticas para el Dashboard según el rol del usuario"
 )
 async def get_dashboard_stats(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # Definimos el rango de "hoy" en UTC
-    today_start_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end_utc = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
+    # Definimos el rango de "hoy" relativo a la zona horaria del cliente, pero en UTC
+    client_tz = get_client_timezone(request)
+    today_start_utc, today_end_utc = get_today_range_utc(client_tz)
 
     try:
         # 1. Conteo de "Total Activas" (Común a todos)
@@ -2996,6 +3006,7 @@ async def get_dashboard_stats(
 
 @router.get("/dashboard/alertas-operativas", summary="Obtener alertas de tareas vencidas o próximas")
 async def get_alertas_operativas(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
@@ -3004,9 +3015,10 @@ async def get_alertas_operativas(
     Recupera items de TODAS las campañas donde el analista tenga sesión activa.
     """
     
-    # 1. Definir AHORA en Argentina
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
+    # 1. Definir AHORA en la zona horaria del cliente
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
+    ahora_local = get_now_local(client_tz_name)
     
     # 2. Buscar TODAS las sesiones activas (Cambio Clave: .all() en lugar de .first())
     q_sesiones = select(models.SesionCampana).filter(
@@ -3023,14 +3035,15 @@ async def get_alertas_operativas(
     ids_campanas_activas = [s.campana_id for s in sesiones]
 
     # 3. Buscar las Tareas del día para TODAS esas campañas
-    inicio_dia = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_dia_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_dia_utc = inicio_dia_local.astimezone(pytz.utc)
     
     q_tareas = select(models.Tarea).options(
         selectinload(models.Tarea.campana)
     ).filter(
         models.Tarea.campana_id.in_(ids_campanas_activas), # <--- BUSCAMOS EN LA LISTA
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
+        models.Tarea.fecha_creacion >= inicio_dia_utc
     )
     res_tareas = await db.execute(q_tareas)
     tareas = res_tareas.scalars().all()
@@ -3042,7 +3055,7 @@ async def get_alertas_operativas(
     
     # Configuración para cálculos de tiempo
     dummy_date = datetime(2000, 1, 1)
-    dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
+    dt_actual = dummy_date.replace(hour=ahora_local.hour, minute=ahora_local.minute)
 
     # 4. Iteramos por CADA tarea encontrada (Una por campaña activa)
     for tarea in tareas:
@@ -3090,6 +3103,7 @@ async def get_alertas_operativas(
 @router.post("/incidencias/exportar/", summary="Exporta incidencias filtradas a Excel")
 async def exportar_incidencias(
     filtros: IncidenciaExportFilters,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
@@ -3127,6 +3141,7 @@ async def exportar_incidencias(
 
     # Preparar datos para el DataFrame de Pandas
     datos_para_excel = []
+    client_tz = pytz.timezone(get_client_timezone(request))
     for inc in incidencias:
         # --- CORRECCIÓN AQUÍ: "Comentario de Cierre" con mayúsculas ---
         comentario_cierre = "N/A"
@@ -3148,8 +3163,8 @@ async def exportar_incidencias(
             "Creador": f"{inc.creador.nombre} {inc.creador.apellido}" if inc.creador else "N/A",
             "Asignado a": f"{inc.asignado_a.nombre} {inc.asignado_a.apellido}" if inc.asignado_a else "Sin Asignar",
             "Cerrado por": f"{inc.cerrado_por.nombre} {inc.cerrado_por.apellido}" if inc.cerrado_por else "N/A",
-            "Fecha Apertura": inc.fecha_apertura.strftime("%d-%m-%Y %H:%M") if inc.fecha_apertura else "N/A",
-            "Fecha Cierre": inc.fecha_cierre.strftime("%d-%m-%Y %H:%M") if inc.fecha_cierre else "N/A",
+            "Fecha Apertura": inc.fecha_apertura.astimezone(client_tz).strftime("%d-%m-%Y %H:%M") if inc.fecha_apertura else "N/A",
+            "Fecha Cierre": inc.fecha_cierre.astimezone(client_tz).strftime("%d-%m-%Y %H:%M") if inc.fecha_cierre else "N/A",
             "Herramienta Afectada": inc.herramienta_afectada,
             "Indicador Afectado": inc.indicador_afectado,
             "Descripción": inc.descripcion_inicial,
@@ -3252,6 +3267,7 @@ async def exportar_bitacora(
 
 @router.get("/monitor/tareas", response_model=List[Tarea], summary="Monitor de Cumplimiento (Limpio)")
 async def get_tareas_monitor(
+    request: Request,
     fecha: Optional[date] = None,
     campana_id: Optional[int] = None,
     estado: Optional[ProgresoTarea] = None,
@@ -3259,12 +3275,19 @@ async def get_tareas_monitor(
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE]))
 ):
     # 1. Configuración de Fechas
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
+
     if not fecha:
-        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-        fecha = datetime.now(tz_argentina).date()
+        fecha = get_now_local(client_tz_name).date()
         
-    inicio_dia = datetime.combine(fecha, time.min)
-    fin_dia = datetime.combine(fecha, time.max)
+    # Combinamos la fecha con el inicio y fin del día en la zona horaria del cliente
+    inicio_dia_local = datetime.combine(fecha, time.min)
+    fin_dia_local = datetime.combine(fecha, time.max)
+
+    # Localizamos y convertimos a UTC para la consulta
+    inicio_dia_utc = client_tz.localize(inicio_dia_local).astimezone(pytz.utc)
+    fin_dia_utc = client_tz.localize(fin_dia_local).astimezone(pytz.utc)
 
     # 2. Query Principal (Solo trae lo que EXISTE)
     query = select(models.Tarea).options(
@@ -3276,8 +3299,8 @@ async def get_tareas_monitor(
     )
 
     # 3. Filtros
-    query = query.filter(models.Tarea.fecha_creacion >= inicio_dia)
-    query = query.filter(models.Tarea.fecha_creacion <= fin_dia)
+    query = query.filter(models.Tarea.fecha_creacion >= inicio_dia_utc)
+    query = query.filter(models.Tarea.fecha_creacion <= fin_dia_utc)
 
     if campana_id:
         query = query.filter(models.Tarea.campana_id == campana_id)
@@ -3298,20 +3321,22 @@ async def get_tareas_monitor(
 @router.post("/sesiones/check-in", response_model=SesionActiva, summary="Iniciar gestión en una campaña")
 async def check_in_campana(
     datos: CheckInCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Definir "Hoy" en Argentina para la limpieza de sesiones
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
-    hoy_inicio_arg = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir "Hoy" en la zona horaria del cliente para la limpieza de sesiones
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
+    ahora_local = get_now_local(client_tz_name)
+    hoy_inicio_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
     # Buscamos sesiones abiertas que sean de AYER o antes
     q_zombis = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.fecha_fin.is_(None),
-        models.SesionCampana.fecha_inicio < hoy_inicio_arg
+        models.SesionCampana.fecha_inicio < hoy_inicio_local.astimezone(pytz.utc)
     )
     result_zombis = await db.execute(q_zombis)
     sesiones_zombis = result_zombis.scalars().all()
@@ -3362,7 +3387,7 @@ async def check_in_campana(
     q_tarea_existente = select(models.Tarea).filter(
         models.Tarea.campana_id == datos.campana_id,
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= hoy_inicio
+        models.Tarea.fecha_creacion >= hoy_inicio_local.astimezone(pytz.utc)
     )
     result_tarea = await db.execute(q_tarea_existente)
     tarea_compartida = result_tarea.scalars().first()
@@ -3373,10 +3398,8 @@ async def check_in_campana(
         
     # CASO B: No existe -> LA CREAMOS (Incluso si no tiene items configurados)
     else:
-        # 1. Detectar qué día es HOY en Argentina
-        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-        ahora_arg = datetime.now(tz_argentina)
-        dia_semana_int = ahora_arg.weekday()
+        # 1. Detectar qué día es HOY en la zona horaria del cliente
+        dia_semana_int = ahora_local.weekday()
 
         mapa_dias = {
             0: models.ItemPlantillaChecklist.lunes,
@@ -3406,13 +3429,13 @@ async def check_in_campana(
         # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
         if campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
-            # El vencimiento es al final del día operativo (Argentina)
-            vencimiento_arg = ahora_arg.replace(hour=23, minute=59, second=59, microsecond=999999)
+            # El vencimiento es al final del día operativo local
+            vencimiento_local = ahora_local.replace(hour=23, minute=59, second=59, microsecond=999999)
 
             nueva_tarea = models.Tarea(
                 titulo=nombre_tarea,
                 descripcion="Rutina operativa compartida del día.",
-                fecha_vencimiento=vencimiento_arg, # Se guarda como UTC-aware
+                fecha_vencimiento=vencimiento_local.astimezone(pytz.utc), # Se guarda como UTC-aware
                 fecha_creacion=datetime.now(timezone.utc),
                 progreso=ProgresoTarea.PENDIENTE,
                 analista_id=None,
@@ -3503,19 +3526,22 @@ async def check_out_campana(
 
 @router.get("/sesiones/cobertura", response_model=List[CoberturaCampana], summary="Radar de Cobertura (Con Nombres y Horarios)")
 async def obtener_cobertura_operativa(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(require_role([UserRole.SUPERVISOR, UserRole.RESPONSABLE, UserRole.ANALISTA]))
 ):
-    # 1. Datos de tiempo (Argentina)
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
+    # 1. Datos de tiempo (Local del cliente)
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
+    ahora_local = get_now_local(client_tz_name)
     
     # --- 🕒 DEFINIMOS EL INICIO DEL DÍA (La barrera Anti-Zombis) ---
-    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_dia_hoy_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_dia_hoy_utc = inicio_dia_hoy_local.astimezone(pytz.utc)
     # ---------------------------------------------------------------
     
-    hora_actual = ahora_arg.time()
-    dia_semana = ahora_arg.weekday() 
+    hora_actual = ahora_local.time()
+    dia_semana = ahora_local.weekday()
 
     # 2. Query: Cargamos Campaña -> Sesiones -> Analista
     query = select(models.Campana).options(
@@ -3535,14 +3561,14 @@ async def obtener_cobertura_operativa(
                 continue
                 
             # 2. Verificar que la sesión sea de HOY
-            # Convertimos la fecha de la DB a horario Argentina para comparar
+            # Convertimos la fecha de la DB a horario local para comparar
             if s.fecha_inicio.tzinfo is None:
-                inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(tz_argentina)
+                inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(client_tz)
             else:
-                inicio_local = s.fecha_inicio.astimezone(tz_argentina)
+                inicio_local = s.fecha_inicio.astimezone(client_tz)
 
-            # Solo la contamos si empezó HOY (o después de las 00:00)
-            if inicio_local >= inicio_dia_hoy:
+            # Solo la contamos si empezó HOY (o después de las 00:00 local)
+            if inicio_local >= inicio_dia_hoy_local:
                 sesiones_activas.append(s)
         # -------------------------------------
         
@@ -3605,6 +3631,7 @@ async def obtener_cobertura_operativa(
 
 @router.get("/sesiones/activas", response_model=List[SesionActiva], summary="Ver mis campañas activas (con limpieza automática)")
 async def obtener_mis_sesiones_activas(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
@@ -3616,10 +3643,11 @@ async def obtener_mis_sesiones_activas(
     para generar la rutina del nuevo día.
     """
     
-    # 1. Definir "Hoy" en Argentina (para evitar problemas de UTC)
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
-    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir "Hoy" en el cliente (para evitar problemas de UTC)
+    client_tz_name = get_client_timezone(request)
+    client_tz = pytz.timezone(client_tz_name)
+    ahora_local = get_now_local(client_tz_name)
+    inicio_dia_hoy_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 2. Obtener todas las sesiones "supuestamente" abiertas
     query = select(models.SesionCampana).options(
@@ -3641,16 +3669,14 @@ async def obtener_mis_sesiones_activas(
 
     for sesion in sesiones_abiertas:
         # Convertimos la fecha de inicio de la sesión a la zona horaria local para comparar
-        # Asumimos que la fecha en BD es naive o UTC. Ajusta según tu configuración.
-        # Si guardas en UTC, conviértela a Argentina primero.
         if sesion.fecha_inicio.tzinfo is None:
             # Si viene sin zona horaria, asumimos UTC y convertimos
-            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(tz_argentina)
+            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(client_tz)
         else:
-            inicio_sesion_aware = sesion.fecha_inicio.astimezone(tz_argentina)
+            inicio_sesion_aware = sesion.fecha_inicio.astimezone(client_tz)
 
-        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
-        if inicio_sesion_aware < inicio_dia_hoy:
+        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00 local?
+        if inicio_sesion_aware < inicio_dia_hoy_local:
             # ¡Es una sesión Zombie de ayer! La cerramos.
             sesion.fecha_fin = datetime.now(timezone.utc) # Check-out forzado
             hubo_cierre_automatico = True

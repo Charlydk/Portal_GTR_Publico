@@ -57,7 +57,13 @@ export const fetchWithAuth = async (url, options = {}) => {
     }
 
     // Preparamos los encabezados y realizamos la petición original.
-    const headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+    // Incluimos la zona horaria del cliente en el encabezado X-Timezone.
+    const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`,
+        'X-Timezone': clientTimezone
+    };
     let response = await fetch(url, { ...options, headers });
 
     // CASO 2: El token de acceso existía pero expiró (la API devuelve 401).
@@ -68,7 +74,11 @@ export const fetchWithAuth = async (url, options = {}) => {
         if (!token) throw new Error('La sesión ha expirado. Por favor, inicie sesión.');
 
         // Reintentamos la petición original con el nuevo token.
-        const newHeaders = { ...options.headers, 'Authorization': `Bearer ${token}` };
+        const newHeaders = {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`,
+            'X-Timezone': clientTimezone
+        };
         response = await fetch(url, { ...options, headers: newHeaders });
     }
 
