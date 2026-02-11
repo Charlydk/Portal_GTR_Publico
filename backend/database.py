@@ -16,26 +16,30 @@ if not DATABASE_URL:
     raise ValueError("La variable de entorno DATABASE_URL no está configurada.")
 
 # --- CONFIGURACIÓN DE CONEXIÓN ---
-# Detectamos si estamos usando el Transaction Pooler de Supabase (puerto 6543)
-if ":6543" in DATABASE_URL:
-    # MODO TRANSACTION POOLER (SUPABASE)
-    # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
-    # Usamos NullPool para delegar el pooling completamente a Supabase/PgBouncer.
+# Detectamos si estamos usando Supabase (con o sin pooler)
+if "supabase.com" in DATABASE_URL:
+    # MODO SUPABASE (Optimizado para Render y local)
+    # Para asyncpg con PgBouncer/Supavisor/Pooler, DEBEMOS desactivar prepared statements.
+    # Usamos NullPool para delegar el pooling completamente al servidor.
 
     # Inyectamos el parámetro directamente en la URL para asegurar que el dialecto lo reciba.
-    # Esto evita el TypeError y asegura la desactivación de prepared statements.
     separator = "&" if "?" in DATABASE_URL else "?"
-    db_url_pooler = f"{DATABASE_URL}{separator}prepared_statement_cache_size=0"
+    if "prepared_statement_cache_size" not in DATABASE_URL:
+        db_url = f"{DATABASE_URL}{separator}prepared_statement_cache_size=0"
+    else:
+        db_url = DATABASE_URL
 
     engine = create_async_engine(
-        db_url_pooler,
+        db_url,
         poolclass=NullPool,
         connect_args={
-            "statement_cache_size": 0
+            "statement_cache_size": 0,
+            "command_timeout": 60,
+            "ssl": "require"
         }
     )
 else:
-    # MODO CONEXIÓN DIRECTA O SESSION POOLER
+    # MODO CONEXIÓN ESTÁNDAR
     engine = create_async_engine(
         DATABASE_URL,
         echo=False,
