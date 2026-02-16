@@ -31,7 +31,8 @@ if ":6543" in DATABASE_URL:
         db_url_pooler,
         poolclass=NullPool,
         connect_args={
-            "statement_cache_size": 0
+            "statement_cache_size": 0,
+            "command_timeout": 30
         }
     )
 else:
