@@ -65,17 +65,20 @@ if os.getenv("RENDER"): # Solo se activa en el entorno de Render
     app.add_middleware(HTTPSRedirectMiddleware)
 
 
-origins = [
-    "http://localhost", "http://localhost:3000",
-    "http://127.0.0.1:5174", "http://localhost:5174",
-    "http://127.0.0.1:5173", "http://localhost:5173",
-    "http://127.0.0.1:8000", "https://portal-gtr.onrender.com",
-]
+cors_origins_str = os.getenv("CORS_ORIGINS", "")
+origins = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
+if not origins:
+    origins = [
+        "http://localhost", "http://localhost:3000",
+        "http://127.0.0.1:5174", "http://localhost:5174",
+        "http://127.0.0.1:5173", "http://localhost:5173",
+        "http://127.0.0.1:8000", "https://portal-gtr.onrender.com",
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # Permite los orígenes en la lista
-    allow_credentials=True,      # Permite cookies y encabezados de autorización
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],         # Permite todos los métodos (GET, POST, PUT, etc.)
     allow_headers=["*"],         # Permite todos los encabezados
 )

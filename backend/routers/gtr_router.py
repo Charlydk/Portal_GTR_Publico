@@ -5,15 +5,15 @@ import io
 import bleach
 import pytz
 import traceback
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.models import Campana, AnalistaConCampanas
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, time
 from typing import List, Optional, Union
-from datetime import datetime, date, time
 from sqlalchemy import func, and_
 from sqlalchemy import case, text, select, delete, update
 from ..database import get_db
@@ -1006,7 +1006,7 @@ async def actualizar_tarea(
         db.add(historial_entry)
 
         if tarea_existente.progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA]:
-            tarea_existente.fecha_finalizacion = datetime.utcnow().replace(tzinfo=None)
+            tarea_existente.fecha_finalizacion = datetime.now(timezone.utc)
         elif old_progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA] and \
              tarea_existente.progreso in [ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO]:
             tarea_existente.fecha_finalizacion = None
@@ -1398,14 +1398,15 @@ async def obtener_avisos(
     Muestra los avisos vigentes.
     Visibilidad total.
     """
-    hoy = datetime.now()
+    hoy = datetime.now(timezone.utc)
     
     # Traemos avisos que no hayan vencido (o que no tengan fecha de vencimiento)
+    hoy_utc = datetime.now(timezone.utc)
     query = select(models.Aviso).options(
         selectinload(models.Aviso.creador),
         selectinload(models.Aviso.campana)
     ).filter(
-        (models.Aviso.fecha_vencimiento >= hoy) | (models.Aviso.fecha_vencimiento == None)
+        (models.Aviso.fecha_vencimiento >= hoy_utc) | (models.Aviso.fecha_vencimiento == None)
     ).order_by(models.Aviso.fecha_creacion.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)
@@ -1820,13 +1821,13 @@ async def create_bitacora_entry(
     if not campana_existente_result.scalars().first():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaña no encontrada.")
     
-    # 1. Definimos la zona horaria de referencia
-    tucuman_tz = pytz.timezone("America/Argentina/Tucuman")
-    now_arg = datetime.now(tucuman_tz)
+    # 1. Usamos UTC para consistencia multizona
+    now_utc = datetime.now(timezone.utc)
 
-    # 2. Calculamos la fecha y hora correctas
-    fecha_correcta = now_arg.date()
-    hora_correcta = entry.hora # O usamos now_arg.time() si prefieres la hora del servidor
+    # 2. Calculamos la fecha y hora correctas en UTC
+    fecha_correcta = now_utc.date()
+    # Usamos la hora proporcionada por el entry o la actual en UTC
+    hora_correcta = entry.hora or now_utc.time()
 
     # 3. Verificamos duplicados (Opcional, según tu lógica de negocio)
     # Nota: He simplificado esto para evitar bloqueos si quieres permitir múltiples logs
@@ -1887,7 +1888,7 @@ async def update_bitacora_entry(
     for field, value in update_data.items():
         setattr(db_entry, field, value)
     
-    db_entry.fecha_ultima_actualizacion = datetime.now(pytz.utc)
+    db_entry.fecha_ultima_actualizacion = datetime.now(timezone.utc)
 
     try:
         await db.commit()
@@ -1940,37 +1941,33 @@ async def delete_bitacora_entry(
         )
     return
 
-@router.get("/bitacora/log_de_hoy/{campana_id}", summary="Obtiene el log del día operativo actual (Hora de Argentina)")
+@router.get("/bitacora/log_de_hoy/{campana_id}", summary="Obtiene el log del día operativo actual (Hora UTC)")
 async def get_log_de_hoy(
     campana_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Obtiene las entradas de la bitácora para el día operativo actual,
-    comparando solo la FECHA (Date) en zona horaria Argentina.
+    Obtiene las entradas de la bitácora para el día operativo actual en UTC.
     """
     try:
-        # 1. Configurar Zona Horaria
-        tz_argentina = pytz.timezone("America/Argentina/Buenos_Aires")
+        # 1. Obtener la FECHA de hoy en UTC
+        fecha_hoy_utc = datetime.now(timezone.utc).date()
 
-        # 2. Obtener solo la FECHA de hoy en Argentina (sin hora)
-        fecha_hoy_arg = datetime.now(tz_argentina).date()
-
-        # 3. Consulta usando las columnas correctas: 'fecha' y 'hora'
+        # 2. Consulta usando las columnas correctas: 'fecha' y 'hora'
         query = (
             select(models.BitacoraEntry)
             .options(
                 selectinload(models.BitacoraEntry.autor),
                 selectinload(models.BitacoraEntry.lob),
                 selectinload(models.BitacoraEntry.campana),
-                selectinload(models.BitacoraEntry.incidencia) # Agregamos incidencia por si el front lo pide
+                selectinload(models.BitacoraEntry.incidencia)
             )
             .where(
                 models.BitacoraEntry.campana_id == campana_id,
-                models.BitacoraEntry.fecha == fecha_hoy_arg  # <--- CORRECCIÓN AQUÍ: Usamos .fecha
+                models.BitacoraEntry.fecha == fecha_hoy_utc
             )
             .order_by(
-                models.BitacoraEntry.hora.desc() # Ordenamos por la columna 'hora'
+                models.BitacoraEntry.hora.desc()
             )
         )
         
@@ -2062,7 +2059,20 @@ async def create_incidencia(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     datos_limpios = incidencia_data.model_dump()
-    # ... (tu código para limpiar con bleach)
+
+    # 1. Sanitización de campos de texto
+    campos_a_sanitizar = ['titulo', 'descripcion_inicial', 'herramienta_afectada', 'indicador_afectado']
+    for campo in campos_a_sanitizar:
+        if datos_limpios.get(campo):
+            datos_limpios[campo] = bleach.clean(datos_limpios[campo])
+
+    # 2. Manejo de fecha_apertura: si es nula, usamos la hora actual en UTC
+    if not datos_limpios.get("fecha_apertura"):
+        datos_limpios["fecha_apertura"] = datetime.now(timezone.utc)
+    else:
+        # Si ya tiene fecha, nos aseguramos que sea timezone-aware
+        if datos_limpios["fecha_apertura"].tzinfo is None:
+            datos_limpios["fecha_apertura"] = datos_limpios["fecha_apertura"].replace(tzinfo=timezone.utc)
 
     lob_ids = datos_limpios.pop("lob_ids", [])
     db_incidencia = models.Incidencia(**datos_limpios,
@@ -2135,7 +2145,7 @@ async def update_incidencia(
             if isinstance(value, datetime):
                 # Aseguramos que el valor antiguo tenga zona horaria para poder convertirlo
                 if old_value:
-                    old_value_aware = old_value.astimezone(pytz.utc) if old_value.tzinfo is None else old_value
+                    old_value_aware = old_value.astimezone(timezone.utc) if old_value.tzinfo is None else old_value
                     old_value_str = old_value_aware.astimezone(tz_argentina).strftime('%d/%m/%Y %H:%M')
                 else:
                     old_value_str = "N/A"
@@ -2588,7 +2598,7 @@ async def update_tarea_generada_por_aviso(
         db.add(historial_entry)
 
         if tarea_existente.progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA]:
-            tarea_existente.fecha_finalizacion = datetime.utcnow().replace(tzinfo=None)
+            tarea_existente.fecha_finalizacion = datetime.now(timezone.utc)
         elif old_progreso in [ProgresoTarea.COMPLETADA, ProgresoTarea.CANCELADA] and \
              tarea_existente.progreso in [ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO]:
             tarea_existente.fecha_finalizacion = None
@@ -2896,31 +2906,36 @@ async def get_dashboard_stats(
     current_analista: models.Analista = Depends(get_current_analista)
 ):
     # Definimos el rango de "hoy" en UTC
-    today_start_utc = datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end_utc = datetime.now(pytz.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
+    today_start_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end_utc = datetime.now(timezone.utc).replace(hour=23, minute=59, second=59, microsecond=999999)
 
     try:
-        # 1. Conteo de "Total Activas" (Común a todos)
+        # 1. Conteo de "Total Activas"
         query_activas = select(func.count(models.Incidencia.id)).filter(
             models.Incidencia.estado.in_([EstadoIncidencia.ABIERTA, EstadoIncidencia.EN_PROGRESO])
         )
+
+        # 2. Conteo de "Sin Asignar"
+        unassigned_query = select(func.count(models.Incidencia.id)).filter(
+            models.Incidencia.estado == EstadoIncidencia.ABIERTA,
+            models.Incidencia.asignado_a_id.is_(None)
+        )
+
+        # Ejecución secuencial para respetar la limitación de AsyncSession
         res_activas = await db.execute(query_activas)
         total_activas = res_activas.scalar_one()
 
-        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
-            # Conteo de "Sin Asignar"
-            unassigned_query = select(func.count(models.Incidencia.id)).filter(
-                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-                models.Incidencia.asignado_a_id.is_(None)
-            )
-            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
+        res_unassigned = await db.execute(unassigned_query)
+        unassigned_count = res_unassigned.scalar_one()
 
-            # Conteo de "Cerradas Hoy" (por cualquier analista)
+        if current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]:
+            # 3. Conteo de "Cerradas Hoy" (por cualquier analista)
             closed_today_query = select(func.count(models.Incidencia.id)).filter(
                 models.Incidencia.estado == EstadoIncidencia.CERRADA,
                 models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
             )
-            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
+            res_closed = await db.execute(closed_today_query)
+            closed_today_count = res_closed.scalar_one()
 
             return DashboardStatsSupervisor(
                 total_incidencias_activas=total_activas,
@@ -2929,31 +2944,24 @@ async def get_dashboard_stats(
             )
 
         elif current_analista.role == UserRole.ANALISTA:
-            # Conteo de "Sin Asignar" (no cambia)
-            unassigned_query = select(func.count(models.Incidencia.id)).filter(
-                models.Incidencia.estado == EstadoIncidencia.ABIERTA,
-                models.Incidencia.asignado_a_id.is_(None)
-            )
-            unassigned_count = (await db.execute(unassigned_query)).scalar_one()
-
-            # Conteo de "Mis Incidencias Asignadas" (no cambia)
+            # 3. Conteo de "Mis Incidencias Asignadas"
             my_assigned_query = select(func.count(models.Incidencia.id)).filter(
                 models.Incidencia.asignado_a_id == current_analista.id,
                 models.Incidencia.estado == EstadoIncidencia.EN_PROGRESO
             )
-            my_assigned_count = (await db.execute(my_assigned_query)).scalar_one()
+            res_my_assigned = await db.execute(my_assigned_query)
+            my_assigned_count = res_my_assigned.scalar_one()
 
-            # --- INICIO DE LA NUEVA LÓGICA ---
-            # Conteo de incidencias CERRADAS HOY por el analista actual
+            # 4. Conteo de incidencias CERRADAS HOY por el analista actual
             closed_today_query = select(func.count(models.Incidencia.id)).filter(
                 models.Incidencia.estado == EstadoIncidencia.CERRADA,
                 models.Incidencia.cerrado_por_id == current_analista.id,
                 models.Incidencia.fecha_cierre.between(today_start_utc, today_end_utc)
             )
-            closed_today_count = (await db.execute(closed_today_query)).scalar_one()
-            # --- FIN DE LA NUEVA LÓGICA ---
+            res_closed = await db.execute(closed_today_query)
+            closed_today_count = res_closed.scalar_one()
 
-            # Lista de incidencias para la tabla central
+            # 5. Lista de incidencias para la tabla central
             incidencias_query = select(models.Incidencia).options(
                 selectinload(models.Incidencia.campana),
                 selectinload(models.Incidencia.asignado_a),
@@ -2967,8 +2975,8 @@ async def get_dashboard_stats(
                 ),
                 models.Incidencia.estado != EstadoIncidencia.CERRADA
             ).order_by(models.Incidencia.fecha_apertura.desc())
-            incidencias_result = await db.execute(incidencias_query)
-            incidencias_list = incidencias_result.scalars().unique().all()
+            res_incidencias = await db.execute(incidencias_query)
+            incidencias_list = res_incidencias.scalars().unique().all()
 
             return DashboardStatsAnalista(
                 total_incidencias_activas=total_activas,
@@ -3029,7 +3037,7 @@ async def get_alertas_operativas(
     ).filter(
         models.Tarea.campana_id.in_(ids_campanas_activas), # <--- BUSCAMOS EN LA LISTA
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
+        models.Tarea.fecha_creacion >= inicio_dia.astimezone(timezone.utc)
     )
     res_tareas = await db.execute(q_tareas)
     tareas = res_tareas.scalars().all()
@@ -3043,43 +3051,44 @@ async def get_alertas_operativas(
     dummy_date = datetime(2000, 1, 1)
     dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
 
-    # 4. Iteramos por CADA tarea encontrada (Una por campaña activa)
-    for tarea in tareas:
-        # Traer ítems pendientes con hora para ESTA tarea específica
-        q_items = select(models.ChecklistItem).filter(
-            models.ChecklistItem.tarea_id == tarea.id,
-            models.ChecklistItem.completado == False,
-            models.ChecklistItem.hora_sugerida.is_not(None)
-        )
-        
-        res_items = await db.execute(q_items)
-        items = res_items.scalars().all()
+    # 4. Traer ítems pendientes con hora para TODAS las tareas encontradas en una sola consulta
+    ids_tareas = [tarea.id for tarea in tareas]
+    q_items = select(models.ChecklistItem).options(
+        selectinload(models.ChecklistItem.tarea).selectinload(models.Tarea.campana)
+    ).filter(
+        models.ChecklistItem.tarea_id.in_(ids_tareas),
+        models.ChecklistItem.completado == False,
+        models.ChecklistItem.hora_sugerida.is_not(None)
+    )
 
-        # Procesamos los ítems de esta tarea
-        for item in items:
-            hora_item = item.hora_sugerida
-            dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
-            
-            diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
-            
-            estado = None
-            # LÓGICA DEL SEMÁFORO
-            if diferencia_minutos > 15:
-                estado = "CRITICO" 
-            elif 0 <= diferencia_minutos <= 15:
-                estado = "EN_CURSO"
-            elif -45 <= diferencia_minutos < 0:
-                estado = "ATENCION"
-            
-            if estado:
-                alertas.append({
-                    "id": item.id,
-                    "descripcion": item.descripcion,
-                    "hora": hora_item.strftime("%H:%M"),
-                    "tipo": estado,
-                    "tarea_id": tarea.id,
-                    "campana_nombre": tarea.campana.nombre # Nombre correcto de la campaña
-                })
+    res_items = await db.execute(q_items)
+    items = res_items.scalars().all()
+
+    # Procesamos los ítems
+    for item in items:
+        hora_item = item.hora_sugerida
+        dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
+
+        diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
+
+        estado = None
+        # LÓGICA DEL SEMÁFORO
+        if diferencia_minutos > 15:
+            estado = "CRITICO"
+        elif 0 <= diferencia_minutos <= 15:
+            estado = "EN_CURSO"
+        elif -45 <= diferencia_minutos < 0:
+            estado = "ATENCION"
+
+        if estado:
+            alertas.append({
+                "id": item.id,
+                "descripcion": item.descripcion,
+                "hora": hora_item.strftime("%H:%M"),
+                "tipo": estado,
+                "tarea_id": item.tarea_id,
+                "campana_nombre": item.tarea.campana.nombre # Nombre correcto de la campaña
+            })
 
     # 5. Ordenamos TODAS las alertas por hora
     alertas.sort(key=lambda x: x['hora'])
@@ -3259,7 +3268,7 @@ async def get_tareas_monitor(
 ):
     # 1. Configuración de Fechas
     if not fecha:
-        fecha = datetime.now().date()
+        fecha = datetime.now(timezone.utc).date()
         
     inicio_dia = datetime.combine(fecha, time.min)
     fin_dia = datetime.combine(fecha, time.max)
@@ -3299,80 +3308,73 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Definir "Hoy" (Inicio del día a las 00:00)
-    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir "Hoy" (Inicio del día a las 00:00) en UTC
+    now_utc = datetime.now(timezone.utc)
+    hoy_inicio_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
-    # Buscamos sesiones abiertas que sean de AYER o antes
-    q_zombis = select(models.SesionCampana).filter(
+    # --- FASE 1: LIMPIEZA DE ZOMBIS Y VERIFICACIÓN DE SESIÓN EXISTENTE ---
+    # Obtenemos todas las sesiones abiertas del analista para procesarlas de una vez
+    query_sesiones = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
-        models.SesionCampana.fecha_fin.is_(None),
-        models.SesionCampana.fecha_inicio < hoy_inicio
-    )
-    result_zombis = await db.execute(q_zombis)
-    sesiones_zombis = result_zombis.scalars().all()
-
-    if sesiones_zombis:
-        print(f"🧹 Limpiando {len(sesiones_zombis)} sesiones zombis de {current_analista.email}")
-        for zombi in sesiones_zombis:
-            # Cerramos con fecha de ayer al final del día
-            fin_dia_zombi = zombi.fecha_inicio.replace(hour=23, minute=59, second=59)
-            zombi.fecha_fin = fin_dia_zombi
-            db.add(zombi)
-        await db.commit() # Guardamos la limpieza antes de seguir
-
-    # --- FASE 2: VERIFICACIÓN ESPECÍFICA (Solo la campaña solicitada) ---
-    # Ahora buscamos si ya estoy activo EN LA CAMPAÑA QUE PIDO
-    query_target = select(models.SesionCampana).filter(
-        models.SesionCampana.analista_id == current_analista.id,
-        models.SesionCampana.campana_id == datos.campana_id,
         models.SesionCampana.fecha_fin.is_(None)
     )
-    result_target = await db.execute(query_target)
-    sesion_existente = result_target.scalars().first()
+    result_sesiones = await db.execute(query_sesiones)
+    sesiones_abiertas = result_sesiones.scalars().all()
 
-    # Si ya estoy activo en esta campaña hoy, simplemente devuelvo esa sesión
-    if sesion_existente:
+    sesion_activa_hoy = None
+    hubo_limpieza = False
+
+    for s in sesiones_abiertas:
+        # Si la sesión es de días anteriores (Zombie), la cerramos
+        if s.fecha_inicio < hoy_inicio_utc:
+            # Cerramos con fecha de ayer al final del día (aprox)
+            s.fecha_fin = s.fecha_inicio.replace(hour=23, minute=59, second=59)
+            hubo_limpieza = True
+        # Si ya hay una sesión activa para esta campaña hoy
+        elif s.campana_id == datos.campana_id:
+            sesion_activa_hoy = s
+
+    if hubo_limpieza:
+        await db.flush()
+
+    # Si ya estoy activo en esta campaña hoy, devolvemos esa sesión
+    if sesion_activa_hoy:
+        if hubo_limpieza:
+            await db.commit()
         result_full = await db.execute(
             select(models.SesionCampana).options(
                 selectinload(models.SesionCampana.campana).options(
                     selectinload(models.Campana.lobs),
                     selectinload(models.Campana.analistas_asignados)
                 )
-            ).filter(models.SesionCampana.id == sesion_existente.id)
+            ).filter(models.SesionCampana.id == sesion_activa_hoy.id)
         )
         return result_full.scalars().first()
 
-    # --- FASE 3: CREACIÓN DE NUEVA SESIÓN ---
-    # Si llegamos aquí, es porque NO tengo sesión activa en esta campaña
+    # --- FASE 2: CREACIÓN DE NUEVA SESIÓN ---
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
         campana_id=datos.campana_id,
-        fecha_inicio=datetime.now()
+        fecha_inicio=now_utc
     )
     db.add(nueva_sesion)
-    await db.commit()
-    await db.refresh(nueva_sesion) 
+    # Usamos flush para tener el ID sin terminar la transacción aún
+    await db.flush()
     
-    # --- FASE 4: GENERACIÓN DE RUTINA (Lógica Colaborativa) ---
+    # --- FASE 3: GENERACIÓN DE RUTINA (LÓGICA COLABORATIVA) ---
     q_tarea_existente = select(models.Tarea).filter(
         models.Tarea.campana_id == datos.campana_id,
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= hoy_inicio
+        models.Tarea.fecha_creacion >= hoy_inicio_utc
     )
     result_tarea = await db.execute(q_tarea_existente)
     tarea_compartida = result_tarea.scalars().first()
 
-    # CASO A: Ya existe la rutina -> Nos unimos (No hacemos nada, ya tenemos sesión)
-    if tarea_compartida:
-        print(f"🔄 Se une a Rutina existente ID {tarea_compartida.id}.")
-        
-    # CASO B: No existe -> LA CREAMOS (Incluso si no tiene items configurados)
-    else:
-        # 1. Detectar qué día es HOY en Argentina
-        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-        ahora_arg = datetime.now(tz_argentina)
-        dia_semana_int = ahora_arg.weekday()
+    if not tarea_compartida:
+        # Detectar qué día es HOY en la zona horaria de la operación (Argentina por defecto)
+        tz_local = pytz.timezone("America/Argentina/Tucuman")
+        ahora_local = datetime.now(tz_local)
+        dia_semana_int = ahora_local.weekday()
 
         mapa_dias = {
             0: models.ItemPlantillaChecklist.lunes,
@@ -3385,62 +3387,61 @@ async def check_in_campana(
         }
         columna_dia_hoy = mapa_dias[dia_semana_int]
 
-        # 2. Traer items activos para HOY
+        # 1. Traer items activos para HOY y la Campaña
         q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
             models.ItemPlantillaChecklist.campana_id == datos.campana_id,
             columna_dia_hoy == True
         ).order_by(models.ItemPlantillaChecklist.orden)
 
-        res_items = await db.execute(q_items_plantilla)
-        items_plantilla = res_items.scalars().all()
-
-        # 3. Buscar la campaña para el nombre
+        # 2. Buscar la campaña para el nombre
         q_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
+
+        # Ejecución secuencial para respetar la limitación de AsyncSession
+        res_items = await db.execute(q_items_plantilla)
         res_campana = await db.execute(q_campana)
+
+        items_plantilla = res_items.scalars().all()
         campana_obj = res_campana.scalars().first()
 
-        # --- CORRECCIÓN: Creamos la tarea SIEMPRE que exista la campaña ---
         if campana_obj:
             nombre_tarea = f"Rutina Diaria - {campana_obj.nombre}"
-            vencimiento_naive = ahora_arg.replace(hour=23, minute=59, second=59, tzinfo=None)
+            # Vencimiento al final del día local, guardado como UTC
+            vencimiento_local = ahora_local.replace(hour=23, minute=59, second=59, microsecond=0)
+            vencimiento_utc = vencimiento_local.astimezone(timezone.utc)
 
             nueva_tarea = models.Tarea(
                 titulo=nombre_tarea,
                 descripcion="Rutina operativa compartida del día.",
-                fecha_vencimiento=vencimiento_naive,
-                fecha_creacion=datetime.now(),
+                fecha_vencimiento=vencimiento_utc,
+                fecha_creacion=now_utc,
                 progreso=ProgresoTarea.PENDIENTE,
                 analista_id=None,
                 campana_id=datos.campana_id,
                 es_generada_automaticamente=True
             )
             db.add(nueva_tarea)
-            await db.flush() # Obtenemos ID para insertar los items hijos
+            await db.flush()
 
-            # Insertamos los items (si existen)
             for item in items_plantilla:
-                nuevo_checklist_item = models.ChecklistItem(
+                db.add(models.ChecklistItem(
                     descripcion=item.descripcion,
                     completado=False,
                     tarea_id=nueva_tarea.id,
                     hora_sugerida=item.hora_sugerida
-                )
-                db.add(nuevo_checklist_item)
+                ))
 
-            await db.commit()
-            
             # Historial de creación
-            historial = models.HistorialEstadoTarea(
+            db.add(models.HistorialEstadoTarea(
                 old_progreso=None,
                 new_progreso=ProgresoTarea.PENDIENTE,
                 changed_by=current_analista.id,
-                tarea=nueva_tarea,  # ✅ Usamos la relación
-                timestamp=datetime.now()
-            )
-            db.add(historial)
-            await db.commit()
+                tarea=nueva_tarea,
+                timestamp=now_utc
+            ))
 
-    # 5. Devolver sesión final
+    await db.commit()
+
+    # 4. Devolver sesión final con relaciones cargadas
     result_final = await db.execute(
         select(models.SesionCampana).options(
             selectinload(models.SesionCampana.campana).options(
@@ -3490,7 +3491,7 @@ async def check_out_campana(
         raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
 
     # Cerrar sesión
-    sesion.fecha_fin = datetime.now()
+    sesion.fecha_fin = datetime.now(timezone.utc)
     await db.commit()
     
     return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
@@ -3531,7 +3532,7 @@ async def obtener_cobertura_operativa(
             # 2. Verificar que la sesión sea de HOY
             # Convertimos la fecha de la DB a horario Argentina para comparar
             if s.fecha_inicio.tzinfo is None:
-                inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(tz_argentina)
+                inicio_local = s.fecha_inicio.replace(tzinfo=timezone.utc).astimezone(tz_argentina)
             else:
                 inicio_local = s.fecha_inicio.astimezone(tz_argentina)
 
@@ -3605,15 +3606,13 @@ async def obtener_mis_sesiones_activas(
     """
     Devuelve la lista de campañas donde el analista está haciendo check-in actualmente.
     
-    Si detecta que hay una sesión abierta pero su fecha de inicio no es de HOY,
-    la cierra automáticamente. Esto obliga al usuario a volver a elegir campaña
-    para generar la rutina del nuevo día.
+    Si detecta que hay una sesión abierta pero su fecha de inicio no es de HOY (en UTC),
+    la cierra automáticamente.
     """
     
-    # 1. Definir "Hoy" en Argentina (para evitar problemas de UTC)
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
-    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir "Hoy" en UTC
+    now_utc = datetime.now(timezone.utc)
+    inicio_dia_hoy_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 2. Obtener todas las sesiones "supuestamente" abiertas
     query = select(models.SesionCampana).options(
@@ -3634,21 +3633,17 @@ async def obtener_mis_sesiones_activas(
     hubo_cierre_automatico = False
 
     for sesion in sesiones_abiertas:
-        # Convertimos la fecha de inicio de la sesión a la zona horaria local para comparar
-        # Asumimos que la fecha en BD es naive o UTC. Ajusta según tu configuración.
-        # Si guardas en UTC, conviértela a Argentina primero.
-        if sesion.fecha_inicio.tzinfo is None:
-            # Si viene sin zona horaria, asumimos UTC y convertimos
-            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(tz_argentina)
-        else:
-            inicio_sesion_aware = sesion.fecha_inicio.astimezone(tz_argentina)
+        # Nos aseguramos de que la fecha de inicio sea aware para la comparación
+        inicio_sesion_aware = sesion.fecha_inicio
+        if inicio_sesion_aware.tzinfo is None:
+            inicio_sesion_aware = inicio_sesion_aware.replace(tzinfo=timezone.utc)
 
-        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
-        if inicio_sesion_aware < inicio_dia_hoy:
-            # ¡Es una sesión Zombie de ayer! La cerramos.
-            sesion.fecha_fin = datetime.now() # Check-out forzado
+        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00 UTC?
+        if inicio_sesion_aware < inicio_dia_hoy_utc:
+            # ¡Es una sesión Zombie! La cerramos.
+            sesion.fecha_fin = now_utc # Check-out forzado
             hubo_cierre_automatico = True
-            print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer para {current_analista.email} en campaña {sesion.campana.nombre}")
+            print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer (UTC) para {current_analista.email} en campaña {sesion.campana.nombre}")
         else:
             # Es de hoy, es válida.
             sesiones_validas.append(sesion)

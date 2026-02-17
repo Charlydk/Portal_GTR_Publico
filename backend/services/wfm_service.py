@@ -91,24 +91,40 @@ class WFMService:
     ) -> dict:
         """
         Guarda o actualiza múltiples planificaciones en una sola transacción.
+        Optimizado para evitar múltiples consultas a la base de datos.
         """
+        if not planificaciones:
+            return {"created": 0, "updated": 0}
+
+        # 1. Recolectar criterios de búsqueda para traer existentes en un solo lote
+        analista_ids = list(set(p.analista_id for p in planificaciones))
+        fechas = list(set(p.fecha for p in planificaciones))
+
+        query = select(models.PlanificacionDiaria).where(
+            models.PlanificacionDiaria.analista_id.in_(analista_ids),
+            models.PlanificacionDiaria.fecha.in_(fechas)
+        )
+        res = await db.execute(query)
+        existentes = res.scalars().all()
+
+        # Mapa para búsqueda rápida: {(analista_id, fecha): objeto_db}
+        mapa_existentes = {(e.analista_id, e.fecha): e for e in existentes}
+
         count_created = 0
         count_updated = 0
 
+        # 2. Procesar cada planificación
         for p_data in planificaciones:
-            # Buscar existente
-            query = select(models.PlanificacionDiaria).where(
-                models.PlanificacionDiaria.analista_id == p_data.analista_id,
-                models.PlanificacionDiaria.fecha == p_data.fecha
-            )
-            res = await db.execute(query)
-            db_p = res.scalars().first()
+            clave = (p_data.analista_id, p_data.fecha)
+            db_p = mapa_existentes.get(clave)
 
             if db_p:
+                # Actualizar existente
                 for key, value in p_data.model_dump().items():
                     setattr(db_p, key, value)
                 count_updated += 1
             else:
+                # Crear nuevo
                 db_p = models.PlanificacionDiaria(**p_data.model_dump())
                 db_p.creado_por_id = user_id
                 db.add(db_p)

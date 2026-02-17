@@ -1,8 +1,9 @@
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import update, or_
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import timezone, datetime
 from ..sql_app import models
 from ..enums import ProgresoTarea, UserRole
 
@@ -21,7 +22,7 @@ class TareaService:
 
     @staticmethod
     async def _ejecutar_limpieza(db: AsyncSession):
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         query_limpieza = (
             update(models.Tarea)
             .where(
@@ -78,14 +79,17 @@ class TareaService:
         if analista.role == UserRole.ANALISTA:
             from ..sql_app.models import analistas_campanas, SesionCampana
             q_asignadas = select(analistas_campanas.c.campana_id).where(analistas_campanas.c.analista_id == analista.id)
-            res_asignadas = await db.execute(q_asignadas)
-            ids_asignadas = res_asignadas.scalars().all()
 
             q_sesiones = select(SesionCampana.campana_id).filter(
                 SesionCampana.analista_id == analista.id,
                 SesionCampana.fecha_fin.is_(None)
             )
+
+            # Ejecución secuencial para respetar la limitación de AsyncSession
+            res_asignadas = await db.execute(q_asignadas)
             res_sesiones = await db.execute(q_sesiones)
+
+            ids_asignadas = res_asignadas.scalars().all()
             ids_sesiones = res_sesiones.scalars().all()
 
             ids_totales = list(set(ids_asignadas + ids_sesiones))
