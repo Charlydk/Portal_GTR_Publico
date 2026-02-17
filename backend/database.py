@@ -16,15 +16,10 @@ if not DATABASE_URL:
     raise ValueError("La variable de entorno DATABASE_URL no está configurada.")
 
 # --- CONFIGURACIÓN DE CONEXIÓN ---
-# Detectamos si estamos usando el Pooler de Supabase (puerto 6543 o dominio .pooler.supabase.com)
-if ":6543" in DATABASE_URL or ".pooler.supabase.com" in DATABASE_URL:
-    # MODO POOLER (SUPABASE)
-    # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
-    # Usamos NullPool para delegar el pooling completamente a Supabase/PgBouncer si es Transaction Mode,
-    # o para evitar conflictos de estado en Session Mode si hay muchos usuarios.
-
-    # Inyectamos el parámetro directamente en la URL para asegurar que el dialecto lo reciba.
-    # Esto evita el TypeError y asegura la desactivación de prepared statements.
+# Detectamos si estamos usando el Pooler de Supabase en modo Transacción (puerto 6543)
+if ":6543" in DATABASE_URL:
+    # MODO TRANSACTION POOLER (SUPABASE PORT 6543)
+    # Para Transaction Mode, DEBEMOS usar NullPool y desactivar prepared statements.
     separator = "&" if "?" in DATABASE_URL else "?"
     db_url_pooler = f"{DATABASE_URL}{separator}prepared_statement_cache_size=0"
 
@@ -33,7 +28,26 @@ if ":6543" in DATABASE_URL or ".pooler.supabase.com" in DATABASE_URL:
         poolclass=NullPool,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 60  # Aumentamos el tiempo de espera para evitar TimeoutError
+            "command_timeout": 60
+        }
+    )
+elif ".pooler.supabase.com" in DATABASE_URL:
+    # MODO SESSION POOLER (SUPABASE PORT 5432 O DOMINIO POOLER)
+    # Usamos un pool real para mejor rendimiento, pero mantenemos desactivados los prepared statements
+    # por seguridad con el pooler.
+    separator = "&" if "?" in DATABASE_URL else "?"
+    db_url_pooler = f"{DATABASE_URL}{separator}prepared_statement_cache_size=0"
+
+    engine = create_async_engine(
+        db_url_pooler,
+        pool_size=10,
+        max_overflow=5,
+        pool_timeout=30,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+        connect_args={
+            "statement_cache_size": 0,
+            "command_timeout": 60
         }
     )
 else:
