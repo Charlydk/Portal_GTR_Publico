@@ -1,0 +1,1 @@
+al registrar una incidencia el check de guardar hora actual realmente no guarda y la fecha y hora queda como N/A.

@@ -75,7 +75,7 @@ function FormularioIncidencia({
             if (isEditing) {
                 payload.fecha_apertura = new Date().toISOString();
             } else {
-                delete payload.fecha_apertura;
+                payload.fecha_apertura = new Date().toISOString();
             }
         }
         

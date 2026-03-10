@@ -2065,6 +2065,10 @@ async def create_incidencia(
     # ... (tu código para limpiar con bleach)
 
     lob_ids = datos_limpios.pop("lob_ids", [])
+    
+    if datos_limpios.get("fecha_apertura") is None:
+        datos_limpios["fecha_apertura"] = datetime.now(timezone.utc)
+        
     db_incidencia = models.Incidencia(**datos_limpios,
                                     creador_id=current_analista.id,
                                     asignado_a_id=current_analista.id,
@@ -2161,7 +2165,8 @@ async def update_incidencia(
         nueva_actualizacion = models.ActualizacionIncidencia(
             comentario=comentario_texto,
             incidencia_id=incidencia_id,
-            autor_id=current_analista.id
+            autor_id=current_analista.id,
+            fecha_actualizacion=datetime.now(timezone.utc)
         )
         db.add(nueva_actualizacion)
 
@@ -2253,7 +2258,8 @@ async def add_actualizacion_incidencia(
     db_actualizacion = models.ActualizacionIncidencia(
         comentario=comentario_limpio,
         incidencia_id=incidencia_id,
-        autor_id=current_analista.id
+        autor_id=current_analista.id,
+        fecha_actualizacion=datetime.now(timezone.utc)
     )
     
     # 3. Guardamos el objeto limpio en la base de datos
@@ -2287,7 +2293,8 @@ async def update_incidencia_estado(
     actualizacion_estado = models.ActualizacionIncidencia(
         comentario=comentario_cambio_estado,
         incidencia_id=incidencia_id,
-        autor_id=current_analista.id
+        autor_id=current_analista.id,
+        fecha_actualizacion=datetime.now(timezone.utc)
     )
     db.add(actualizacion_estado)
 
@@ -2295,8 +2302,8 @@ async def update_incidencia_estado(
     db_incidencia.estado = update_data.estado
 
     if update_data.estado == EstadoIncidencia.CERRADA:
-        # Usamos la función now() de la base de datos para asegurar el formato UTC correcto
-        db_incidencia.fecha_cierre = update_data.fecha_cierre or func.now()
+        # Usamos datetime.now(timezone.utc) para asegurar que se retorna correctamente de la bd y no como null.
+        db_incidencia.fecha_cierre = update_data.fecha_cierre or datetime.now(timezone.utc)
         db_incidencia.asignado_a_id = None
         # Esta es la asignación clave que estaba fallando
         db_incidencia.cerrado_por_id = current_analista.id
@@ -2307,7 +2314,8 @@ async def update_incidencia_estado(
             actualizacion_cierre = models.ActualizacionIncidencia(
                 comentario=texto_comentario_cierre,
                 incidencia_id=incidencia_id,
-                autor_id=current_analista.id
+                autor_id=current_analista.id,
+                fecha_actualizacion=datetime.now(timezone.utc)
             )
             db.add(actualizacion_cierre)
 
@@ -2360,7 +2368,8 @@ async def asignar_incidencia_a_usuario_actual(
     nueva_actualizacion = models.ActualizacionIncidencia(
         comentario=comentario,
         incidencia_id=incidencia_id,
-        autor_id=current_analista.id
+        autor_id=current_analista.id,
+        fecha_actualizacion=datetime.now(timezone.utc)
     )
     db.add(nueva_actualizacion)
 
