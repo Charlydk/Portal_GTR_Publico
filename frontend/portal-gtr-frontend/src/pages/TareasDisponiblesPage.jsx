@@ -49,12 +49,12 @@ const TareasDisponiblesPage = () => {
 
                     if (!esVisible) return false;
 
-                    // B. Filtro de FECHA (La magia para mostrar solo lo del día seleccionado)
-                    // Convertimos la fecha de creación de la tarea a string YYYY-MM-DD en hora Argentina
+                    // B. Filtro de FECHA (Mostramos solo lo del día seleccionado)
                     const fechaTareaStr = new Date(t.fecha_creacion).toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Tucuman' });
                     
                     return fechaTareaStr === fechaFiltro;
                 });
+
                 
                 // 3. Ordenar
                 misTareas.sort((a, b) => {

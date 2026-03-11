@@ -45,7 +45,9 @@ class TareaService:
         )
         if estado:
             query = query.filter(models.Tarea.progreso == estado)
-        query = query.order_by(models.Tarea.fecha_vencimiento.asc(), models.Tarea.fecha_creacion.desc())
+        # Ordenamos por fecha_creacion DESC para que las tareas más recientes (hoy)
+        # aparezcan primero dentro del límite de paginación.
+        query = query.order_by(models.Tarea.fecha_creacion.desc())
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         return result.scalars().all()

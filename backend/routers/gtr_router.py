@@ -3308,15 +3308,17 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # 1. Definir "Hoy" (Inicio del día a las 00:00)
+    # 1. Definir "Hoy" en hora LOCAL naive (para comparar con fecha_creacion de tarea que es naive)
     hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Para la sesión (UTC-aware usamos timezone.utc)
+    hoy_inicio_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
     # --- FASE 1: LIMPIEZA DE ZOMBIS (De cualquier campaña) ---
     # Buscamos sesiones abiertas que sean de AYER o antes
     q_zombis = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
         models.SesionCampana.fecha_fin.is_(None),
-        models.SesionCampana.fecha_inicio < hoy_inicio
+        models.SesionCampana.fecha_inicio < hoy_inicio_utc
     )
     result_zombis = await db.execute(q_zombis)
     sesiones_zombis = result_zombis.scalars().all()
@@ -3357,7 +3359,7 @@ async def check_in_campana(
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
         campana_id=datos.campana_id,
-        fecha_inicio=datetime.now()
+        fecha_inicio=datetime.now(timezone.utc)  # Guardamos siempre en UTC
     )
     db.add(nueva_sesion)
     await db.commit()
@@ -3417,7 +3419,7 @@ async def check_in_campana(
                 titulo=nombre_tarea,
                 descripcion="Rutina operativa compartida del día.",
                 fecha_vencimiento=vencimiento_naive,
-                fecha_creacion=datetime.now(),
+                fecha_creacion=datetime.now(),  # naive - consistente con el resto del sistema
                 progreso=ProgresoTarea.PENDIENTE,
                 analista_id=None,
                 campana_id=datos.campana_id,
@@ -3619,10 +3621,8 @@ async def obtener_mis_sesiones_activas(
     para generar la rutina del nuevo día.
     """
     
-    # 1. Definir "Hoy" en Argentina (para evitar problemas de UTC)
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
-    inicio_dia_hoy = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 1. Definir inicio de "Hoy" en UTC (consistente con cómo guardamos las sesiones)
+    inicio_dia_hoy_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 2. Obtener todas las sesiones "supuestamente" abiertas
     query = select(models.SesionCampana).options(
@@ -3643,19 +3643,17 @@ async def obtener_mis_sesiones_activas(
     hubo_cierre_automatico = False
 
     for sesion in sesiones_abiertas:
-        # Convertimos la fecha de inicio de la sesión a la zona horaria local para comparar
-        # Asumimos que la fecha en BD es naive o UTC. Ajusta según tu configuración.
-        # Si guardas en UTC, conviértela a Argentina primero.
+        # Normalizar fecha_inicio a UTC para comparar de forma consistente
         if sesion.fecha_inicio.tzinfo is None:
-            # Si viene sin zona horaria, asumimos UTC y convertimos
-            inicio_sesion_aware = pytz.utc.localize(sesion.fecha_inicio).astimezone(tz_argentina)
+            # Fecha naive: la tratamos como UTC (es como la guardamos desde el fix)
+            inicio_sesion_utc = sesion.fecha_inicio.replace(tzinfo=timezone.utc)
         else:
-            inicio_sesion_aware = sesion.fecha_inicio.astimezone(tz_argentina)
+            inicio_sesion_utc = sesion.fecha_inicio.astimezone(timezone.utc)
 
-        # COMPROBACIÓN: ¿La sesión empezó antes de hoy a las 00:00?
-        if inicio_sesion_aware < inicio_dia_hoy:
+        # COMPROBACIÓN: ¿La sesión empezó antes de hoy 00:00 UTC?
+        if inicio_sesion_utc < inicio_dia_hoy_utc:
             # ¡Es una sesión Zombie de ayer! La cerramos.
-            sesion.fecha_fin = datetime.now() # Check-out forzado
+            sesion.fecha_fin = datetime.now(timezone.utc)  # Check-out forzado en UTC
             hubo_cierre_automatico = True
             print(f"🧹 Limpieza: Cerrando sesión olvidada de ayer para {current_analista.email} en campaña {sesion.campana.nombre}")
         else:
