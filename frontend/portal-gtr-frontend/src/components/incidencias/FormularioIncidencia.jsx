@@ -72,11 +72,8 @@ function FormularioIncidencia({
             }
             payload.fecha_apertura = new Date(fechaManual).toISOString();
         } else {
-            if (isEditing) {
-                payload.fecha_apertura = new Date().toISOString();
-            } else {
-                payload.fecha_apertura = new Date().toISOString();
-            }
+            // Siempre enviamos la fecha actual si 'usarAhora' es true, preveniendo nulos
+            payload.fecha_apertura = new Date().toISOString();
         }
         
         handleSubmit(payload);

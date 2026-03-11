@@ -1,1 +1,3 @@
-al registrar una incidencia el check de guardar hora actual realmente no guarda y la fecha y hora queda como N/A.
+haz un analisis de todo el sistema y dime si podemos hacerlo mas eficiente y seguro. armemos un plan. Recuerda que esta en produccion y esta estable por el momento. asi que deberiamos hacer las pruebas locales y cargando avances en ramas distintas a la main hasta conseguir la estabilidad y mergear a main.
+
+por las dudas es un proyecto que en produccion esta en Render con base de datos en supabase. Lo que si te puedo decir es que hay varios archivos sobre todo del frontend que no se estan ocupando y yo perdi control de lo que sirve y de lo que no, deberiamos limpiar eso tambien con mucho cuidado.

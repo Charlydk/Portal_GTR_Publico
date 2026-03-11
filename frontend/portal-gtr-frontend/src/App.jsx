@@ -13,14 +13,12 @@ import Footer from './components/Footer';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
-import AvisosPage from './pages/AvisosPage';
-import DetalleAvisoPage from './pages/DetalleAvisoPage';
 import TareasPage from './pages/TareasPage';
 import AnalistasPage from './pages/AnalistasPage';
 import CampanasPage from './pages/CampanasPage';
 import FormularioAnalistaPage from './pages/FormularioAnalistaPage';
 import FormularioCampanaPage from './pages/FormularioCampanaPage';
-import FormularioAvisoPage from './pages/FormularioAvisoPage';
+import FormularioCampanaPage from './pages/FormularioCampanaPage';
 import FormularioChecklistItemPage from './pages/FormularioChecklistItemPage';
 import FormularioTareaPage from './pages/FormularioTareaPage';
 import DetalleAnalistaPage from './pages/DetalleAnalistaPage';
@@ -29,7 +27,7 @@ import DetalleTareaPage from './pages/DetalleTareaPage';
 import ListaIncidenciasPage from './pages/ListaIncidenciasPage';
 import ControlIncidenciasPage from './pages/ControlIncidenciasPage';
 import ControlEventosPage from './pages/ControlEventosPage';
-import DetalleTareaGeneradaPage from './pages/DetalleTareaGeneradaPage';
+import ControlEventosPage from './pages/ControlEventosPage';
 import FormularioIncidenciaPage from './pages/FormularioIncidenciaPage';
 import DetalleIncidenciaPage from './pages/DetalleIncidenciaPage';
 import TareasDisponiblesPage from './pages/TareasDisponiblesPage';
@@ -92,7 +90,7 @@ const AppContent = () => {
             <Route path="/tareas/:tareaId/checklist_items/editar/:id" element={<FormularioChecklistItemPage />} />
             
             {/* Tareas Generadas automáticamente */}
-            <Route path="/tareas-generadas/:id" element={<DetalleTareaGeneradaPage />} />
+            <Route path="/tareas-generadas/:id" element={<DetalleTareaPage />} />
             <Route path="/tareas-generadas/editar/:id" element={<FormularioTareaPage />} />
             
             {/* Campañas e Incidencias (Ahora global para todos) */}
@@ -111,11 +109,6 @@ const AppContent = () => {
 
           {/* Rutas ADMINISTRATIVAS (Supervisor y Responsable) */}
           <Route element={<ProtectedRoute allowedRoles={['SUPERVISOR', 'RESPONSABLE']} />}>
-            <Route path="/avisos" element={<AvisosPage />} />
-            <Route path="/avisos/:avisoId" element={<DetalleAvisoPage />} />
-            <Route path="/avisos/crear" element={<FormularioAvisoPage />} />
-            <Route path="/avisos/editar/:id" element={<FormularioAvisoPage />} />
-            
             <Route path="/tareas" element={<TareasPage />} />
             {/* ELIMINADO: Route path="/tareas/crear" (Ya no se crean manuales) */}
             

@@ -10,7 +10,7 @@ print(f"--- [Script create_db] Modificando DB en: {DATABASE_URL} ---")
 # --- IMPORTACIÓN COMPLETA Y CORREGIDA DE TODOS LOS MODELOS ---
 from .sql_app.models import (
     Analista, Campana, Tarea, ChecklistItem, ComentarioGeneralBitacora,
-    Aviso, AcuseReciboAviso, BitacoraEntry, TareaGeneradaPorAviso,
+    BitacoraEntry,
     HistorialEstadoTarea, Incidencia, ActualizacionIncidencia,
     ValidacionHHEE,
     SolicitudHHEE

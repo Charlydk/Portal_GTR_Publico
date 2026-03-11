@@ -50,9 +50,6 @@ function NavbarComponent() {
                                         <NavDropdown.Item as={Link} to="/tareas" onClick={() => setExpanded(false)}>
                                             Tareas Equipo
                                         </NavDropdown.Item>
-                                        <NavDropdown.Item as={Link} to="/avisos" onClick={() => setExpanded(false)}>
-                                            Avisos
-                                        </NavDropdown.Item>
                                         <NavDropdown.Divider />
                                     </>
                                 )}

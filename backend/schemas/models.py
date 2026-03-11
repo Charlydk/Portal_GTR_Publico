@@ -76,16 +76,8 @@ class ChecklistItemUpdate(BaseModel):
     completado: Optional[bool] = None
     tarea_id: Optional[int] = None
 
-class AvisoBase(BaseModel):
-    titulo: str
-    contenido: str
-    fecha_vencimiento: Optional[datetime] = None
-    creador_id: int
-    campana_id: Optional[int] = None
-    requiere_tarea: Optional[bool] = False
     fecha_vencimiento_tarea: Optional[datetime] = None
 
-class AcuseReciboCreate(BaseModel):
     analista_id: int
 
 class BitacoraEntryBase(BaseModel):
@@ -112,19 +104,8 @@ class BitacoraEntryUpdate(BaseModel):
 class ComentarioGeneralBitacoraCreate(BaseModel):
     contenido: str
 
-class TareaGeneradaPorAvisoBase(BaseModel):
-    titulo: str
-    descripcion: Optional[str] = None
-    fecha_vencimiento: Optional[datetime] = None
-    progreso: ProgresoTarea = ProgresoTarea.PENDIENTE
     analista_asignado_id: int
-    aviso_origen_id: Optional[int] = None
 
-class TareaGeneradaPorAvisoUpdate(BaseModel):
-    titulo: Optional[str] = None
-    descripcion: Optional[str] = None
-    fecha_vencimiento: Optional[datetime] = None
-    progreso: Optional[ProgresoTarea] = None
     analista_asignado_id: Optional[int] = None
 
 class HistorialEstadoTareaBase(BaseModel):
@@ -234,25 +215,6 @@ class HistorialEstadoTareaSimple(BaseModel):
     class Config:
         from_attributes = True
 
-class AvisoSimple(BaseModel):
-    id: int
-    titulo: str
-    fecha_vencimiento: Optional[datetime] = None
-    class Config:
-        from_attributes = True
-
-class AcuseReciboAvisoSimple(BaseModel):
-    id: int
-    fecha_acuse: Optional[datetime] = None
-    analista: AnalistaSimple
-    class Config:
-        from_attributes = True
-
-class TareaGeneradaPorAvisoSimple(BaseModel):
-    id: int
-    titulo: str
-    progreso: ProgresoTarea
-    fecha_vencimiento: Optional[datetime] = None
     class Config:
         from_attributes = True
 
@@ -458,38 +420,10 @@ class SesionCampanaSchema(BaseModel):
         from_attributes = True
 
 
-class Aviso(AvisoBase):
-    id: int
-    fecha_creacion: Optional[datetime] = None
-    creador: "AnalistaSimple"
-    campana: Optional["CampanaSimple"] = None
-    acuses_recibo: List["AcuseReciboAvisoSimple"] = []
-    tareas_generadas: List["TareaGeneradaPorAvisoSimple"] = []
-    class Config:
-        from_attributes = True
-
-class AcuseReciboAviso(AcuseReciboCreate):
-    id: int
-    fecha_acuse: Optional[datetime] = None
-    analista: "AnalistaSimple"
-    aviso: "AvisoSimple"
-    class Config:
-        from_attributes = True
-
 class HistorialEstadoTarea(HistorialEstadoTareaBase):
     id: int
     timestamp: Optional[datetime] = None
     changed_by_analista: AnalistaSimple
-    class Config:
-        from_attributes = True
-
-class TareaGeneradaPorAviso(TareaGeneradaPorAvisoBase):
-    id: int
-    fecha_generacion: Optional[datetime] = None
-    fecha_finalizacion: Optional[datetime] = None
-    analista_asignado: AnalistaSimple
-    aviso_origen: Optional[AvisoSimple] = None
-    historial_estados: List[HistorialEstadoTareaSimple] = []
     class Config:
         from_attributes = True
 
@@ -498,9 +432,6 @@ class Analista(AnalistaBase):
     fecha_creacion: Optional[datetime] = None
     campanas_asignadas: List[CampanaSimple] = []
     tareas: List[TareaSimple] = []
-    avisos_creados: List[AvisoSimple] = []
-    acuses_recibo_avisos: List[AcuseReciboAvisoSimple] = []
-    tareas_generadas_por_avisos: List[TareaGeneradaPorAvisoSimple] = []
     incidencias_creadas: List[IncidenciaSimple] = []
     incidencias_asignadas: List[IncidenciaSimple] = []
     solicitudes_realizadas: List["SolicitudHHEE"] = []
@@ -512,15 +443,6 @@ class Analista(AnalistaBase):
 
     class Config:
         from_attributes = True
-
-class AvisoListOutput(BaseModel):
-    id: int
-    titulo: str
-    fecha_vencimiento: Optional[datetime] = None
-    creador: AnalistaSimple
-    campana: Optional[CampanaSimple] = None
-    class Config:
-        from_attributes = True   
 
 class AnalistaConCampanas(BaseModel):
     id: int

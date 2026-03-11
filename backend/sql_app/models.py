@@ -134,10 +134,7 @@ class Analista(Base):
     tareas = relationship("Tarea", back_populates="analista", foreign_keys="[Tarea.analista_id]")
     incidencias_creadas = relationship("Incidencia", back_populates="creador", foreign_keys="[Incidencia.creador_id]")
     incidencias_asignadas = relationship("Incidencia", back_populates="asignado_a", foreign_keys="[Incidencia.asignado_a_id]")
-    avisos_creados = relationship("Aviso", back_populates="creador")
     comentarios_bitacora = relationship("ComentarioGeneralBitacora", back_populates="autor")
-    acuses_recibo_avisos = relationship("AcuseReciboAviso", back_populates="analista")
-    tareas_generadas_por_avisos = relationship("TareaGeneradaPorAviso", back_populates="analista")
     sesiones = relationship("SesionCampana", back_populates="analista")
     solicitudes_realizadas = relationship("SolicitudHHEE", back_populates="solicitante", foreign_keys="[SolicitudHHEE.analista_id]")
     solicitudes_gestionadas = relationship("SolicitudHHEE", back_populates="supervisor", foreign_keys="[SolicitudHHEE.supervisor_id]")
@@ -178,7 +175,7 @@ class Campana(Base):
     analistas_asignados = relationship("Analista", secondary=analistas_campanas, back_populates="campanas_asignadas")
     tareas = relationship("Tarea", back_populates="campana")
     incidencias = relationship("Incidencia", back_populates="campana")
-    avisos = relationship("Aviso", back_populates="campana")
+    incidencias = relationship("Incidencia", back_populates="campana")
     lobs = relationship("Lob", back_populates="campana", cascade="all, delete-orphan")
     comentarios_generales = relationship("ComentarioGeneralBitacora", back_populates="campana", cascade="all, delete-orphan")
     sesiones = relationship("SesionCampana", back_populates="campana")
@@ -248,12 +245,10 @@ class Tarea(Base):
     es_generada_automaticamente = Column(Boolean, default=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
-    aviso_origen_id = Column(Integer, ForeignKey("avisos.id"), nullable=True)
     
     analista = relationship("Analista", back_populates="tareas")
     campana = relationship("Campana", back_populates="tareas")
     checklist_items = relationship("ChecklistItem", back_populates="tarea", cascade="all, delete-orphan")
-    aviso_origen = relationship("Aviso", back_populates="tareas_generadas")
     comentarios = relationship("ComentarioTarea", back_populates="tarea", cascade="all, delete-orphan")
     historial_estados = relationship("HistorialEstadoTarea", back_populates="tarea", cascade="all, delete-orphan")
 
@@ -287,44 +282,6 @@ class ChecklistItem(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     hora_sugerida = Column(Time, nullable=True)
     tarea = relationship("Tarea", back_populates="checklist_items")
-
-class Aviso(Base):
-    __tablename__ = "avisos"
-    id = Column(Integer, primary_key=True, index=True)
-    titulo = Column(String, index=True)
-    contenido = Column(String)
-    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
-    fecha_vencimiento = Column(DateTime(timezone=True), nullable=True)
-    creador_id = Column(Integer, ForeignKey("analistas.id"))
-    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
-    requiere_tarea = Column(Boolean, default=False)
-    fecha_vencimiento_tarea = Column(DateTime(timezone=True), nullable=True)
-    creador = relationship("Analista", back_populates="avisos_creados")
-    campana = relationship("Campana", back_populates="avisos")
-    acuses_recibo = relationship("AcuseReciboAviso", back_populates="aviso", cascade="all, delete-orphan")
-    tareas_generadas = relationship("Tarea", back_populates="aviso_origen")
-
-class AcuseReciboAviso(Base):
-    __tablename__ = "acuses_recibo_aviso"
-    id = Column(Integer, primary_key=True, index=True)
-    aviso_id = Column(Integer, ForeignKey("avisos.id"))
-    analista_id = Column(Integer, ForeignKey("analistas.id"))
-    fecha_acuse = Column(DateTime(timezone=True), server_default=func.now())
-    
-    aviso = relationship("Aviso", back_populates="acuses_recibo")
-
-    analista = relationship("Analista", back_populates="acuses_recibo_avisos")
-
-class TareaGeneradaPorAviso(Base):
-    __tablename__ = "tareas_generadas_por_aviso"
-    id = Column(Integer, primary_key=True, index=True)
-    aviso_id = Column(Integer, ForeignKey("avisos.id"))
-    analista_id = Column(Integer, ForeignKey("analistas.id"))
-    tarea_id = Column(Integer, ForeignKey("tareas.id"))
-    fecha_generacion = Column(DateTime(timezone=True), server_default=func.now())
-    analista = relationship("Analista", back_populates="tareas_generadas_por_avisos")
-    aviso_origen = relationship("Aviso")
-    tarea = relationship("Tarea")
 
 class ComentarioGeneralBitacora(Base):
     __tablename__ = "comentarios_general_bitacora"

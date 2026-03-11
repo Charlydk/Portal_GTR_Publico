@@ -19,9 +19,6 @@ class AnalistaService:
                 selectinload(models.Analista.campanas_asignadas),
                 selectinload(models.Analista.equipo),
                 selectinload(models.Analista.tareas).selectinload(models.Tarea.campana),
-                selectinload(models.Analista.avisos_creados).selectinload(models.Aviso.campana),
-                selectinload(models.Analista.acuses_recibo_avisos).selectinload(models.AcuseReciboAviso.aviso),
-                selectinload(models.Analista.tareas_generadas_por_avisos).selectinload(models.TareaGeneradaPorAviso.aviso_origen),
                 selectinload(models.Analista.incidencias_creadas).options(
                     selectinload(models.Incidencia.campana),
                     selectinload(models.Incidencia.lobs),

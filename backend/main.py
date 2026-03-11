@@ -26,7 +26,11 @@ from .security import verify_password, get_password_hash, create_access_token, d
 from .sql_app.crud import get_analista_by_email
 
 # --- IMPORTAMOS NUESTROS ROUTERS Y DEPENDENCIAS ---
-from .routers import gtr_router, hhee_router, wfm_router
+from .routers import (
+    analistas, campanas, bitacora, tareas, 
+    incidencias, dashboard, sesiones, 
+    hhee_router, wfm_router
+)
 from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
@@ -84,7 +88,13 @@ app.add_middleware(
 # SUPERVISOR_OPERACIONES solo puede acceder a HHEE.
 gtr_wfm_restriction = [Depends(require_role([UserRole.ANALISTA, UserRole.SUPERVISOR, UserRole.RESPONSABLE]))]
 
-app.include_router(gtr_router.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(analistas.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(campanas.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(bitacora.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(tareas.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(incidencias.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(dashboard.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(sesiones.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(hhee_router.router, prefix="/hhee")
 app.include_router(wfm_router.router, dependencies=gtr_wfm_restriction)
 
@@ -191,7 +201,6 @@ async def read_users_me(current_analista: models.Analista = Depends(get_current_
         fecha_creacion=current_analista.fecha_creacion,
         campanas_asignadas=[CampanaSimple.model_validate(c) for c in current_analista.campanas_asignadas],
         # Listas vacías por defecto para evitar MissingGreenlet
-        tareas=[], avisos_creados=[], acuses_recibo_avisos=[],
-        tareas_generadas_por_avisos=[], incidencias_creadas=[], incidencias_asignadas=[],
+        tareas=[], incidencias_creadas=[], incidencias_asignadas=[],
         solicitudes_hhee=[], planificaciones=[]
     )
