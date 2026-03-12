@@ -120,7 +120,7 @@ async def check_in_campana(
             checklist_item = models.ChecklistItem(
                 tarea_id=nueva_tarea.id,
                 descripcion=item.descripcion,
-                hora_sugerida=item.hora_referencia,
+                hora_sugerida=item.hora_sugerida,
                 completado=False
             )
             db.add(checklist_item)

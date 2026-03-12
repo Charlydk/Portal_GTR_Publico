@@ -242,8 +242,7 @@ async def add_item_to_plantilla(
     nuevo_item = models.ItemPlantillaChecklist(
         campana_id=campana_id,
         descripcion=item_data.descripcion,
-        hora_referencia=item_data.hora_referencia,
-        frecuencia=item_data.frecuencia,
+        hora_sugerida=item_data.hora_sugerida,
         lunes=item_data.lunes,
         martes=item_data.martes,
         miercoles=item_data.miercoles,
