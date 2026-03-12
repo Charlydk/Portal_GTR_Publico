@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -22,14 +22,12 @@ router = APIRouter(
 
 @router.get("/tareas/", response_model=List[Tarea], summary="Listar tareas pendientes globales")
 async def obtener_tareas(
-    background_tasks: BackgroundTasks,
     skip: int = 0,
     limit: int = 100,
     estado: Optional[ProgresoTarea] = None,
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    background_tasks.add_task(TareaService.limpiar_tareas_vencidas)
     return await TareaService.get_tareas_globales(db, skip, limit, estado)
 
 @router.get("/tareas/{tarea_id}", response_model=Tarea, summary="Obtener Tarea por ID (Protegido)")

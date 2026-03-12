@@ -351,7 +351,20 @@ async def exportar_incidencias(
     for inc in incidencias:
         comentario_cierre = "N/A"
         if inc.estado == EstadoIncidencia.CERRADA:
-            for act in sorted(inc.actualizaciones, key=lambda x: x.fecha_actualizacion, reverse=True):
+            # Ordenamos asegurando que todas las fechas sean comparables (aware) y manejando None
+            def safe_date(d):
+                if not d:
+                    return datetime(1970, 1, 1, tzinfo=timezone.utc)
+                if d.tzinfo is None:
+                    return d.replace(tzinfo=timezone.utc)
+                return d
+
+            actualizaciones_ordenadas = sorted(
+                inc.actualizaciones, 
+                key=lambda x: safe_date(x.fecha_actualizacion), 
+                reverse=True
+            )
+            for act in actualizaciones_ordenadas:
                 if "Comentario de Cierre: " in act.comentario:
                     comentario_cierre = act.comentario.split("Comentario de Cierre: ")[1]
                     break
