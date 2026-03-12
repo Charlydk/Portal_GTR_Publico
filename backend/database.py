@@ -19,7 +19,7 @@ if not DATABASE_URL:
 # Detectamos si estamos usando el Transaction Pooler de Supabase (puerto 6543)
 if ":6543" in DATABASE_URL:
     # MODO TRANSACTION POOLER (SUPABASE)
-    # Para asyncpg con PgBouncer/Supavisor, DEBEMOS desactivar prepared statements.
+    # Debemos forzar la desactivación en la URL Y en los conectores para que SQLAlchemy no intente cachear nada.
     separator = "&" if "?" in DATABASE_URL else "?"
     db_url_pooler = f"{DATABASE_URL}{separator}prepared_statement_cache_size=0"
 
