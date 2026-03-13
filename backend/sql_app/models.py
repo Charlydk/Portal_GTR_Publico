@@ -241,12 +241,13 @@ class Tarea(Base):
     descripcion = Column(String)
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
     fecha_vencimiento = Column(DateTime(timezone=True), nullable=True)
+    fecha_finalizacion = Column(DateTime(timezone=True), nullable=True)
     progreso = Column(SQLEnum(ProgresoTarea, native_enum=False, create_type=False), default=ProgresoTarea.PENDIENTE)
     es_generada_automaticamente = Column(Boolean, default=False)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
     
-    analista = relationship("Analista", back_populates="tareas")
+    analista = relationship("Analista", back_populates="tareas", foreign_keys=[analista_id])
     campana = relationship("Campana", back_populates="tareas")
     checklist_items = relationship("ChecklistItem", back_populates="tarea", cascade="all, delete-orphan")
     comentarios = relationship("ComentarioTarea", back_populates="tarea", cascade="all, delete-orphan")
@@ -280,8 +281,12 @@ class ChecklistItem(Base):
     completado = Column(Boolean, default=False)
     tarea_id = Column(Integer, ForeignKey("tareas.id"))
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_completado = Column(DateTime(timezone=True), nullable=True)
+    realizado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
     hora_sugerida = Column(Time, nullable=True)
+
     tarea = relationship("Tarea", back_populates="checklist_items")
+    realizado_por = relationship("Analista")
 
 class ComentarioGeneralBitacora(Base):
     __tablename__ = "comentarios_general_bitacora"

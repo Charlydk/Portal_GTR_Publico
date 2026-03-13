@@ -76,10 +76,6 @@ class ChecklistItemUpdate(BaseModel):
     completado: Optional[bool] = None
     tarea_id: Optional[int] = None
 
-    fecha_vencimiento_tarea: Optional[datetime] = None
-
-    analista_id: int
-
 class BitacoraEntryBase(BaseModel):
     hora: time
     campana_id: int

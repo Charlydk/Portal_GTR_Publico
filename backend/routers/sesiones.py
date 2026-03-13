@@ -24,8 +24,9 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    hoy_inicio = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    hoy_inicio_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Usamos UTC para todo el manejo de base de datos
+    ahora_utc = datetime.now(timezone.utc)
+    hoy_inicio_utc = ahora_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # --- FASE 1: LIMPIEZA DE ZOMBIS ---
     q_zombis = select(models.SesionCampana).filter(
@@ -77,7 +78,7 @@ async def check_in_campana(
     q_tarea_existente = select(models.Tarea).filter(
         models.Tarea.campana_id == datos.campana_id,
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= hoy_inicio
+        models.Tarea.fecha_creacion >= hoy_inicio_utc
     )
     result_tarea = await db.execute(q_tarea_existente)
     tarea_compartida = result_tarea.scalars().first()
@@ -105,12 +106,16 @@ async def check_in_campana(
         res_items = await db.execute(q_items_plantilla)
         items_plantilla = res_items.scalars().all()
 
+        vencimiento_utc = ahora_arg.replace(hour=23, minute=59, second=59).astimezone(timezone.utc)
+
         nueva_tarea = models.Tarea(
             titulo=f"Rutina GTR - {ahora_arg.strftime('%d/%m')}",
             descripcion=f"Checklist automático generado para la campaña.",
             es_generada_automaticamente=True,
             campana_id=datos.campana_id,
-            analista_id=current_analista.id
+            analista_id=None, # Rutina compartida
+            fecha_creacion=ahora_utc,
+            fecha_vencimiento=vencimiento_utc
         )
         db.add(nueva_tarea)
         await db.commit()
@@ -154,7 +159,7 @@ async def check_out_campana(
     if not sesion:
         raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
 
-    sesion.fecha_fin = datetime.now()
+    sesion.fecha_fin = datetime.now(timezone.utc)
     await db.commit()
     
     return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
