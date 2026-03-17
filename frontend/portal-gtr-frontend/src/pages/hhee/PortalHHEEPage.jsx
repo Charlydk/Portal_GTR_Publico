@@ -17,6 +17,7 @@ function PortalHHEEPage() {
     const [validaciones, setValidaciones] = useState({});
     const [guardadoResumen, setGuardadoResumen] = useState(null);
     const [isPendientesView, setIsPendientesView] = useState(false);
+    const [rutConsultado, setRutConsultado] = useState(null);
     const location = useLocation();
 
 
@@ -147,6 +148,7 @@ function PortalHHEEPage() {
         setNombreAgente('');
         setGuardadoResumen(null);
         setIsPendientesView(false);
+        setRutConsultado(null);
     
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/hhee/consultar-empleado`, {
@@ -168,6 +170,7 @@ function PortalHHEEPage() {
             setNombreAgente(data.nombre_agente);
             setResultados(data.datos_periodo);
             initializeValidaciones(data.datos_periodo);
+            setRutConsultado(rut);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -295,7 +298,7 @@ function PortalHHEEPage() {
             if (!debeEnviar) return null;
 
             return {
-                rut_con_formato: isPendientesView ? dia.rut_con_formato : rut,
+                rut_con_formato: isPendientesView ? dia.rut_con_formato : rutConsultado,
                 fecha: dia.fecha,
                 nombre_apellido: dia.nombre_apellido,
                 campaña: dia.campaña,
@@ -310,6 +313,12 @@ function PortalHHEEPage() {
         // Si encontramos la marca 'INVALIDO', detenemos la función.
         if (validacionesParaEnviar.some(v => v === 'INVALIDO')) {
             return; 
+        }
+
+        if (!isPendientesView && !rutConsultado) {
+            setError("No hay un RUT válido en consulta para guardar.");
+            setLoading(false);
+            return;
         }
 
         if (validacionesParaEnviar.length === 0) {
@@ -406,6 +415,7 @@ function PortalHHEEPage() {
         setNombreAgente('');
         setGuardadoResumen(null);
         setIsPendientesView(false);
+        setRutConsultado(null);
     
         try {
             const response = await fetchWithAuth(`${API_BASE_URL}/hhee/consultar-empleado`, {
@@ -422,8 +432,10 @@ function PortalHHEEPage() {
             setNombreAgente(data.nombre_agente);
             setResultados(data.datos_periodo);
             initializeValidaciones(data.datos_periodo);
+            setRutConsultado(rutParam);
         } catch (err) {
             setError(err.message);
+            setRutConsultado(null);
         } finally {
             setLoading(false);
         }
