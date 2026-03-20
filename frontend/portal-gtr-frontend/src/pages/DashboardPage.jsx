@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import WidgetAlertas from '../components/dashboard/WidgetAlertas'; 
+import WidgetAlertasSupervisor from '../components/dashboard/WidgetAlertasSupervisor';
 import CampaignSelector from '../components/dashboard/CampaignSelector';
 
 function DashboardPage() {
@@ -30,6 +31,8 @@ function DashboardPage() {
     // Estados Supervisor
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
     const [estadoAnalistas, setEstadoAnalistas] = useState([]);
+    const [showRegistroModalSup, setShowRegistroModalSup] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState(null);
 
     useEffect(() => {
         if (user) {
@@ -37,12 +40,22 @@ function DashboardPage() {
         }
     }, [user]);
 
-    const cargarDatosDashboard = async () => {
+    // Auto-refresh cada 60s para supervisores
+    useEffect(() => {
+        if (user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE')) {
+            const interval = setInterval(() => {
+                if (!document.hidden) cargarDatosDashboard(true);
+            }, 60000);
+            return () => clearInterval(interval);
+        }
+    }, [user]);
+
+    const cargarDatosDashboard = async (isSilent = false) => {
         if (user.role === 'SUPERVISOR_OPERACIONES') {
             setLoading(false);
             return;
         }
-        setLoading(true);
+        if (!isSilent) setLoading(true);
         try {
             // 1. Datos Comunes
             const [resStats, resCobertura] = await Promise.all([
@@ -65,7 +78,10 @@ function DashboardPage() {
             }
 
         } catch (error) { console.error("Error dashboard", error); } 
-        finally { setLoading(false); }
+        finally { 
+            if (!isSilent) setLoading(false);
+            setLastUpdated(new Date());
+        }
     };
 
     const cargarDatosEspecificosAnalista = async (dataCobertura) => {
@@ -143,20 +159,19 @@ function DashboardPage() {
     };
 
     // ========================================================================
-    // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPLETO)
+    // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPACTOS — solo 2 KPIs)
     // ========================================================================
     const renderIncidentWidgetsSupervisor = () => (
-        <>
         <Row className="g-2 mb-3">
-            <Col xs={6} md={3}>
+            <Col xs={6}>
                 <Card className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}>
                     <Card.Body className="p-2">
                         <h4 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h4>
-                        <small style={{fontSize:'0.75rem'}}>Incidencias Activas 👆</small>
+                        <small style={{fontSize:'0.75rem'}}>Activas 👆</small>
                     </Card.Body>
                 </Card>
             </Col>
-            <Col xs={6} md={3}>
+            <Col xs={6}>
                 <Card className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}>
                     <Card.Body className="p-2">
                         <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h4>
@@ -164,41 +179,7 @@ function DashboardPage() {
                     </Card.Body>
                 </Card>
             </Col>
-            <Col xs={6} md={3}>
-                <Card className="bg-success text-white text-center shadow-sm h-100 py-1">
-                    <Card.Body className="p-2">
-                        <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_cerradas_hoy || 0}</h4>
-                        <small style={{fontSize:'0.75rem'}}>Cerradas Hoy</small>
-                    </Card.Body>
-                </Card>
-            </Col>
-            <Col xs={6} md={3}>
-                <Card className="bg-info text-white text-center shadow-sm h-100 py-1">
-                    <Card.Body className="p-2">
-                        <h4 className="mb-0 fw-bold">{estadoAnalistas.filter(a=>a.estado === 'ACTIVO').length} / {estadoAnalistas.length}</h4>
-                        <small style={{fontSize:'0.75rem'}}>Dotación Online</small>
-                    </Card.Body>
-                </Card>
-            </Col>
         </Row>
-
-        {/* --- CARD ACCESO RÁPIDO WFM --- */}
-        <Row className="mb-4">
-            <Col>
-                <Card className="border-0 shadow-sm bg-gradient text-white" style={{background: 'linear-gradient(45deg, #0d6efd, #6610f2)'}}>
-                    <Card.Body className="d-flex justify-content-between align-items-center p-3">
-                        <div>
-                            <h5 className="mb-1 fw-bold">📅 Planificador de Asistencia (WFM)</h5>
-                            <p className="mb-0 small opacity-75">Gestiona turnos, equipos y clusters para tu operación.</p>
-                        </div>
-                        <Button variant="light" className="fw-bold" onClick={() => navigate('/planificacion-turnos')}>
-                            Ir al Planificador →
-                        </Button>
-                    </Card.Body>
-                </Card>
-            </Col>
-        </Row>
-        </>
     );
 
     // ========================================================================
@@ -240,63 +221,95 @@ function DashboardPage() {
     // VISTA SUPERVISOR
     // ========================================================================
     if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
-        const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0);
+        const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0 && c.estado === 'DESCUBIERTA');
         const conCobertura = coberturaGlobal.filter(c => c.analistas_activos > 0);
+        const cerradas = coberturaGlobal.filter(c => c.estado === 'CERRADA');
 
         return (
             <Container fluid className="p-4">
+                {/* CABECERA */}
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                    <h3 className="fw-bold mb-0">Tablero de Control</h3>
-                    <Button variant="outline-primary" size="sm" onClick={cargarDatosDashboard}>Actualizar</Button>
+                    <div>
+                        <h3 className="fw-bold mb-0">Tablero de Control</h3>
+                        {lastUpdated && (
+                            <small className="text-muted" style={{fontSize:'0.75rem'}}>
+                                Última actualización: {lastUpdated.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})} &nbsp;
+                                <span className="spinner-grow spinner-grow-sm text-success" role="status" style={{width:'6px', height:'6px'}}></span>
+                            </small>
+                        )}
+                    </div>
+                    <Button variant="outline-primary" size="sm" onClick={() => cargarDatosDashboard()}>Actualizar</Button>
                 </div>
 
-                {renderIncidentWidgetsSupervisor()}
+                {/* KPIs compactos + Radar de Cobertura (Semáforo) */}
+                <Row className="g-2 mb-3 align-items-center">
+                    {/* 2 KPIs */}
+                    <Col xs={12} md={3}>
+                        {renderIncidentWidgetsSupervisor()}
+                    </Col>
 
-                <div className="mb-4">
-                    <h6 className="text-muted fw-bold mb-2">📡 Radar de Cobertura</h6>
-                    {sinCobertura.length > 0 && (
-                        <Row className="g-2 mb-3">
-                            {sinCobertura.map(c => (
-                                <Col md={2} sm={4} key={c.campana_id}>
-                                    <Card className="bg-danger text-white shadow h-100 animate__animated animate__pulse animate__infinite">
-                                        <Card.Body className="text-center p-2">
-                                            <div className="fs-3 mb-1">🚨</div>
-                                            <div className="fw-bold text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>{c.nombre_campana}</div>
-                                            <Badge bg="white" text="danger" style={{fontSize:'0.6rem'}}>DESCUBIERTA</Badge>
-                                        </Card.Body>
-                                    </Card>
-                                </Col>
-                            ))}
-                        </Row>
-                    )}
-                    <Row className="g-2">
-                        {conCobertura.map(c => (
-                            <Col md={2} sm={4} key={c.campana_id}>
-                                <OverlayTrigger placement="top" overlay={<Tooltip id={`tooltip-${c.campana_id}`}><strong>Analistas conectados:</strong>{c.nombres_analistas.length > 0 ? c.nombres_analistas.map(n => <div key={n} style={{textAlign:'left'}}>• {n}</div>) : <div>(Sin datos)</div>}</Tooltip>}>
-                                    <Card className="border-success bg-light shadow-sm h-100" style={{cursor:'help'}}>
-                                        <Card.Body className="p-2 text-center">
-                                            <div className="fw-bold text-success text-truncate" title={c.nombre_campana} style={{fontSize:'0.9rem'}}>{c.nombre_campana}</div>
-                                            <small className="text-muted d-block" style={{fontSize:'0.75rem'}}>👥 {c.analistas_activos} Analistas</small>
-                                        </Card.Body>
-                                    </Card>
-                                </OverlayTrigger>
-                            </Col>
-                        ))}
-                    </Row>
-                </div>
+                    {/* Radar semáforo */}
+                    <Col xs={12} md={9}>
+                        <Card className="shadow-sm border-0">
+                            <Card.Body className="py-2 px-3">
+                                <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <h6 className="mb-0 fw-bold text-muted small">📡 RADAR DE COBERTURA</h6>
+                                    <div className="d-flex gap-2">
+                                        <Badge bg="danger" className="fw-normal">🔴 Descubierta: {sinCobertura.length}</Badge>
+                                        <Badge bg="success" className="fw-normal">🟢 Cubierta: {conCobertura.length}</Badge>
+                                        <Badge bg="secondary" className="fw-normal">⚫ Cerrada: {cerradas.length}</Badge>
+                                    </div>
+                                </div>
+                                <div className="d-flex flex-wrap gap-2">
+                                    {sinCobertura.map(c => (
+                                        <OverlayTrigger key={c.campana_id} placement="top" overlay={<Tooltip>Sin analistas ⚠️</Tooltip>}>
+                                            <Badge bg="danger" className="p-2 shadow-sm animate__animated animate__pulse animate__infinite" style={{fontSize:'0.8rem', cursor:'default'}}>
+                                                🚨 {c.nombre_campana}
+                                            </Badge>
+                                        </OverlayTrigger>
+                                    ))}
+                                    {conCobertura.map(c => (
+                                        <OverlayTrigger key={c.campana_id} placement="top" overlay={<Tooltip><strong>Online:</strong> {c.nombres_analistas.join(', ') || '(sin datos)'}</Tooltip>}>
+                                            <Badge bg="success" className="p-2 shadow-sm" style={{fontSize:'0.8rem', cursor:'help'}}>
+                                                👥 {c.nombre_campana} ({c.analistas_activos})
+                                            </Badge>
+                                        </OverlayTrigger>
+                                    ))}
+                                    {cerradas.map(c => (
+                                        <Badge key={c.campana_id} bg="secondary" className="p-2" style={{fontSize:'0.8rem', opacity:'0.6'}}>
+                                            ⚫ {c.nombre_campana}
+                                        </Badge>
+                                    ))}
+                                    {coberturaGlobal.length === 0 && (
+                                        <small className="text-muted">Sin datos de cobertura.</small>
+                                    )}
+                                </div>
+                            </Card.Body>
+                        </Card>
+                    </Col>
+                </Row>
 
+                {/* ZONA PRINCIPAL 2 COLUMNAS */}
                 <Row className="g-3">
+                    {/* COLUMNA IZQUIERDA 60% */}
                     <Col lg={7}>
-                        <Card className="shadow-sm border-0 h-100">
+                        {/* Tabla Cumplimiento Rutinas */}
+                        <Card className="shadow-sm border-0 mb-3">
                             <Card.Header className="bg-white fw-bold">📊 Cumplimiento de Rutinas (Hoy)</Card.Header>
-                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '400px'}}>
+                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '280px'}}>
                                 <Table hover className="mb-0 align-middle">
                                     <thead className="bg-light small text-muted">
                                         <tr><th className="ps-3">Campaña</th><th>Estado</th><th className="pe-3 text-end">Avance</th></tr>
                                     </thead>
                                     <tbody>
                                         {cumplimientoCampanas.map(c => (
-                                            <tr key={c.id}>
+                                            <tr 
+                                                key={c.id} 
+                                                style={{cursor: 'pointer'}}
+                                                onClick={() => navigate(`/control-incidencias?campana=${c.id}`)}
+                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                                            >
                                                 <td className="ps-3 fw-semibold">
                                                     {c.nombre}
                                                     {c.vencidas > 0 && <Badge bg="danger" className="ms-2" style={{fontSize:'0.6em'}}>{c.vencidas} Vencidas</Badge>}
@@ -314,21 +327,27 @@ function DashboardPage() {
                                 </Table>
                             </Card.Body>
                         </Card>
-                    </Col>
-                    <Col lg={5}>
-                        <Card className="shadow-sm border-0 h-100">
+
+                        {/* Tabla Dotación */}
+                        <Card className="shadow-sm border-0">
                             <Card.Header className="bg-white fw-bold d-flex justify-content-between">
                                 <span>👥 Dotación</span>
                                 <Badge bg="light" text="dark" className="border">Total: {estadoAnalistas.length}</Badge>
                             </Card.Header>
-                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '400px'}}>
+                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '250px'}}>
                                 <Table hover className="mb-0 align-middle">
                                     <tbody>
                                         {estadoAnalistas.map(a => (
-                                            <tr key={a.id}>
+                                            <tr 
+                                                key={a.id} 
+                                                style={{cursor: 'pointer'}}
+                                                onClick={() => navigate(`/analistas/${a.id}`)}
+                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                                            >
                                                 <td className="ps-3">
                                                     <div className="d-flex align-items-center">
-                                                        <div className={`rounded-circle d-flex justify-content-center align-items-center text-white me-2 shadow-sm ${a.estado === 'ACTIVO' ? 'bg-success' : 'bg-secondary'}`} style={{width:'30px', height:'30px', fontSize:'0.8rem'}}>
+                                                        <div className={`rounded-circle d-flex justify-content-center align-items-center text-white me-2 shadow-sm ${a.estado === 'ACTIVO' ? 'bg-success' : 'bg-secondary'}`} style={{width:'28px', height:'28px', fontSize:'0.75rem'}}>
                                                             {a.nombre.charAt(0)}
                                                         </div>
                                                         <span className={a.estado === 'LIBRE' ? 'text-muted' : 'fw-semibold'}>{a.nombre}</span>
@@ -348,18 +367,40 @@ function DashboardPage() {
                             </Card.Body>
                         </Card>
                     </Col>
-                </Row>
-                
-                <Row className="mt-4">
-                    <Col>
-                        <Card className="shadow-sm border-0 bg-light">
-                            <Card.Body>
-                                <h6 className="text-muted mb-3">📝 Registro Rápido de Incidencias</h6>
-                                <PanelRegistroWidget />
-                            </Card.Body>
-                        </Card>
+
+                    {/* COLUMNA DERECHA 40%: Pulso Operacional */}
+                    <Col lg={5}>
+                        <WidgetAlertasSupervisor />
                     </Col>
                 </Row>
+
+                {/* FAB NUEVA INCIDENCIA */}
+                <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1050 }}>
+                    <OverlayTrigger placement="left" overlay={<Tooltip>Registrar Evento</Tooltip>}>
+                        <Button 
+                            variant="warning" 
+                            className="shadow-lg d-flex align-items-center justify-content-center border-0 rounded-pill px-4 py-3 text-dark fw-bold"
+                            style={{
+                                background: 'linear-gradient(135deg, #ffc107, #ff9800)',
+                                transition: 'transform 0.2s'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                            onClick={() => setShowRegistroModalSup(true)}
+                        >
+                            <span style={{fontSize: '1.5rem'}} className="me-2">⚡</span> Registrar Evento
+                        </Button>
+                    </OverlayTrigger>
+                </div>
+
+                <Modal show={showRegistroModalSup} onHide={() => setShowRegistroModalSup(false)} centered size="md">
+                    <Modal.Header closeButton className="border-0 pb-0">
+                        <Modal.Title className="h6 text-muted"><i className="bi bi-lightning-charge-fill text-warning me-2"></i>Nueva Incidencia Rápida</Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body className="pt-0">
+                        <PanelRegistroWidget compact={false} />
+                    </Modal.Body>
+                </Modal>
             </Container>
         );
     }
