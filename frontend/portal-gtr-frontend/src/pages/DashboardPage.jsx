@@ -1,7 +1,7 @@
 // RUTA: src/pages/DashboardPage.jsx
 
 import React, { useEffect, useState } from 'react';
-import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip, ListGroup } from 'react-bootstrap';
+import { Container, Row, Col, Card, Badge, Table, Button, ProgressBar, Spinner, OverlayTrigger, Tooltip, ListGroup, Modal } from 'react-bootstrap';
 import { useAuth } from '../hooks/useAuth';
 import { API_BASE_URL, fetchWithAuth } from '../api'; 
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ function DashboardPage() {
     const [misIncidencias, setMisIncidencias] = useState([]);
     const [showCampaignModal, setShowCampaignModal] = useState(false);
     const [misSesionesActivas, setMisSesionesActivas] = useState([]); 
+    const [showRegistroModal, setShowRegistroModal] = useState(false);
 
     // Estados Supervisor
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
@@ -371,10 +372,10 @@ function DashboardPage() {
     return (
         <Container fluid className="p-4">
             {/* CABECERA */}
-            <div className="d-flex justify-content-between align-items-center mb-4">
+            <div className="d-flex justify-content-between align-items-start mb-4">
                 <div>
                     <h2 className="mb-0">Hola, {user.nombre}</h2>
-                    <div className="d-flex align-items-center mt-1">
+                    <div className="d-flex align-items-center mt-1 mb-2">
                         <span className="text-muted me-2">Activo en:</span>
                         {misSesionesActivas.length > 0 ? (
                             misSesionesActivas.map((s, i) => <Badge key={i} bg="success" className="me-1">{s.campana.nombre}</Badge>)
@@ -382,115 +383,84 @@ function DashboardPage() {
                             <Badge bg="secondary">Ninguna (Inicia sesión)</Badge>
                         )}
                     </div>
+                    <Button variant="primary" size="sm" onClick={() => setShowCampaignModal(true)} className="shadow-sm">
+                        🔄 Gestionar mi Actividad
+                    </Button>
                 </div>
-                <Button variant="primary" onClick={() => setShowCampaignModal(true)} className="shadow-sm">
-                    🔄 Gestionar mi Actividad
-                </Button>
             </div>
 
-            {/* --- CARD MI PLANIFICACIÓN (NUEVO) --- */}
-            <Row className="mb-3">
-                <Col>
-                    <Card className="border-0 shadow-sm text-white" style={{background: 'linear-gradient(45deg, #198754, #20c997)'}}>
-                        <Card.Body className="d-flex justify-content-between align-items-center p-2 px-3">
-                            <div>
-                                <h6 className="mb-0 fw-bold">🗓️ Mi Planificación Semanal</h6>
-                                <small className="opacity-75">Consulta tus turnos y clusters asignados.</small>
-                            </div>
-                            <Button variant="light" size="sm" className="fw-bold" onClick={() => navigate('/planificacion-turnos')}>
-                                Ver Calendario →
-                            </Button>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
-            <Row className="mb-4">
-                <Col xs={12}>
-                    <Card className="shadow-sm border-0 border-start border-danger border-4">
+            {/* ZONA PRINCIPAL 50/50 */}
+            <Row className="g-4 mb-4">
+                
+                {/* COLUMNA IZQUIERDA (50%) */}
+                <Col lg={6}>
+                    
+                    {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
+                    <Card className="shadow-sm border-0 border-start border-danger border-4 mb-3">
                         <Card.Header className="bg-white fw-bold text-danger d-flex justify-content-between align-items-center">
-                            <span>🤝 Oportunidades de Colaboración (Campañas sin Analistas)</span>
+                            <span>🤝 Oportunidades de Colaboración</span>
                             <Badge bg="danger">{campañasSinAnalistas.length}</Badge>
                         </Card.Header>
                         <Card.Body className="py-2">
                             {campañasSinAnalistas.length > 0 ? (
-                                <Row className="g-2">
-                                    {/* MÁS PEQUEÑAS: xs=6 md=3 lg=2 */}
+                                <div className="d-flex flex-wrap gap-2 py-1">
                                     {campañasSinAnalistas.map(c => (
-                                        <Col xs={6} md={3} lg={2} key={c.campana_id}>
-                                            <Card className="bg-danger text-white shadow-sm h-100 animate__animated animate__pulse animate__infinite border-0">
-                                                <Card.Body className="text-center p-2">
-                                                    <div className="fs-4 mb-1">🚨</div>
-                                                    <div className="fw-bold text-truncate small" title={c.nombre_campana}>
-                                                        {c.nombre_campana}
-                                                    </div>
-                                                </Card.Body>
-                                            </Card>
-                                        </Col>
+                                        <Badge 
+                                            bg="danger" 
+                                            className="d-flex align-items-center p-2 shadow-sm border border-danger fw-normal" 
+                                            key={c.campana_id}
+                                            style={{fontSize: '0.8rem'}}
+                                        >
+                                            <span className="me-2 fs-6">🚨</span> {c.nombre_campana}
+                                        </Badge>
                                     ))}
-                                </Row>
+                                </div>
                             ) : (
-                                <div className="text-success d-flex align-items-center">
+                                <div className="text-success d-flex align-items-center small">
                                     <span className="fs-5 me-2">✅</span> <span>¡Todo cubierto! Excelente trabajo de equipo.</span>
                                 </div>
                             )}
                         </Card.Body>
                     </Card>
-                </Col>
-            </Row>
 
-            {/* 2. ZONA PRINCIPAL */}
-            <Row className="g-4 mb-4">
-                
-                {/* COLUMNA IZQUIERDA (40%) */}
-                <Col lg={5}>
-                    
-                    {/* WIDGETS COMPACTOS PERSONALIZADOS (SOLO ACTIVAS Y SIN ASIGNAR) */}
-                    <Row className="g-2 mb-3">
-                        <Col xs={6}>
-                            <Card 
-                                className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" 
-                                style={{cursor: 'pointer'}} 
-                                onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}
-                            >
-                                <Card.Body className="p-2 d-flex flex-column justify-content-center">
-                                    <h5 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h5>
-                                    <small style={{fontSize:'0.65rem'}}>Incidencias Activas</small>
-                                </Card.Body>
-                            </Card>
-                        </Col>
-                        <Col xs={6}>
-                            <Card 
-                                className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" 
-                                style={{cursor: 'pointer'}} 
-                                onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}
-                            >
-                                <Card.Body className="p-2 d-flex flex-column justify-content-center">
-                                    <h5 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h5>
-                                    <small style={{fontSize:'0.65rem'}}>Sin Asignar</small>
-                                </Card.Body>
-                            </Card>
-                        </Col>
-                    </Row>
-                    
-                    <Card className="shadow-sm border-0 bg-light mb-3">
-                        <Card.Body className="py-2 px-3">
-                            <h6 className="text-muted small mb-2">⚡ Nueva Incidencia</h6>
-                            <PanelRegistroWidget compact={true} />
-                        </Card.Body>
-                    </Card>
-
-                    <div style={{maxHeight:'400px', overflowY:'auto'}}>
+                    <div style={{maxHeight:'450px', overflowY:'auto'}}>
                          <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
                     </div>
                 </Col>
 
-                {/* COLUMNA DERECHA (60%): WIDGET ALERTAS (MAIN MODE) */}
-                <Col lg={7}>
+                {/* COLUMNA DERECHA (50%): WIDGET ALERTAS (MAIN MODE) */}
+                <Col lg={6}>
                     <WidgetAlertas variant="main" />
                 </Col>
             </Row>
+
+            {/* FAB NUEVA INCIDENCIA */}
+            <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1050 }}>
+                <OverlayTrigger placement="left" overlay={<Tooltip>Registrar Evento</Tooltip>}>
+                    <Button 
+                        variant="warning" 
+                        className="shadow-lg d-flex align-items-center justify-content-center border-0 rounded-pill px-4 py-3 text-dark fw-bold"
+                        style={{
+                            background: 'linear-gradient(135deg, #ffc107, #ff9800)',
+                            transition: 'transform 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        onClick={() => setShowRegistroModal(true)}
+                    >
+                        <span style={{fontSize: '1.5rem'}} className="me-2">⚡</span> Registrar Evento
+                    </Button>
+                </OverlayTrigger>
+            </div>
+
+            <Modal show={showRegistroModal} onHide={() => setShowRegistroModal(false)} centered size="md">
+                <Modal.Header closeButton className="border-0 pb-0">
+                    <Modal.Title className="h6 text-muted"><i className="bi bi-lightning-charge-fill text-warning me-2"></i>Nueva Incidencia Rápida</Modal.Title>
+                </Modal.Header>
+                <Modal.Body className="pt-0">
+                    <PanelRegistroWidget compact={false} />
+                </Modal.Body>
+            </Modal>
 
             <CampaignSelector 
                 show={showCampaignModal} 

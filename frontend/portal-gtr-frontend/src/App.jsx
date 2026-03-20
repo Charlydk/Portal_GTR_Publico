@@ -45,7 +45,6 @@ const AppContent = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [showBetaNotice, setShowBetaNotice] = useState(true);
 
   useEffect(() => {
     if (user && location.pathname === '/login') {
@@ -56,16 +55,6 @@ const AppContent = () => {
   return (
     <div className="d-flex flex-column min-vh-100">
       <Navbar />
-      {showBetaNotice && (
-        <Container className="mt-3">
-            <Alert variant="info" onClose={() => setShowBetaNotice(false)} dismissible>
-                <Alert.Heading as="h6">¡Aplicación en Versión Beta!</Alert.Heading>
-                <p className="mb-0 small">
-                    Estás usando una versión de prueba. Si la aplicación ha estado inactiva por más de 15 minutos, la primera carga puede demorar hasta un minuto mientras el servidor se reactiva.
-                </p>
-            </Alert>
-        </Container>
-      )}
       <div className="container mt-4 main-content flex-grow-1">
         <Routes>
           {/* Rutas Públicas */}

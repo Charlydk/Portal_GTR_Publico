@@ -1,13 +1,14 @@
 // RUTA: src/components/dashboard/WidgetAlertas.jsx
 
 import React, { useState, useEffect } from 'react';
-import { Card, ListGroup, Badge, Spinner, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Card, ListGroup, Badge, Spinner, OverlayTrigger, Tooltip, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL, fetchWithAuth } from '../../api';
 
 const WidgetAlertas = () => {
     const [alertas, setAlertas] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [processingIds, setProcessingIds] = useState([]);
     const navigate = useNavigate();
 
     const fetchAlertas = async () => {
@@ -30,6 +31,26 @@ const WidgetAlertas = () => {
         const interval = setInterval(fetchAlertas, 30000); 
         return () => clearInterval(interval);
     }, []);
+
+    const handleCheck = async (e, id) => {
+        e.stopPropagation();
+        if (processingIds.includes(id)) return;
+        setProcessingIds(prev => [...prev, id]);
+        try {
+            const response = await fetchWithAuth(`${API_BASE_URL}/gtr/checklist_items/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ completado: true })
+            });
+            if (response.ok) {
+                fetchAlertas();
+            }
+        } catch (error) {
+            console.error("Error completando tarea:", error);
+        } finally {
+            setProcessingIds(prev => prev.filter(pId => pId !== id));
+        }
+    };
 
     // --- CÁLCULO DE CONTADORES PARA LA CABECERA ---
     const countVencidas = alertas.filter(a => a.tipo === 'CRITICO').length;
@@ -147,12 +168,32 @@ const WidgetAlertas = () => {
                                     </div>
                                 </div>
 
-                                {/* 3. COLUMNA ÍCONO */}
-                                <div className="ms-2 d-flex align-items-center">
+                                {/* 3. COLUMNA ÍCONO Y ACCIONES */}
+                                <div className="ms-3 d-flex align-items-center gap-2">
                                     <OverlayTrigger placement="left" overlay={<Tooltip>{tooltipText}</Tooltip>}>
                                         <div className="p-1">
                                             {icon}
                                         </div>
+                                    </OverlayTrigger>
+                                    <OverlayTrigger placement="right" overlay={<Tooltip>Marcar como Listo</Tooltip>}>
+                                        <Button 
+                                            variant="light" 
+                                            size="sm" 
+                                            className="rounded-circle d-flex align-items-center justify-content-center border-0 shadow-sm" 
+                                            style={{
+                                                width: '32px', height: '32px', 
+                                                backgroundColor: processingIds.includes(alerta.id) ? '#e9ecef' : '#ffffff',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onClick={(e) => handleCheck(e, alerta.id)}
+                                            disabled={processingIds.includes(alerta.id)}
+                                        >
+                                            {processingIds.includes(alerta.id) ? (
+                                                <Spinner animation="border" size="sm" variant="secondary" />
+                                            ) : (
+                                                <span style={{fontSize: '1.2rem', lineHeight: 1}}>👍</span>
+                                            )}
+                                        </Button>
                                     </OverlayTrigger>
                                 </div>
                             </ListGroup.Item>
