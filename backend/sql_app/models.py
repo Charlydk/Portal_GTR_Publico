@@ -162,6 +162,21 @@ class Campana(Base):
     hora_inicio_domingo = Column(Time, nullable=True)
     hora_fin_domingo = Column(Time, nullable=True)
 
+    # KPIs y Facturacion operativos
+    nivel_servicio = Column(Float, nullable=True)
+    nivel_atencion = Column(Float, nullable=True)
+    service_time = Column(Integer, nullable=True)
+    tmo_operativo = Column(Integer, nullable=True)
+    tipo_facturacion = Column(String(255), nullable=True)
+
+    # Horarios de Cobertura WFM
+    cobertura_inicio_semana = Column(Time, nullable=True)
+    cobertura_fin_semana = Column(Time, nullable=True)
+    cobertura_inicio_sabado = Column(Time, nullable=True)
+    cobertura_fin_sabado = Column(Time, nullable=True)
+    cobertura_inicio_domingo = Column(Time, nullable=True)
+    cobertura_fin_domingo = Column(Time, nullable=True)
+
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
     plantilla_defecto_id = Column(Integer, ForeignKey("plantillas_checklist.id"), nullable=True)

@@ -44,6 +44,38 @@ async def check_in_campana(
             db.add(zombi)
         await db.commit()
 
+    # --- FASE 1.5: VERIFICACIÓN HORARIO DE COBERTURA ---
+    query_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
+    res_camp = await db.execute(query_campana)
+    campana_check = res_camp.scalars().first()
+    if not campana_check:
+        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+
+    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+    ahora_arg = datetime.now(tz_argentina)
+    dia_semana_check = ahora_arg.weekday()
+    hora_actual_check = ahora_arg.time()
+    
+    if dia_semana_check == 5:
+        cob_inicio = campana_check.cobertura_inicio_sabado
+        cob_fin = campana_check.cobertura_fin_sabado
+    elif dia_semana_check == 6:
+        cob_inicio = campana_check.cobertura_inicio_domingo
+        cob_fin = campana_check.cobertura_fin_domingo
+    else:
+        cob_inicio = campana_check.cobertura_inicio_semana
+        cob_fin = campana_check.cobertura_fin_semana
+
+    if cob_inicio and cob_fin:
+        esta_en_cobertura = False
+        if cob_inicio <= cob_fin:
+            esta_en_cobertura = cob_inicio <= hora_actual_check <= cob_fin
+        else:
+            esta_en_cobertura = hora_actual_check >= cob_inicio or hora_actual_check <= cob_fin
+        
+        if not esta_en_cobertura:
+            raise HTTPException(status_code=403, detail="La campaña se encuentra fuera del horario de cobertura WFM.")
+
     # --- FASE 2: VERIFICACIÓN ESPECÍFICA ---
     query_target = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
@@ -202,19 +234,19 @@ async def obtener_cobertura_operativa(
         fin = None
         
         if dia_semana == 5:
-            inicio = campana.hora_inicio_sabado
-            fin = campana.hora_fin_sabado
+            inicio = campana.cobertura_inicio_sabado
+            fin = campana.cobertura_fin_sabado
         elif dia_semana == 6:
-            inicio = campana.hora_inicio_domingo
-            fin = campana.hora_fin_domingo
+            inicio = campana.cobertura_inicio_domingo
+            fin = campana.cobertura_fin_domingo
         else:
-            inicio = campana.hora_inicio_semana
-            fin = campana.hora_fin_semana
+            inicio = campana.cobertura_inicio_semana
+            fin = campana.cobertura_fin_semana
         
         estado = "DESCONOCIDO"
 
         if not inicio or not fin:
-            estado = "CUBIERTA" if analistas_online > 0 else "CERRADA"
+            estado = "CUBIERTA" if analistas_online > 0 else "SIN_HORARIO"
         else:
             esta_operativa = False
             if inicio <= fin:
@@ -223,7 +255,7 @@ async def obtener_cobertura_operativa(
                 esta_operativa = hora_actual >= inicio or hora_actual <= fin
             
             if not esta_operativa:
-                estado = "CERRADA"
+                continue # Excluir del radar si está fuera de cobertura WFM
             else:
                 estado = "CUBIERTA" if analistas_online > 0 else "DESCUBIERTA"
 

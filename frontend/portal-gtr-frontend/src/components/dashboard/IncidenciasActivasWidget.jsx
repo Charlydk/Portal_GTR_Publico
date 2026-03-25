@@ -14,21 +14,23 @@ const GravedadIcon = ({ gravedad }) => {
     return <Badge pill bg={variant} className="me-2" title={`Gravedad: ${title}`}>{symbol}</Badge>;
 };
 
-function IncidenciasActivasWidget({ incidencias, loading }) {
-    // ... (la función getStatusInfo se queda igual)
+function IncidenciasActivasWidget({ incidencias, loading, title = "Últimas Incidencias Activas" }) {
 
     return (
         <Card className="shadow-sm h-100">
-            <Card.Header as="h5">Últimas Incidencias Activas</Card.Header>
+            <Card.Header as="h5">{title}</Card.Header>
             {loading ? (
                 <Card.Body className="text-center"><Spinner animation="border" /></Card.Body>
             ) : (
                 <ListGroup variant="flush">
                     {incidencias.length > 0 ? incidencias.map(inc => (
                         <ListGroup.Item key={inc.id} action as={Link} to={`/incidencias/${inc.id}`}>
-                            <div className="d-flex w-100 justify-content-between">
+                            <div className="d-flex w-100 justify-content-between align-items-center">
                                 <span className="fw-bold"><GravedadIcon gravedad={inc.gravedad} /> {inc.titulo}</span>
-                                <Badge bg={inc.estado === 'ABIERTA' ? 'danger' : 'warning'}>{inc.estado.replace('_', ' ')}</Badge>
+                                <div>
+                                    <span className="text-muted small me-2">{new Date(inc.fecha_apertura).toLocaleDateString()}</span>
+                                    <Badge bg={inc.estado === 'ABIERTA' ? 'danger' : (inc.estado === 'EN_PROGRESO' ? 'warning' : 'secondary')}>{inc.estado.replace('_', ' ')}</Badge>
+                                </div>
                             </div>
                             <div className="text-muted small mt-1">
                                 Campaña: {inc.campana.nombre} | Asignado a: {inc.asignado_a ? inc.asignado_a.nombre : 'Nadie'}

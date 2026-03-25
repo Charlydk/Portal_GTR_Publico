@@ -5,6 +5,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { GTR_API_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 import { Container, Card, ListGroup, Button, Spinner, Alert, Row, Col, Badge } from 'react-bootstrap';
+import EventosCampanaWidget from '../components/dashboard/EventosCampanaWidget';
+import IncidenciasActivasWidget from '../components/dashboard/IncidenciasActivasWidget';
 
 function DetalleCampanaPage() {
     const { id } = useParams();
@@ -16,6 +18,39 @@ function DetalleCampanaPage() {
     const [error, setError] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
     
+    const [incidencias, setIncidencias] = useState([]);
+    const [loadingIncidencias, setLoadingIncidencias] = useState(true);
+
+    const fetchIncidencias = useCallback(async () => {
+        if (!authToken) return;
+        setLoadingIncidencias(true);
+        try {
+            const response = await fetchWithAuth(`${GTR_API_URL}/incidencias/filtradas/?campana_id=${id}`);
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Sort array: ABIERTA/EN_PROGRESO first, then by youngest opening date
+                const sorted = data.sort((a,b) => {
+                    const isActivaA = a.estado === 'ABIERTA' || a.estado === 'EN_PROGRESO';
+                    const isActivaB = b.estado === 'ABIERTA' || b.estado === 'EN_PROGRESO';
+                    
+                    if (isActivaA && !isActivaB) return -1;
+                    if (!isActivaA && isActivaB) return 1;
+                    
+                    // If both are active or both are inactive, sort chronologically desc
+                    return new Date(b.fecha_apertura) - new Date(a.fecha_apertura);
+                });
+                
+                // Get top 10
+                setIncidencias(sorted.slice(0, 10));
+            }
+        } catch (err) {
+            console.error("Error fetching incidencias:", err);
+        } finally {
+            setLoadingIncidencias(false);
+        }
+    }, [id, authToken]);
+
     const fetchCampanaDetails = useCallback(async () => {
         if (!authToken) {
             setLoading(false);
@@ -36,7 +71,8 @@ function DetalleCampanaPage() {
 
     useEffect(() => {
         fetchCampanaDetails();
-    }, [fetchCampanaDetails]);
+        fetchIncidencias();
+    }, [fetchCampanaDetails, fetchIncidencias]);
     
     const handleAssignUnassign = async (action) => {
         if (!user || !authToken || isProcessing) return;
@@ -99,10 +135,10 @@ function DetalleCampanaPage() {
                             </div>
                         </Col>
                         
-                        {/* COLUMNA DERECHA: Horarios (3 Bloques) */}
+                        {/* COLUMNA DERECHA: Horarios y KPIs */}
                         <Col lg={7}>
-                            <h5 className="text-secondary border-bottom pb-2 mb-3">Configuración Operativa</h5>
-                            <Row className="g-2 text-center">
+                            <h5 className="text-secondary border-bottom pb-2 mb-3">Horario Operativo</h5>
+                            <Row className="g-2 text-center mb-4">
                                 {/* Lunes a Viernes */}
                                 <Col sm={4}>
                                     <div className="border rounded p-2 bg-primary bg-opacity-10 h-100">
@@ -125,6 +161,64 @@ function DetalleCampanaPage() {
                                     </div>
                                 </Col>
                             </Row>
+
+                            <h5 className="text-secondary border-bottom pb-2 mb-3">Cobertura WFM</h5>
+                            <Row className="g-2 text-center mb-4">
+                                {/* Lunes a Viernes */}
+                                <Col sm={4}>
+                                    <div className="border rounded p-2 bg-warning bg-opacity-10 h-100">
+                                        <div className="text-warning fw-bold small mb-1">🏢 Lunes a Viernes</div>
+                                        {renderTimeBlock(campana.cobertura_inicio_semana, campana.cobertura_fin_semana)}
+                                    </div>
+                                </Col>
+                                {/* Sábado */}
+                                <Col sm={4}>
+                                    <div className="border rounded p-2 bg-warning bg-opacity-10 h-100">
+                                        <div className="text-warning fw-bold small mb-1">🌤️ Sábados</div>
+                                        {renderTimeBlock(campana.cobertura_inicio_sabado, campana.cobertura_fin_sabado)}
+                                    </div>
+                                </Col>
+                                {/* Domingo */}
+                                <Col sm={4}>
+                                    <div className="border rounded p-2 bg-warning bg-opacity-10 h-100">
+                                        <div className="text-warning fw-bold small mb-1">🏡 Domingos</div>
+                                        {renderTimeBlock(campana.cobertura_inicio_domingo, campana.cobertura_fin_domingo)}
+                                    </div>
+                                </Col>
+                            </Row>
+
+                            <h5 className="text-secondary border-bottom pb-2 mb-3">KPIs y Facturación</h5>
+                            <Row className="g-2 mb-2">
+                                <Col sm={6}>
+                                    <ListGroup variant="flush" className="border rounded">
+                                        <ListGroup.Item className="d-flex justify-content-between align-items-center bg-light">
+                                            <span className="small fw-bold text-muted">Nivel de Servicio</span>
+                                            <Badge bg="primary">{campana.nivel_servicio ? `${campana.nivel_servicio}%` : 'N/A'}</Badge>
+                                        </ListGroup.Item>
+                                        <ListGroup.Item className="d-flex justify-content-between align-items-center bg-light">
+                                            <span className="small fw-bold text-muted">Nivel de Atención</span>
+                                            <Badge bg="info">{campana.nivel_atencion ? `${campana.nivel_atencion}%` : 'N/A'}</Badge>
+                                        </ListGroup.Item>
+                                    </ListGroup>
+                                </Col>
+                                <Col sm={6}>
+                                    <ListGroup variant="flush" className="border rounded">
+                                        <ListGroup.Item className="d-flex justify-content-between align-items-center bg-light">
+                                            <span className="small fw-bold text-muted">Service Time</span>
+                                            <Badge bg="secondary">{campana.service_time ? `${campana.service_time}s` : 'N/A'}</Badge>
+                                        </ListGroup.Item>
+                                        <ListGroup.Item className="d-flex justify-content-between align-items-center bg-light">
+                                            <span className="small fw-bold text-muted">TMO Operativo</span>
+                                            <Badge bg="dark">{campana.tmo_operativo ? `${campana.tmo_operativo}s` : 'N/A'}</Badge>
+                                        </ListGroup.Item>
+                                    </ListGroup>
+                                </Col>
+                            </Row>
+                            <div className="mb-3 px-1 text-end">
+                                <small className="text-muted fw-bold me-2">Tipo de Facturación:</small>
+                                <span className="text-dark">{campana.tipo_facturacion || 'No especificado'}</span>
+                            </div>
+
                         </Col>
                     </Row>
 
@@ -160,6 +254,18 @@ function DetalleCampanaPage() {
                             )}
                         </Card.Body>
                     </Card>
+
+                    {/* EVENTOS E INCIDENCIAS */}
+                    <div className="mt-5 border-top pt-4">
+                        <Row className="g-4">
+                            <Col lg={5}>
+                                <IncidenciasActivasWidget incidencias={incidencias} loading={loadingIncidencias} title="Incidencias (Top 10)" />
+                            </Col>
+                            <Col lg={7}>
+                                <EventosCampanaWidget campanaId={campana.id} />
+                            </Col>
+                        </Row>
+                    </div>
 
                 </Card.Body>
                 <Card.Footer className="text-end">

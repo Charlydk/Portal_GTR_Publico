@@ -18,11 +18,8 @@ const HistorialComentarios = ({ campanaId }) => {
         return 'N/A';
     }
 
-    // --- LA CORRECCIÓN DEFINITIVA ---
-    // Le añadimos la 'Z' al final para forzar a que JavaScript
-    // interprete el string como una fecha en formato UTC universal.
-    const date = new Date(apiDateString + 'Z');
-    // --------------------------------
+    // Eliminamos el '+' 'Z' forzado para respetar si el backend ya manda el offset
+    const date = new Date(apiDateString);
 
     // Verificamos si la fecha parseada es válida
     if (isNaN(date.getTime())) {
@@ -80,12 +77,18 @@ const HistorialComentarios = ({ campanaId }) => {
     try {
       const response = await fetchWithAuth(`${GTR_API_URL}/campanas/${campanaId}/comentarios_generales`, {
         method: 'POST',
-        body: JSON.stringify({ comentario: nuevoComentario }),
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ contenido: nuevoComentario }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Error al enviar el comentario.');
+        const msg = errorData.detail 
+            ? (typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail)) 
+            : 'Error al enviar el comentario.';
+        throw new Error(msg);
       }
       
       // Limpiar el campo de texto y recargar la lista de comentarios
@@ -101,19 +104,19 @@ const HistorialComentarios = ({ campanaId }) => {
 
   return (
     <Card className="shadow-sm p-4 mb-4">
-      <h4 className="mb-3 text-primary">Historial de Comentarios Generales</h4>
+      <h4 className="mb-3 text-primary">Comentarios para Posmortem</h4>
       
       {/* Formulario para añadir un nuevo comentario */}
       <Form onSubmit={handleCommentSubmit} className="mb-4">
         <Form.Group className="mb-2">
-          <Form.Label htmlFor="nuevoComentario" className="visually-hidden">Nuevo Comentario</Form.Label>
+          <Form.Label htmlFor="nuevoComentario" className="visually-hidden">Nuevo Comentario Posmortem</Form.Label>
           <Form.Control
             as="textarea"
             id="nuevoComentario"
             rows={3}
             value={nuevoComentario}
             onChange={(e) => setNuevoComentario(e.target.value)}
-            placeholder="Escribe un nuevo comentario general para la bitácora..."
+            placeholder="Escribe un nuevo comentario para el posmortem de la campaña..."
             disabled={submitting}
           />
         </Form.Group>
@@ -135,7 +138,7 @@ const HistorialComentarios = ({ campanaId }) => {
             comentarios.map((comentario) => (
               <ListGroup.Item key={comentario.id} className="px-0">
                 <div className="d-flex w-100 justify-content-between">
-                  <p className="mb-1">{comentario.comentario}</p>
+                  <p className="mb-1">{comentario.contenido}</p>
                 </div>
                 <small className="text-muted">
                   <Badge pill bg="secondary" className="me-2">
@@ -146,7 +149,7 @@ const HistorialComentarios = ({ campanaId }) => {
               </ListGroup.Item>
             ))
           ) : (
-            <Alert variant="info">No hay comentarios generales en esta bitácora todavía.</Alert>
+            <Alert variant="info">No hay comentarios para posmortem en esta bitácora todavía.</Alert>
           )}
         </ListGroup>
       )}

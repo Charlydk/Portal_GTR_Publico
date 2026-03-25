@@ -10,24 +10,35 @@ function FormularioCampanaPage() {
     const { authToken } = useAuth();
     const isEditing = !!id;
 
-    // 1. ESTADO INICIAL COMPLETO (Con los 3 bloques de horario)
+    // 1. ESTADO INICIAL COMPLETO (Con los 3 bloques de horario y KPIs)
     const [formData, setFormData] = useState({
         nombre: '',
         descripcion: '',
         fecha_inicio: '',
         fecha_fin: '',
         
-        // Bloque Semana
+        // Horario Operativo
         hora_inicio_semana: '',
         hora_fin_semana: '',
-        
-        // Bloque Sábado
         hora_inicio_sabado: '',
         hora_fin_sabado: '',
-        
-        // Bloque Domingo
         hora_inicio_domingo: '',
-        hora_fin_domingo: ''
+        hora_fin_domingo: '',
+        
+        // Cobertura WFM
+        cobertura_inicio_semana: '',
+        cobertura_fin_semana: '',
+        cobertura_inicio_sabado: '',
+        cobertura_fin_sabado: '',
+        cobertura_inicio_domingo: '',
+        cobertura_fin_domingo: '',
+
+        // KPIs
+        nivel_servicio: '',
+        nivel_atencion: '',
+        service_time: '',
+        tmo_operativo: '',
+        tipo_facturacion: ''
     });
     
     const [lobs, setLobs] = useState(['']); 
@@ -76,12 +87,25 @@ function FormularioCampanaPage() {
                 // Mapeamos los horarios que vienen del backend
                 hora_inicio_semana: formatTime(data.hora_inicio_semana),
                 hora_fin_semana: formatTime(data.hora_fin_semana),
-                
                 hora_inicio_sabado: formatTime(data.hora_inicio_sabado),
                 hora_fin_sabado: formatTime(data.hora_fin_sabado),
-                
                 hora_inicio_domingo: formatTime(data.hora_inicio_domingo),
                 hora_fin_domingo: formatTime(data.hora_fin_domingo),
+
+                // Cobertura WFM
+                cobertura_inicio_semana: formatTime(data.cobertura_inicio_semana),
+                cobertura_fin_semana: formatTime(data.cobertura_fin_semana),
+                cobertura_inicio_sabado: formatTime(data.cobertura_inicio_sabado),
+                cobertura_fin_sabado: formatTime(data.cobertura_fin_sabado),
+                cobertura_inicio_domingo: formatTime(data.cobertura_inicio_domingo),
+                cobertura_fin_domingo: formatTime(data.cobertura_fin_domingo),
+
+                // KPIs
+                nivel_servicio: data.nivel_servicio || '',
+                nivel_atencion: data.nivel_atencion || '',
+                service_time: data.service_time || '',
+                tmo_operativo: data.tmo_operativo || '',
+                tipo_facturacion: data.tipo_facturacion || ''
             });
 
             const lobsExistentes = data.lobs ? data.lobs.map(lob => lob.nombre) : [];
@@ -126,13 +150,26 @@ function FormularioCampanaPage() {
             // Enviamos los 3 bloques limpios
             hora_inicio_semana: cleanTime(formData.hora_inicio_semana),
             hora_fin_semana: cleanTime(formData.hora_fin_semana),
-            
             hora_inicio_sabado: cleanTime(formData.hora_inicio_sabado),
             hora_fin_sabado: cleanTime(formData.hora_fin_sabado),
-            
             hora_inicio_domingo: cleanTime(formData.hora_inicio_domingo),
             hora_fin_domingo: cleanTime(formData.hora_fin_domingo),
             
+            // Cobertura WFM
+            cobertura_inicio_semana: cleanTime(formData.cobertura_inicio_semana),
+            cobertura_fin_semana: cleanTime(formData.cobertura_fin_semana),
+            cobertura_inicio_sabado: cleanTime(formData.cobertura_inicio_sabado),
+            cobertura_fin_sabado: cleanTime(formData.cobertura_fin_sabado),
+            cobertura_inicio_domingo: cleanTime(formData.cobertura_inicio_domingo),
+            cobertura_fin_domingo: cleanTime(formData.cobertura_fin_domingo),
+            
+            // KPIs (convert empty to null)
+            nivel_servicio: formData.nivel_servicio ? parseFloat(formData.nivel_servicio) : null,
+            nivel_atencion: formData.nivel_atencion ? parseFloat(formData.nivel_atencion) : null,
+            service_time: formData.service_time ? parseFloat(formData.service_time) : null,
+            tmo_operativo: formData.tmo_operativo ? parseFloat(formData.tmo_operativo) : null,
+            tipo_facturacion: formData.tipo_facturacion || null,
+
             lobs_nombres: lobs_nombres_filtrados
         };
 
@@ -231,9 +268,54 @@ function FormularioCampanaPage() {
 
                     <hr />
 
+                    {/* --- SECCIÓN KPIs --- */}
+                    <div className="mb-4">
+                        <h5 className="text-secondary mb-3">📊 KPIs y Facturación</h5>
+                        <Row className="g-3">
+                            <Col md={4}>
+                                <Form.Group>
+                                    <Form.Label className="small">Nivel de Servicio (%)</Form.Label>
+                                    <Form.Control type="number" step="0.1" name="nivel_servicio" value={formData.nivel_servicio} onChange={handleChange} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                                <Form.Group>
+                                    <Form.Label className="small">Nivel de Atención (%)</Form.Label>
+                                    <Form.Control type="number" step="0.1" name="nivel_atencion" value={formData.nivel_atencion} onChange={handleChange} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={4}>
+                                <Form.Group>
+                                    <Form.Label className="small">Service Time (s)</Form.Label>
+                                    <Form.Control type="number" step="0.1" name="service_time" value={formData.service_time} onChange={handleChange} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="small">TMO Operativo (s)</Form.Label>
+                                    <Form.Control type="number" step="0.1" name="tmo_operativo" value={formData.tmo_operativo} onChange={handleChange} />
+                                </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Group>
+                                    <Form.Label className="small">Tipo de Facturación</Form.Label>
+                                    <Form.Select name="tipo_facturacion" value={formData.tipo_facturacion} onChange={handleChange}>
+                                        <option value="">No especificado</option>
+                                        <option value="Por hora/conexion">Por hora/conexión</option>
+                                        <option value="Por TMO">Por TMO</option>
+                                        <option value="Por venta efectiva">Por venta efectiva</option>
+                                        <option value="Por llamada productiva">Por llamada productiva</option>
+                                    </Form.Select>
+                                </Form.Group>
+                            </Col>
+                        </Row>
+                    </div>
+
+                    <hr />
+
                     {/* --- SECCIÓN DE HORARIOS (3 BLOQUES: SEMANA, SÁBADO, DOMINGO) --- */}
                     <div className="mb-4">
-                        <h5 className="text-secondary mb-3">🕒 Configuración de Horarios Operativos</h5>
+                        <h5 className="text-secondary mb-3">🕒 Horario Operativo (Para control interno)</h5>
                         <Row className="g-3">
                             {/* BLOQUE 1: SEMANA */}
                             <Col md={4}>
@@ -323,7 +405,43 @@ function FormularioCampanaPage() {
                             </Col>
                         </Row>
                         <Form.Text className="text-muted d-block text-center mt-2">
-                            * Deja los campos vacíos en los días que la campaña permanece cerrada.
+                            * Deja los campos vacíos en los días que el horario operativo esté inactivo.
+                        </Form.Text>
+                    </div>
+
+                    <div className="mb-4">
+                        <h5 className="text-warning mb-3">🕒 Cobertura WFM (Restringe el Check-In y Radar)</h5>
+                        <Row className="g-3">
+                            <Col md={4}>
+                                <Card className="h-100 border-warning border-opacity-25">
+                                    <Card.Header className="bg-warning bg-opacity-10 fw-bold text-center">🏢 Lunes a Viernes</Card.Header>
+                                    <Card.Body>
+                                        <Form.Group className="mb-2"><Form.Label className="small text-muted">Apertura</Form.Label><Form.Control type="time" name="cobertura_inicio_semana" value={formData.cobertura_inicio_semana || ''} onChange={handleChange} /></Form.Group>
+                                        <Form.Group><Form.Label className="small text-muted">Cierre</Form.Label><Form.Control type="time" name="cobertura_fin_semana" value={formData.cobertura_fin_semana || ''} onChange={handleChange} /></Form.Group>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                            <Col md={4}>
+                                <Card className="h-100 border-warning border-opacity-25">
+                                    <Card.Header className="bg-warning bg-opacity-10 fw-bold text-center">🌤️ Sábados</Card.Header>
+                                    <Card.Body>
+                                        <Form.Group className="mb-2"><Form.Label className="small text-muted">Apertura</Form.Label><Form.Control type="time" name="cobertura_inicio_sabado" value={formData.cobertura_inicio_sabado || ''} onChange={handleChange} /></Form.Group>
+                                        <Form.Group><Form.Label className="small text-muted">Cierre</Form.Label><Form.Control type="time" name="cobertura_fin_sabado" value={formData.cobertura_fin_sabado || ''} onChange={handleChange} /></Form.Group>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                            <Col md={4}>
+                                <Card className="h-100 border-warning border-opacity-25">
+                                    <Card.Header className="bg-warning bg-opacity-10 fw-bold text-center">🏡 Domingos</Card.Header>
+                                    <Card.Body>
+                                        <Form.Group className="mb-2"><Form.Label className="small text-muted">Apertura</Form.Label><Form.Control type="time" name="cobertura_inicio_domingo" value={formData.cobertura_inicio_domingo || ''} onChange={handleChange} /></Form.Group>
+                                        <Form.Group><Form.Label className="small text-muted">Cierre</Form.Label><Form.Control type="time" name="cobertura_fin_domingo" value={formData.cobertura_fin_domingo || ''} onChange={handleChange} /></Form.Group>
+                                    </Card.Body>
+                                </Card>
+                            </Col>
+                        </Row>
+                        <Form.Text className="text-muted d-block text-center mt-2">
+                            * Deja los campos vacíos en los días que no hay cobertura para esta campaña.
                         </Form.Text>
                     </div>
 

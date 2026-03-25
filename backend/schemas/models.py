@@ -36,6 +36,21 @@ class CampanaBase(BaseModel):
     hora_inicio_domingo: Optional[time] = None
     hora_fin_domingo: Optional[time] = None
 
+    # KPIs
+    nivel_servicio: Optional[float] = None
+    nivel_atencion: Optional[float] = None
+    service_time: Optional[int] = None
+    tmo_operativo: Optional[int] = None
+    tipo_facturacion: Optional[str] = None
+
+    # Cobertura WFM
+    cobertura_inicio_semana: Optional[time] = None
+    cobertura_fin_semana: Optional[time] = None
+    cobertura_inicio_sabado: Optional[time] = None
+    cobertura_fin_sabado: Optional[time] = None
+    cobertura_inicio_domingo: Optional[time] = None
+    cobertura_fin_domingo: Optional[time] = None
+
 class CampanaUpdate(BaseModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
