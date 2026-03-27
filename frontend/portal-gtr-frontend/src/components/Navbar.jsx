@@ -58,6 +58,8 @@ function NavbarComponent() {
                                 <NavDropdown.Item as={Link} to="/control-incidencias" onClick={() => setExpanded(false)}>Control Incidencias</NavDropdown.Item>
                                 <NavDropdown.Item as={Link} to="/control-eventos" onClick={() => setExpanded(false)}>Control Eventos</NavDropdown.Item>
                                 <NavDropdown.Divider />
+                                <NavDropdown.Item as={Link} to="/backoffice/kanban" onClick={() => setExpanded(false)}>📦 Kanban Backoffice</NavDropdown.Item>
+                                <NavDropdown.Divider />
                                 <NavDropdown.Item as={Link} to="/planificacion-turnos" onClick={() => setExpanded(false)}>Planificación Turnos (WFM)</NavDropdown.Item>
                             </NavDropdown>
                         )}

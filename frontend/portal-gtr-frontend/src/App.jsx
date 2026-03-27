@@ -39,6 +39,8 @@ import CambiarPasswordPage from './pages/CambiarPasswordPage';
 import AyudaPage from './pages/AyudaPage';
 import GestionPlantillasPage from './pages/GestionPlantillasPage.jsx';
 import Planificacion from './pages/planificacion/Planificacion.jsx';
+import KanbanBackofficePage from './pages/KanbanBackofficePage.jsx';
+import DetalleEntregablePage from './pages/DetalleEntregablePage.jsx';
 
 
 const AppContent = () => {
@@ -92,6 +94,9 @@ const AppContent = () => {
             <Route path="/historial-aprobaciones" element={<HistorialAprobacionesPage />} />
             {/* Rutas planificacion (Accesible para todos los GTR) */}
             <Route path="/planificacion-turnos" element={<Planificacion />} />
+            {/* Kanban Backoffice */}
+            <Route path="/backoffice/kanban" element={<KanbanBackofficePage />} />
+            <Route path="/backoffice/entregables/:id" element={<DetalleEntregablePage />} />
           </Route>
 
           {/* Rutas ADMINISTRATIVAS (Supervisor y Responsable) */}

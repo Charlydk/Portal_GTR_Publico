@@ -38,3 +38,8 @@ class GravedadIncidencia(str, Enum):
     BAJA = "BAJA"
     MEDIA = "MEDIA"
     ALTA = "ALTA"
+
+class EstadoEntregable(str, Enum):
+    PENDIENTE = "PENDIENTE"
+    EN_PROGRESO = "EN_PROGRESO"
+    COMPLETADO = "COMPLETADO"

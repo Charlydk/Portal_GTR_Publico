@@ -29,7 +29,7 @@ from .sql_app.crud import get_analista_by_email
 from .routers import (
     analistas, campanas, bitacora, tareas, 
     incidencias, dashboard, sesiones, 
-    hhee_router, wfm_router
+    hhee_router, wfm_router, entregables
 )
 from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
 
@@ -95,6 +95,7 @@ app.include_router(tareas.router, prefix="/gtr", dependencies=gtr_wfm_restrictio
 app.include_router(incidencias.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(dashboard.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(sesiones.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(entregables.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(hhee_router.router, prefix="/hhee")
 app.include_router(wfm_router.router, dependencies=gtr_wfm_restriction)
 

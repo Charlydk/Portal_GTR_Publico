@@ -5,7 +5,8 @@ from sqlalchemy import (Column, Integer, String, Boolean, DateTime, ForeignKey,
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 from ..enums import (UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia,
-                     TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia)
+                     TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia,
+                     EstadoEntregable)
 
 Base = declarative_base()
 
@@ -141,6 +142,7 @@ class Analista(Base):
 
     # --- NUEVA RELACIÓN: PLANIFICACIÓN ---
     planificaciones = relationship("PlanificacionDiaria", back_populates="analista", foreign_keys="[PlanificacionDiaria.analista_id]")
+    entregables_asignados = relationship("Entregable", back_populates="asignado_a", foreign_keys="[Entregable.asignado_a_id]")
 
 
 class Campana(Base):
@@ -196,6 +198,7 @@ class Campana(Base):
     sesiones = relationship("SesionCampana", back_populates="campana")
     bitacora_entries = relationship("BitacoraEntry", back_populates="campana", cascade="all, delete-orphan")
     plantilla_items = relationship("ItemPlantillaChecklist", back_populates="campana", cascade="all, delete-orphan")
+    entregables = relationship("Entregable", back_populates="campana", cascade="all, delete-orphan")
 
 # ==============================================================================
 # RESTO DE MODELOS (SIN CAMBIOS ESTRUCTURALES IMPORTANTES)
@@ -425,3 +428,64 @@ class SolicitudHHEE(Base):
 
     solicitante = relationship("Analista", foreign_keys=[analista_id], back_populates="solicitudes_realizadas")
     supervisor = relationship("Analista", foreign_keys=[supervisor_id], back_populates="solicitudes_gestionadas")
+
+class Entregable(Base):
+    """
+    Gestión de tareas asíncronas para el Backoffice Kanban.
+    """
+    __tablename__ = "entregables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    titulo = Column(String, nullable=False)
+    descripcion = Column(Text, nullable=True)
+    estado = Column(SQLEnum(EstadoEntregable, native_enum=False, create_type=False), default=EstadoEntregable.PENDIENTE)
+    
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+    fecha_limite = Column(Date, nullable=True)
+    fecha_completado = Column(DateTime(timezone=True), nullable=True)
+
+    # Ownership + control
+    creador_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    es_bloqueado = Column(Boolean, default=False)
+
+    asignado_a_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True)
+
+    asignado_a = relationship("Analista", foreign_keys=[asignado_a_id], back_populates="entregables_asignados")
+    creador = relationship("Analista", foreign_keys=[creador_id])
+    campana = relationship("Campana", back_populates="entregables")
+
+    # Hijos
+    items = relationship("EntregableItem", back_populates="entregable", cascade="all, delete-orphan", order_by="EntregableItem.orden")
+    comentarios = relationship("EntregableComentario", back_populates="entregable", cascade="all, delete-orphan", order_by="EntregableComentario.fecha_creacion")
+
+
+class EntregableItem(Base):
+    """Sub-tarea interna de un Entregable (backlog checklist)."""
+    __tablename__ = "entregables_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entregable_id = Column(Integer, ForeignKey("entregables.id"), nullable=False)
+    descripcion = Column(Text, nullable=False)
+    completado = Column(Boolean, default=False)
+    orden = Column(Integer, default=0)
+
+    completado_por_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+
+    entregable = relationship("Entregable", back_populates="items")
+    completado_por = relationship("Analista", foreign_keys=[completado_por_id])
+
+
+class EntregableComentario(Base):
+    """Comentario o log de cambio en un Entregable."""
+    __tablename__ = "entregables_comentarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entregable_id = Column(Integer, ForeignKey("entregables.id"), nullable=False)
+    autor_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
+    contenido = Column(Text, nullable=False)
+    es_automatico = Column(Boolean, default=False)  # True = log del sistema
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+
+    entregable = relationship("Entregable", back_populates="comentarios")
+    autor = relationship("Analista", foreign_keys=[autor_id])

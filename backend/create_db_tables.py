@@ -13,7 +13,8 @@ from .sql_app.models import (
     BitacoraEntry,
     HistorialEstadoTarea, Incidencia, ActualizacionIncidencia,
     ValidacionHHEE,
-    SolicitudHHEE
+    SolicitudHHEE,
+    Entregable
 )
 # -------------------------------------------------------------
 

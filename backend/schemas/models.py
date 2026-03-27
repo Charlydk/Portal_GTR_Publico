@@ -2,7 +2,7 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from datetime import datetime, date, time
 from typing import List, Optional
-from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia
+from ..enums import UserRole, ProgresoTarea, TipoIncidencia, EstadoIncidencia, TipoSolicitudHHEE, EstadoSolicitudHHEE, GravedadIncidencia, EstadoEntregable
 
 # --- Schemas Base (para creación y actualización) ---
 
@@ -659,6 +659,79 @@ class Planificacion(PlanificacionBase):
 
     class Config:
         from_attributes = True
+
+# ==========================================
+# SCHEMAS BACKOFFICE (Kanban Entregables)
+# ==========================================
+
+class EntregableItemCreate(BaseModel):
+    descripcion: str
+    orden: int = 0
+
+class EntregableItemUpdate(BaseModel):
+    completado: bool
+
+class EntregableItem(BaseModel):
+    id: int
+    descripcion: str
+    completado: bool
+    orden: int
+    completado_por: Optional[AnalistaSimple] = None
+    class Config:
+        from_attributes = True
+
+class EntregableComentarioCreate(BaseModel):
+    contenido: str
+
+class EntregableComentario(BaseModel):
+    id: int
+    contenido: str
+    es_automatico: bool
+    fecha_creacion: Optional[datetime] = None
+    autor: AnalistaSimple
+    class Config:
+        from_attributes = True
+
+class EntregableBase(BaseModel):
+    titulo: str
+    descripcion: Optional[str] = None
+    estado: EstadoEntregable = EstadoEntregable.PENDIENTE
+    fecha_limite: Optional[date] = None
+    asignado_a_id: Optional[int] = None
+    campana_id: Optional[int] = None
+
+class EntregableCreate(EntregableBase):
+    pass
+
+class EntregableUpdate(BaseModel):
+    titulo: Optional[str] = None
+    descripcion: Optional[str] = None
+    estado: Optional[EstadoEntregable] = None
+    fecha_limite: Optional[date] = None
+    asignado_a_id: Optional[int] = None
+    campana_id: Optional[int] = None
+
+class Entregable(EntregableBase):
+    id: int
+    fecha_creacion: Optional[datetime] = None
+    fecha_completado: Optional[datetime] = None
+    es_bloqueado: bool = False
+
+    creador_id: Optional[int] = None
+    creador: Optional[AnalistaSimple] = None
+    asignado_a: Optional[AnalistaSimple] = None
+    campana: Optional[CampanaSimple] = None
+
+    class Config:
+        from_attributes = True
+
+class EntregableDetalle(Entregable):
+    items: List[EntregableItem] = []
+    comentarios: List[EntregableComentario] = []
+    class Config:
+        from_attributes = True
+
 # --- Forward References Update ---
 Campana.model_rebuild()
 Analista.model_rebuild()
+
