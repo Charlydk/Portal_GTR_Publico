@@ -694,6 +694,7 @@ class EntregableComentario(BaseModel):
 
 class EntregableBase(BaseModel):
     titulo: str
+    asunto: Optional[str] = None
     descripcion: Optional[str] = None
     estado: EstadoEntregable = EstadoEntregable.PENDIENTE
     fecha_limite: Optional[date] = None
@@ -705,6 +706,7 @@ class EntregableCreate(EntregableBase):
 
 class EntregableUpdate(BaseModel):
     titulo: Optional[str] = None
+    asunto: Optional[str] = None
     descripcion: Optional[str] = None
     estado: Optional[EstadoEntregable] = None
     fecha_limite: Optional[date] = None

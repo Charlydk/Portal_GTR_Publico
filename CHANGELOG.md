@@ -6,6 +6,22 @@ Versioning siguiendo [Semantic Versioning](https://semver.org/lang/es/).
 
 ---
 
+## [1.4.0] - 2026-03-31
+
+### ✨ Agregado
+- **Campo Asunto** en Entregables: texto corto visible en las tarjetas del Kanban para mejorar la organización visual.
+- **Texto Enriquecido (Rich Text)**: integración de `react-quill-new` en Descripciones y Comentarios de entregables, permitiendo negritas, listas y enlaces.
+- **Seguridad de Contenido**: implementación de `dompurify` para el renderizado seguro de HTML en el frontend.
+
+### 🔧 Modificado
+- **Tarjetas del Kanban**: ahora muestran prioritariamente el Asunto; la Descripción larga se oculta del tablero para mantener un diseño limpio y estable.
+- **Dependencias**: migración de `react-quill` a `react-quill-new` para asegurar compatibilidad total con **React 19** (solución al error `findDOMNode`).
+
+### 🐛 Corregido
+- **Error 504 en Vite**: limpieza de caché tras cambio de dependencias críticas en caliente.
+
+---
+
 ## [1.3.0] - 2026-03-31
 
 ### ✨ Agregado

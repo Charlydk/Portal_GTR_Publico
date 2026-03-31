@@ -1,7 +1,9 @@
-// RUTA: src/pages/DetalleEntregablePage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Form, Spinner, Alert, ListGroup, InputGroup } from 'react-bootstrap';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+import DOMPurify from 'dompurify';
 import { API_BASE_URL, fetchWithAuth } from '../api';
 import { useAuth } from '../hooks/useAuth';
 
@@ -45,6 +47,7 @@ function DetalleEntregablePage() {
             setEntregable(data);
             setForm({
                 titulo: data.titulo,
+                asunto: data.asunto || '',
                 descripcion: data.descripcion || '',
                 estado: data.estado,
                 fecha_limite: data.fecha_limite || '',
@@ -215,8 +218,19 @@ function DetalleEntregablePage() {
                                         <Form.Control size="sm" value={form.titulo} onChange={e => setForm({...form, titulo: e.target.value})} required />
                                     </Form.Group>
                                     <Form.Group className="mb-3">
-                                        <Form.Label className="small fw-semibold">Descripción</Form.Label>
-                                        <Form.Control as="textarea" rows={3} size="sm" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} />
+                                        <Form.Label className="small fw-semibold">Asunto</Form.Label>
+                                        <Form.Control size="sm" value={form.asunto} onChange={e => setForm({...form, asunto: e.target.value})} />
+                                    </Form.Group>
+                                    <Form.Group className="mb-3">
+                                        <Form.Label className="small fw-semibold">Descripción (Formato)</Form.Label>
+                                        <div className="bg-white">
+                                            <ReactQuill 
+                                                theme="snow" 
+                                                value={form.descripcion} 
+                                                onChange={val => setForm({...form, descripcion: val})}
+                                                style={{height: '150px', marginBottom: '45px'}}
+                                            />
+                                        </div>
                                     </Form.Group>
                                     <Form.Group className="mb-3">
                                         <Form.Label className="small fw-semibold">Estado</Form.Label>
@@ -249,14 +263,18 @@ function DetalleEntregablePage() {
                                 </Form>
                             ) : (
                                 <>
-                                    <h5 className="fw-bold mb-3">{entregable.titulo}</h5>
+                                    <h5 className="fw-bold mb-1">{entregable.titulo}</h5>
+                                    {entregable.asunto && <h6 className="text-primary fw-bold mb-3">{entregable.asunto}</h6>}
                                     <div className="mb-3">
                                         <Badge bg={ESTADOS.find(e => e.key === entregable.estado)?.variant || 'secondary'} className="me-2">
                                             {ESTADOS.find(e => e.key === entregable.estado)?.label || entregable.estado}
                                         </Badge>
                                         {entregable.es_bloqueado && <Badge bg="dark">🔒 Control Supervisor</Badge>}
                                     </div>
-                                    <p className="text-muted small mb-4">{entregable.descripcion || 'Sin descripción.'}</p>
+                                    <div 
+                                        className="text-muted small mb-4 rich-content-view" 
+                                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(entregable.descripcion || 'Sin descripción.') }}
+                                    />
                                     
                                     <ListGroup variant="flush" className="small border-top pt-3">
                                         <ListGroup.Item className="d-flex justify-content-between px-0 py-2">
@@ -370,17 +388,17 @@ function DetalleEntregablePage() {
                         <Card.Body>
                             <Form onSubmit={handleAddComment} className="mb-4">
                                 <Form.Group>
-                                    <Form.Control 
-                                        as="textarea" 
-                                        rows={2} 
-                                        placeholder="Dejar un comentario o avance..." 
-                                        size="sm"
-                                        value={newComment}
-                                        onChange={e => setNewComment(e.target.value)}
-                                        className="mb-2"
-                                    />
-                                    <div className="text-end">
-                                        <Button variant="primary" size="sm" type="submit" disabled={actionLoading || !newComment.trim()}>
+                                    <Form.Label className="small fw-semibold">Nuevo Comentario</Form.Label>
+                                    <div className="bg-white mb-5">
+                                        <ReactQuill 
+                                            theme="snow" 
+                                            value={newComment} 
+                                            onChange={setNewComment}
+                                            style={{height: '100px'}}
+                                        />
+                                    </div>
+                                    <div className="text-end pt-2">
+                                        <Button variant="primary" size="sm" type="submit" disabled={actionLoading || !newComment.trim() || newComment === '<p><br></p>'}>
                                             Enviar Comentario
                                         </Button>
                                     </div>
@@ -400,9 +418,10 @@ function DetalleEntregablePage() {
                                                 {new Date(comment.fecha_creacion).toLocaleString()}
                                             </span>
                                         </div>
-                                        <div className={comment.es_automatico ? 'fst-italic text-muted' : ''}>
-                                            {comment.contenido}
-                                        </div>
+                                        <div 
+                                            className={comment.es_automatico ? 'fst-italic text-muted rich-content-view' : 'rich-content-view'}
+                                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(comment.contenido) }}
+                                        />
                                     </div>
                                 ))}
                                 {entregable.comentarios.length === 0 && (

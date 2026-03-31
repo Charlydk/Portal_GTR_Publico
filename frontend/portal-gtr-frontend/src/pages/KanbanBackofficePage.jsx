@@ -30,7 +30,7 @@ const style = `
 // ─── Modal de Crear/Editar Entregable ────────────────────────────────────────
 function EntregableModal({ show, onHide, entregable, analistas, campanas, onSaved }) {
     const { user } = useAuth();
-    const initialForm = { titulo: '', descripcion: '', estado: 'PENDIENTE', fecha_limite: '', asignado_a_id: '', campana_id: '' };
+    const initialForm = { titulo: '', asunto: '', descripcion: '', estado: 'PENDIENTE', fecha_limite: '', asignado_a_id: '', campana_id: '' };
     const [form, setForm] = useState(initialForm);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -43,6 +43,7 @@ function EntregableModal({ show, onHide, entregable, analistas, campanas, onSave
         if (entregable) {
             setForm({
                 titulo: entregable.titulo || '',
+                asunto: entregable.asunto || '',
                 descripcion: entregable.descripcion || '',
                 estado: entregable.estado || 'PENDIENTE',
                 fecha_limite: entregable.fecha_limite || '',
@@ -109,6 +110,16 @@ function EntregableModal({ show, onHide, entregable, analistas, campanas, onSave
                             size="sm" name="titulo" value={form.titulo} 
                             onChange={e => setForm({...form, titulo: e.target.value})} 
                             required readOnly={!canEditCore}
+                        />
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
+                        <Form.Label className="small fw-semibold">Asunto (Breve para Tarjeta)</Form.Label>
+                        <Form.Control 
+                            size="sm" name="asunto" value={form.asunto} 
+                            onChange={e => setForm({...form, asunto: e.target.value})} 
+                            placeholder="Ej: Revisión de métricas Wom"
+                            readOnly={!canEditCore}
                         />
                     </Form.Group>
                     
@@ -200,7 +211,7 @@ function EntregableCard({ item, onEdit, onDelete, canDelete }) {
                         {canDelete && <button className="btn btn-sm p-0 px-1 text-muted" title="Eliminar" onClick={() => onDelete(item.id)} style={{ fontSize: '0.75rem' }}>🗑️</button>}
                     </div>
                 </div>
-                {item.descripcion && <p className="text-muted mb-2 mt-1 text-truncate" style={{ fontSize: '0.7rem' }}>{item.descripcion}</p>}
+                {item.asunto && <p className="text-primary mb-2 mt-1 fw-bold" style={{ fontSize: '0.75rem', borderLeft: '3px solid #0d6efd', paddingLeft: '8px' }}>{item.asunto}</p>}
                 <div className="d-flex flex-wrap gap-1 mt-1">
                     {/* Badge de Creador */}
                     {item.creador && (

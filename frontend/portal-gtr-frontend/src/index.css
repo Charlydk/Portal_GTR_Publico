@@ -133,3 +133,29 @@ button:focus-visible {
     opacity: 0;
     cursor: pointer;
 }
+
+/* === RICH TEXT CONTENT VIEW === */
+.rich-content-view p {
+    margin-bottom: 0.5rem;
+}
+.rich-content-view ul, .rich-content-view ol {
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+}
+.rich-content-view li {
+    margin-bottom: 0.25rem;
+}
+.rich-content-view blockquote {
+    border-left: 4px solid #dee2e6;
+    padding-left: 1rem;
+    color: #6c757d;
+    font-style: italic;
+}
+.rich-content-view a {
+    color: #0d6efd;
+    text-decoration: underline;
+}
+.ql-editor {
+    font-family: inherit !important;
+    font-size: 14px !important;
+}

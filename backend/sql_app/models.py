@@ -436,6 +436,7 @@ class Entregable(Base):
     __tablename__ = "entregables"
 
     id = Column(Integer, primary_key=True, index=True)
+    asunto = Column(String(255), nullable=True)
     titulo = Column(String, nullable=False)
     descripcion = Column(Text, nullable=True)
     estado = Column(SQLEnum(EstadoEntregable, native_enum=False, create_type=False), default=EstadoEntregable.PENDIENTE)
