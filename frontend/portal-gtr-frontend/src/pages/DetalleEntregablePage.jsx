@@ -30,6 +30,7 @@ function DetalleEntregablePage() {
     const [newItemDesc, setNewItemDesc] = useState('');
     const [newComment, setNewComment] = useState('');
     const [actionLoading, setActionLoading] = useState(false);
+    const [loadingItems, setLoadingItems] = useState(new Set());
 
     const fetchData = useCallback(async (isSilent = false) => {
         if (!isSilent) setLoading(true);
@@ -131,6 +132,7 @@ function DetalleEntregablePage() {
     };
 
     const handleToggleItem = async (itemId, currentStatus) => {
+        setLoadingItems(prev => new Set(prev).add(itemId));
         try {
             const res = await fetchWithAuth(`${API_BASE_URL}/gtr/entregables/${id}/items/${itemId}`, {
                 method: 'PUT',
@@ -141,6 +143,8 @@ function DetalleEntregablePage() {
             await refreshEntregable();
         } catch (err) {
             alert(err.message);
+        } finally {
+            setLoadingItems(prev => { const s = new Set(prev); s.delete(itemId); return s; });
         }
     };
 
@@ -326,12 +330,17 @@ function DetalleEntregablePage() {
                                 {entregable.items.map(item => (
                                     <ListGroup.Item key={item.id} className="d-flex align-items-center justify-content-between px-0">
                                         <div className="d-flex align-items-center flex-grow-1">
-                                            <Form.Check 
-                                                type="checkbox"
-                                                checked={item.completado}
-                                                onChange={() => handleToggleItem(item.id, item.completado)}
-                                                className="me-3"
-                                            />
+                                            {loadingItems.has(item.id) ? (
+                                                <Spinner animation="border" size="sm" className="me-3 text-primary" style={{width:'16px', height:'16px'}} />
+                                            ) : (
+                                                <Form.Check 
+                                                    type="checkbox"
+                                                    checked={item.completado}
+                                                    onChange={() => handleToggleItem(item.id, item.completado)}
+                                                    className="me-3"
+                                                    disabled={loadingItems.size > 0}
+                                                />
+                                            )}
                                             <span className={item.completado ? 'text-decoration-line-through text-muted' : ''}>
                                                 {item.descripcion}
                                             </span>
@@ -342,7 +351,7 @@ function DetalleEntregablePage() {
                                             )}
                                         </div>
                                         {canManageItems && (
-                                            <Button variant="link" className="text-danger p-0" onClick={() => handleDeleteItem(item.id)}>
+                                            <Button variant="link" className="text-danger p-0" onClick={() => handleDeleteItem(item.id)} disabled={loadingItems.has(item.id)}>
                                                 🗑️
                                             </Button>
                                         )}

@@ -61,6 +61,50 @@ async def _add_log(db: AsyncSession, entregable_id: int, autor_id: int, mensaje:
     db.add(log)
 
 
+
+@router.get("/entregables/resumen-pendientes")
+async def get_resumen_pendientes(
+    db: AsyncSession = Depends(get_db),
+    current_analista: models.Analista = Depends(get_current_analista)
+):
+    """
+    Resumen de tareas para el Dashboard y Notificaciones.
+    Analista: Solo lo asignado a él que esté en PENDIENTE o EN_PROGRESO.
+    Supervisor: Todo lo que esté en PENDIENTE o EN_PROGRESO.
+    """
+    query = select(models.Entregable).options(
+        selectinload(models.Entregable.campana),
+        selectinload(models.Entregable.asignado_a)
+    ).filter(
+        models.Entregable.estado.in_([EstadoEntregable.PENDIENTE, EstadoEntregable.EN_PROGRESO])
+    )
+
+    is_supervisor = current_analista.role in [UserRole.SUPERVISOR, UserRole.RESPONSABLE]
+    
+    if not is_supervisor:
+        query = query.filter(models.Entregable.asignado_a_id == current_analista.id)
+
+    result = await db.execute(query.order_by(models.Entregable.id.desc()))
+    items = result.scalars().unique().all()
+    
+    # Formatear para el widget
+    return {
+        "total": len(items),
+        "pendientes": len([i for i in items if i.estado == EstadoEntregable.PENDIENTE]),
+        "en_progreso": len([i for i in items if i.estado == EstadoEntregable.EN_PROGRESO]),
+        "recientes": [
+            {
+                "id": i.id,
+                "titulo": i.titulo,
+                "estado": i.estado,
+                "campana_nombre": i.campana.nombre if i.campana else "Sin Campaña",
+                "asignado_a_id": i.asignado_a_id,
+                "asignado_a": f"{i.asignado_a.nombre} {i.asignado_a.apellido}" if i.asignado_a else "Sin Asignar"
+            } for i in items[:5]
+        ]
+    }
+
+
 # ─── CRUD Entregable ─────────────────────────────────────────────────────────
 
 @router.get("/entregables/", response_model=List[Entregable])

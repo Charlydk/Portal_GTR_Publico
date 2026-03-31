@@ -41,6 +41,7 @@ import GestionPlantillasPage from './pages/GestionPlantillasPage.jsx';
 import Planificacion from './pages/planificacion/Planificacion.jsx';
 import KanbanBackofficePage from './pages/KanbanBackofficePage.jsx';
 import DetalleEntregablePage from './pages/DetalleEntregablePage.jsx';
+import NotificadorEntregables from './components/NotificadorEntregables.jsx';
 
 
 const AppContent = () => {
@@ -57,6 +58,7 @@ const AppContent = () => {
   return (
     <div className="d-flex flex-column min-vh-100">
       <Navbar />
+      <NotificadorEntregables />
       <div className="container mt-4 main-content flex-grow-1">
         <Routes>
           {/* Rutas Públicas */}

@@ -12,6 +12,7 @@ import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
 import WidgetAlertas from '../components/dashboard/WidgetAlertas'; 
 import WidgetAlertasSupervisor from '../components/dashboard/WidgetAlertasSupervisor';
 import CampaignSelector from '../components/dashboard/CampaignSelector';
+import EntregablesWidget from '../components/dashboard/EntregablesWidget';
 
 function DashboardPage() {
     const { user } = useAuth();
@@ -32,6 +33,8 @@ function DashboardPage() {
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
     const [estadoAnalistas, setEstadoAnalistas] = useState([]);
     const [showRegistroModalSup, setShowRegistroModalSup] = useState(false);
+    const [showRutinasModal, setShowRutinasModal] = useState(false);
+    const [showDotacionModal, setShowDotacionModal] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(null);
 
     useEffect(() => {
@@ -40,12 +43,12 @@ function DashboardPage() {
         }
     }, [user]);
 
-    // Auto-refresh cada 60s para supervisores
+    // Auto-refresh cada 5 minutos para supervisores
     useEffect(() => {
         if (user && (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE')) {
             const interval = setInterval(() => {
                 if (!document.hidden) cargarDatosDashboard(true);
-            }, 60000);
+            }, 300000); // 5 minutos
             return () => clearInterval(interval);
         }
     }, [user]);
@@ -130,7 +133,7 @@ function DashboardPage() {
                 });
                 porcentaje = total === 0 ? 0 : Math.round((completados / total) * 100);
             }
-            return { id: c.campana_id, nombre: c.nombre_campana, avance: porcentaje, tiene_tareas: tareasCampaña.length > 0, vencidas };
+            return { id: c.campana_id, nombre: c.nombre_campana, avance: porcentaje, tiene_tareas: tareasCampaña.length > 0, vencidas, tarea_id: tareasCampaña[0]?.id || null };
         });
         setCumplimientoCampanas(reporte.sort((a, b) => b.tiene_tareas - a.tiene_tareas || b.vencidas - a.vencidas));
     };
@@ -182,6 +185,17 @@ function DashboardPage() {
         </Row>
     );
 
+    if (loading) {
+        return (
+            <div className="d-flex justify-content-center align-items-center vh-100 bg-light">
+                <div className="text-center">
+                    <Spinner animation="border" variant="primary" />
+                    <p className="mt-2 text-muted fw-semibold">Sincronizando Tablero...</p>
+                </div>
+            </div>
+        );
+    }
+
     // ========================================================================
     // VISTA SUPERVISOR OPERACIONES (PORTAL WORKFORCE HHEE)
     // ========================================================================
@@ -221,7 +235,7 @@ function DashboardPage() {
     // VISTA SUPERVISOR
     // ========================================================================
     if (user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') {
-        const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0 && c.estado === 'DESCUBIERTA');
+        const sinCobertura = coberturaGlobal.filter(c => c.analistas_activos === 0);
         const conCobertura = coberturaGlobal.filter(c => c.analistas_activos > 0);
         const cerradas = coberturaGlobal.filter(c => c.estado === 'CERRADA');
 
@@ -241,138 +255,143 @@ function DashboardPage() {
                     <Button variant="outline-primary" size="sm" onClick={() => cargarDatosDashboard()}>Actualizar</Button>
                 </div>
 
-                {/* KPIs compactos + Radar de Cobertura (Semáforo) */}
+                {/* KPIs compactos + Radar de Cobertura (Semáforo) + Botones de Gestión */}
                 <Row className="g-2 mb-3 align-items-center">
-                    {/* 2 KPIs */}
                     <Col xs={12} md={3}>
                         {renderIncidentWidgetsSupervisor()}
                     </Col>
 
-                    {/* Radar semáforo */}
-                    <Col xs={12} md={9}>
-                        <Card className="shadow-sm border-0">
+                    <Col xs={12} md={6}>
+                        <Card className="shadow-sm border-0 h-100">
                             <Card.Body className="py-2 px-3">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
                                     <h6 className="mb-0 fw-bold text-muted small">📡 RADAR DE COBERTURA</h6>
                                     <div className="d-flex gap-2">
-                                        <Badge bg="danger" className="fw-normal">🔴 Descubierta: {sinCobertura.length}</Badge>
-                                        <Badge bg="success" className="fw-normal">🟢 Cubierta: {conCobertura.length}</Badge>
-                                        <Badge bg="secondary" className="fw-normal">⚫ Cerrada: {cerradas.length}</Badge>
+                                        <Badge bg="danger" className="fw-normal">🔴 {sinCobertura.length}</Badge>
+                                        <Badge bg="success" className="fw-normal">🟢 {conCobertura.length}</Badge>
+                                        <Badge bg="secondary" className="fw-normal">⚫ {cerradas.length}</Badge>
                                     </div>
                                 </div>
                                 <div className="d-flex flex-wrap gap-2">
                                     {sinCobertura.map(c => (
                                         <OverlayTrigger key={c.campana_id} placement="top" overlay={<Tooltip>Sin analistas ⚠️</Tooltip>}>
-                                            <Badge bg="danger" className="p-2 shadow-sm animate__animated animate__pulse animate__infinite" style={{fontSize:'0.8rem', cursor:'default'}}>
+                                            <Badge bg="danger" className="p-2 shadow-sm animate__animated animate__pulse animate__infinite" style={{fontSize:'0.75rem', cursor:'default'}}>
                                                 🚨 {c.nombre_campana}
                                             </Badge>
                                         </OverlayTrigger>
                                     ))}
                                     {conCobertura.map(c => (
                                         <OverlayTrigger key={c.campana_id} placement="top" overlay={<Tooltip><strong>Online:</strong> {c.nombres_analistas.join(', ') || '(sin datos)'}</Tooltip>}>
-                                            <Badge bg="success" className="p-2 shadow-sm" style={{fontSize:'0.8rem', cursor:'help'}}>
+                                            <Badge bg="success" className="p-2 shadow-sm" style={{fontSize:'0.75rem', cursor:'help'}}>
                                                 👥 {c.nombre_campana} ({c.analistas_activos})
                                             </Badge>
                                         </OverlayTrigger>
                                     ))}
                                     {cerradas.map(c => (
-                                        <Badge key={c.campana_id} bg="secondary" className="p-2" style={{fontSize:'0.8rem', opacity:'0.6'}}>
+                                        <Badge key={c.campana_id} bg="secondary" className="p-2" style={{fontSize:'0.75rem', opacity:'0.6'}}>
                                             ⚫ {c.nombre_campana}
                                         </Badge>
                                     ))}
-                                    {coberturaGlobal.length === 0 && (
-                                        <small className="text-muted">Sin datos de cobertura.</small>
-                                    )}
                                 </div>
                             </Card.Body>
                         </Card>
                     </Col>
+
+                    <Col xs={12} md={3}>
+                        <div className="d-flex flex-column gap-2 h-100">
+                            <Button 
+                                variant={cumplimientoCampanas.some(c => c.vencidas > 0) ? "danger" : "outline-primary"} 
+                                className="w-100 py-2 shadow-sm d-flex justify-content-between align-items-center"
+                                onClick={() => setShowRutinasModal(true)}
+                            >
+                                <span className="fw-bold">📊 Rutinas</span>
+                                {cumplimientoCampanas.some(c => c.vencidas > 0) && <Badge bg="white" text="danger" pill>⚠️</Badge>}
+                            </Button>
+                            <Button 
+                                variant="outline-secondary" 
+                                className="w-100 py-2 shadow-sm d-flex justify-content-between align-items-center"
+                                onClick={() => setShowDotacionModal(true)}
+                            >
+                                <span className="fw-bold">👥 Dotación</span>
+                                <Badge bg="secondary" pill>{estadoAnalistas.length}</Badge>
+                            </Button>
+                        </div>
+                    </Col>
                 </Row>
 
-                {/* ZONA PRINCIPAL 2 COLUMNAS */}
+                {/* ZONA PRINCIPAL: Entregables y Pulso Operacional */}
                 <Row className="g-3">
-                    {/* COLUMNA IZQUIERDA 60% */}
                     <Col lg={7}>
-                        {/* Tabla Cumplimiento Rutinas */}
-                        <Card className="shadow-sm border-0 mb-3">
-                            <Card.Header className="bg-white fw-bold">📊 Cumplimiento de Rutinas (Hoy)</Card.Header>
-                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '280px'}}>
-                                <Table hover className="mb-0 align-middle">
-                                    <thead className="bg-light small text-muted">
-                                        <tr><th className="ps-3">Campaña</th><th>Estado</th><th className="pe-3 text-end">Avance</th></tr>
-                                    </thead>
-                                    <tbody>
-                                        {cumplimientoCampanas.map(c => (
-                                            <tr 
-                                                key={c.id} 
-                                                style={{cursor: 'pointer'}}
-                                                onClick={() => navigate(`/control-incidencias?campana=${c.id}`)}
-                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
-                                            >
-                                                <td className="ps-3 fw-semibold">
-                                                    {c.nombre}
-                                                    {c.vencidas > 0 && <Badge bg="danger" className="ms-2" style={{fontSize:'0.6em'}}>{c.vencidas} Vencidas</Badge>}
-                                                </td>
-                                                <td>
-                                                    {!c.tiene_tareas ? <Badge bg="light" text="muted" className="border fw-normal">Sin gestión iniciada</Badge> : 
-                                                    <ProgressBar style={{height: '6px', minWidth: '100px'}}>
-                                                        <ProgressBar variant={c.avance === 100 ? 'success' : (c.vencidas > 0 ? 'danger' : 'primary')} now={c.avance} />
-                                                    </ProgressBar>}
-                                                </td>
-                                                <td className="pe-3 text-end fw-bold text-muted">{c.tiene_tareas ? `${c.avance}%` : '-'}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </Table>
-                            </Card.Body>
-                        </Card>
-
-                        {/* Tabla Dotación */}
-                        <Card className="shadow-sm border-0">
-                            <Card.Header className="bg-white fw-bold d-flex justify-content-between">
-                                <span>👥 Dotación</span>
-                                <Badge bg="light" text="dark" className="border">Total: {estadoAnalistas.length}</Badge>
-                            </Card.Header>
-                            <Card.Body className="p-0 overflow-auto" style={{maxHeight: '250px'}}>
-                                <Table hover className="mb-0 align-middle">
-                                    <tbody>
-                                        {estadoAnalistas.map(a => (
-                                            <tr 
-                                                key={a.id} 
-                                                style={{cursor: 'pointer'}}
-                                                onClick={() => navigate(`/analistas/${a.id}`)}
-                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
-                                            >
-                                                <td className="ps-3">
-                                                    <div className="d-flex align-items-center">
-                                                        <div className={`rounded-circle d-flex justify-content-center align-items-center text-white me-2 shadow-sm ${a.estado === 'ACTIVO' ? 'bg-success' : 'bg-secondary'}`} style={{width:'28px', height:'28px', fontSize:'0.75rem'}}>
-                                                            {a.nombre.charAt(0)}
-                                                        </div>
-                                                        <span className={a.estado === 'LIBRE' ? 'text-muted' : 'fw-semibold'}>{a.nombre}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="text-end pe-3">
-                                                    {a.estado === 'ACTIVO' ? (
-                                                        <div className="d-flex flex-wrap justify-content-end gap-1">
-                                                            {a.campanas.map((c, i) => <Badge key={i} bg="success" className="fw-normal">{c}</Badge>)}
-                                                        </div>
-                                                    ) : <Badge bg="light" text="secondary" className="border fw-normal">Inactivo / Libre</Badge>}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </Table>
-                            </Card.Body>
-                        </Card>
+                        <div className="mb-3">
+                            <EntregablesWidget role={user.role} />
+                        </div>
                     </Col>
-
-                    {/* COLUMNA DERECHA 40%: Pulso Operacional */}
                     <Col lg={5}>
                         <WidgetAlertasSupervisor />
                     </Col>
                 </Row>
+
+                {/* MODALES SUPERVISOR */}
+                <Modal show={showRutinasModal} onHide={() => setShowRutinasModal(false)} size="lg" centered>
+                    <Modal.Header closeButton className="bg-light shadow-sm">
+                        <Modal.Title className="h6 fw-bold">📊 Cumplimiento de Rutinas (Hoy)</Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body className="p-0">
+                        <Table hover className="mb-0 align-middle">
+                            <thead className="bg-light small text-muted">
+                                <tr><th className="ps-3">Campaña</th><th>Estado</th><th className="pe-3 text-end">Avance</th></tr>
+                            </thead>
+                            <tbody>
+                                {cumplimientoCampanas.map(c => (
+                                    <tr key={c.id} onClick={() => { navigate(c.tarea_id ? `/tareas/${c.tarea_id}` : '/tareas/'); setShowRutinasModal(false); }} style={{cursor:'pointer'}}>
+                                        <td className="ps-3 fw-semibold">
+                                            {c.nombre}
+                                            {c.vencidas > 0 && <Badge bg="danger" className="ms-2" style={{fontSize:'0.6em'}}>{c.vencidas} Vencidas</Badge>}
+                                        </td>
+                                        <td>
+                                            {!c.tiene_tareas ? <Badge bg="light" text="muted" className="border fw-normal">Sin gestión iniciada</Badge> : 
+                                            <ProgressBar style={{height: '6px'}}>
+                                                <ProgressBar variant={c.avance === 100 ? 'success' : (c.vencidas > 0 ? 'danger' : 'primary')} now={c.avance} />
+                                            </ProgressBar>}
+                                        </td>
+                                        <td className="pe-3 text-end fw-bold text-muted">{c.tiene_tareas ? `${c.avance}%` : '-'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </Modal.Body>
+                </Modal>
+
+                <Modal show={showDotacionModal} onHide={() => setShowDotacionModal(false)} size="md" centered>
+                    <Modal.Header closeButton className="bg-light shadow-sm">
+                        <Modal.Title className="h6 fw-bold">👥 Estado de Dotación</Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body className="p-0" style={{maxHeight:'70vh', overflowY:'auto'}}>
+                        <Table hover className="mb-0 align-middle">
+                            <tbody>
+                                {estadoAnalistas.map(a => (
+                                    <tr key={a.id} onClick={() => { navigate(`/analistas/${a.id}`); setShowDotacionModal(false); }} style={{cursor:'pointer'}}>
+                                        <td className="ps-3">
+                                            <div className="d-flex align-items-center">
+                                                <div className={`rounded-circle d-flex justify-content-center align-items-center text-white me-2 shadow-sm ${a.estado === 'ACTIVO' ? 'bg-success' : 'bg-secondary'}`} style={{width:'28px', height:'28px', fontSize:'0.75rem'}}>
+                                                    {a.nombre.charAt(0)}
+                                                </div>
+                                                <span className={a.estado === 'LIBRE' ? 'text-muted' : 'fw-semibold'}>{a.nombre}</span>
+                                            </div>
+                                        </td>
+                                        <td className="text-end pe-3">
+                                            {a.estado === 'ACTIVO' ? (
+                                                <div className="d-flex flex-wrap justify-content-end gap-1">
+                                                    {a.campanas.map((c, i) => <Badge key={i} bg="success" className="fw-normal" style={{fontSize:'0.65rem'}}>{c}</Badge>)}
+                                                </div>
+                                            ) : <Badge bg="light" text="secondary" className="border fw-normal small">Inactivo / Libre</Badge>}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </Modal.Body>
+                </Modal>
 
                 {/* FAB NUEVA INCIDENCIA */}
                 <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 1050 }}>
@@ -424,53 +443,68 @@ function DashboardPage() {
                             <Badge bg="secondary">Ninguna (Inicia sesión)</Badge>
                         )}
                     </div>
-                    <Button variant="primary" size="sm" onClick={() => setShowCampaignModal(true)} className="shadow-sm">
-                        🔄 Gestionar mi Actividad
-                    </Button>
+                </div>
+                <div className="text-end">
+                    {lastUpdated && (
+                        <small className="text-muted d-block mb-1" style={{fontSize:'0.75rem'}}>
+                            Actualizó: {lastUpdated.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
+                        </small>
+                    )}
+                    <Button variant="outline-secondary" size="sm" onClick={() => cargarDatosDashboard(true)}>🔄 Actualizar</Button>
                 </div>
             </div>
 
-            {/* ZONA PRINCIPAL 50/50 */}
-            <Row className="g-4 mb-4">
+            {/* ZONA PRINCIPAL: FLUJO VERTICAL */}
+            <Row className="g-4">
                 
-                {/* COLUMNA IZQUIERDA (50%) */}
-                <Col lg={6}>
-                    
-                    {/* 1. OPORTUNIDADES DE COLABORACIÓN (COMPACTAS) */}
-                    <Card className="shadow-sm border-0 border-start border-danger border-4 mb-3">
-                        <Card.Header className="bg-white fw-bold text-danger d-flex justify-content-between align-items-center">
+                {/* COLUMNA IZQUIERDA (60%) */}
+                <Col lg={7}>
+                    {/* 1. OPORTUNIDADES DE COLABORACIÓN */}
+                    <Card className="shadow-sm border-0 border-start border-danger border-4 mb-4">
+                        <Card.Header className="bg-white fw-bold text-danger d-flex justify-content-between align-items-center py-3">
                             <span>🤝 Oportunidades de Colaboración</span>
-                            <Badge bg="danger">{campañasSinAnalistas.length}</Badge>
+                            <Badge bg="danger" pill>{campañasSinAnalistas.length}</Badge>
                         </Card.Header>
                         <Card.Body className="py-2">
                             {campañasSinAnalistas.length > 0 ? (
-                                <div className="d-flex flex-wrap gap-2 py-1">
+                                <div className="d-flex flex-wrap gap-2 py-2">
                                     {campañasSinAnalistas.map(c => (
                                         <Badge 
                                             bg="danger" 
-                                            className="d-flex align-items-center p-2 shadow-sm border border-danger fw-normal" 
+                                            className="d-flex align-items-center p-2 px-3 shadow-sm border border-danger fw-normal" 
                                             key={c.campana_id}
-                                            style={{fontSize: '0.8rem'}}
+                                            style={{fontSize: '0.85rem'}}
                                         >
                                             <span className="me-2 fs-6">🚨</span> {c.nombre_campana}
                                         </Badge>
                                     ))}
                                 </div>
                             ) : (
-                                <div className="text-success d-flex align-items-center small">
-                                    <span className="fs-5 me-2">✅</span> <span>¡Todo cubierto! Excelente trabajo de equipo.</span>
+                                <div className="text-success d-flex align-items-center py-2">
+                                    <span className="fs-5 me-2">✅</span> <span className="small fw-semibold">¡Todo cubierto! Excelente trabajo de equipo.</span>
                                 </div>
                             )}
                         </Card.Body>
                     </Card>
 
-                    <div style={{maxHeight:'450px', overflowY:'auto'}}>
+                    {/* 2. MIS ENTREGABLES */}
+                    <div className="mb-4">
+                        <EntregablesWidget role={user.role} />
+                    </div>
+
+                    {/* 3. MIS INCIDENCIAS */}
+                    <div className="mb-4" style={{maxHeight:'500px', overflowY:'auto'}}>
                          <MisIncidenciasWidget incidencias={misIncidencias} loading={loading} />
                     </div>
                 </Col>
 
-                {/* COLUMNA DERECHA (50%): WIDGET ALERTAS (MAIN MODE) */}
-                <Col lg={6}>
+                {/* COLUMNA DERECHA (40%): ALERTAS Y BOTÓN ACTIVIDAD */}
+                <Col lg={5}>
+                    <div className="d-grid gap-3 mb-4">
+                        <Button variant="primary" className="py-3 shadow-sm fw-bold border-0" onClick={() => setShowCampaignModal(true)} style={{background: 'linear-gradient(135deg, #0d6efd, #0a58ca)'}}>
+                            🔄 Gestionar mi Actividad
+                        </Button>
+                    </div>
                     <WidgetAlertas variant="main" />
                 </Col>
             </Row>
