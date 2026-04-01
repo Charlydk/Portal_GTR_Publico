@@ -4,6 +4,16 @@ Todos los cambios notables del proyecto se documentan en este archivo.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).  
 Versioning siguiendo [Semantic Versioning](https://semver.org/lang/es/).
 
+## [1.5.0] - 2026-04-01
+
+### ✨ Agregado
+- **Flujo de Selección de Actividad**: ahora permite seleccionar múltiples campañas antes de confirmar, avisando al supervisor en un solo envío batch.
+- **Feedback de Sincronización**: spinner en el botón de confirmación del modal para indicar el estado de guardado.
+- **Estilos Premium**: animaciones de hover y elevación en las tarjetas de selección de campaña.
+
+### 🐛 Corregido
+- **Flickering de Dashboard**: implementación de "Silent Refresh" que actualiza los datos de fondo sin mostrar el spinner de pantalla completa tras el check-in/out.
+
 ---
 
 ## [1.4.0] - 2026-03-31
