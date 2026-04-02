@@ -408,7 +408,11 @@ class PlantillaChecklistItem(PlantillaChecklistItemBase):
 
 # Esquema para recibir la petición de entrada
 class CheckInCreate(BaseModel):
-    campana_id: int
+    activity_type: str = "CAMPAÑA"
+    target_id: Optional[int] = None
+    campana_id: Optional[int] = None
+    comentario: Optional[str] = None # Para CheckOut de Reportería
+    abort: Optional[bool] = False # Para Liberar Reportería
 
 # Esquema para responder (mostrando detalles de la campaña)
 class SesionActiva(BaseModel):
@@ -423,12 +427,55 @@ class SesionActiva(BaseModel):
 class SesionCampanaSchema(BaseModel):
     id: int
     analista_id: int
-    campana_id: int
+    campana_id: Optional[int]
+    tipo_actividad: str
+    target_id: Optional[int]
     fecha_inicio: Optional[datetime] = None
     active: bool = True
     
     class Config:
         from_attributes = True
+
+# --- REPORTERÍA ---
+class BolsaTareasReporteriaSimple(BaseModel):
+    id: int
+    categoria: str
+    nombre: str
+    descripcion: Optional[str] = None
+    hora_vencimiento: Optional[time] = None
+    estado: str
+    analista_id: Optional[int] = None
+    fecha_tarea: date
+    class Config:
+        from_attributes = True
+
+class AnalistaSimpleOnlyName(BaseModel):
+    id: int
+    nombre: str
+    apellido: str
+    class Config:
+        from_attributes = True
+
+class BolsaTareasReporteriaDetalle(BolsaTareasReporteriaSimple):
+    comentario_final: Optional[str] = None
+    actualizada_en: datetime
+    analista: Optional[AnalistaSimpleOnlyName] = None
+
+class CatalogoTareaBase(BaseModel):
+    categoria: str
+    nombre: str
+    descripcion: Optional[str] = None
+    hora_vencimiento: Optional[time] = None
+    activa: bool = True
+
+class CatalogoTareaCreate(CatalogoTareaBase):
+    pass
+
+class CatalogoTarea(CatalogoTareaBase):
+    id: int
+    class Config:
+        from_attributes = True
+
 
 
 class HistorialEstadoTarea(HistorialEstadoTareaBase):

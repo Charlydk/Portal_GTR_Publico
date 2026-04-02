@@ -10,7 +10,7 @@ from ..sql_app import models
 from ..enums import UserRole
 from ..dependencies import get_current_analista, require_role
 from ..schemas.models import (
-    SesionActiva, CheckInCreate, CoberturaCampana
+    SesionActiva, CheckInCreate, CoberturaCampana, SesionCampanaSchema
 )
 
 router = APIRouter(
@@ -18,7 +18,7 @@ router = APIRouter(
     tags=["Sesiones"]
 )
 
-@router.post("/check-in", response_model=SesionActiva, summary="Iniciar gestión en una campaña")
+@router.post("/check-in", response_model=SesionCampanaSchema, summary="Iniciar gestión en una actividad")
 async def check_in_campana(
     datos: CheckInCreate,
     db: AsyncSession = Depends(get_db),
@@ -45,36 +45,48 @@ async def check_in_campana(
         await db.commit()
 
     # --- FASE 1.5: VERIFICACIÓN HORARIO DE COBERTURA ---
-    query_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
-    res_camp = await db.execute(query_campana)
-    campana_check = res_camp.scalars().first()
-    if not campana_check:
-        raise HTTPException(status_code=404, detail="Campaña no encontrada")
+    if datos.activity_type == "CAMPAÑA":
+        query_campana = select(models.Campana).filter(models.Campana.id == datos.campana_id)
+        res_camp = await db.execute(query_campana)
+        campana_check = res_camp.scalars().first()
+        if not campana_check:
+            raise HTTPException(status_code=404, detail="Campaña no encontrada")
 
-    tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-    ahora_arg = datetime.now(tz_argentina)
-    dia_semana_check = ahora_arg.weekday()
-    hora_actual_check = ahora_arg.time()
-    
-    if dia_semana_check == 5:
-        cob_inicio = campana_check.cobertura_inicio_sabado
-        cob_fin = campana_check.cobertura_fin_sabado
-    elif dia_semana_check == 6:
-        cob_inicio = campana_check.cobertura_inicio_domingo
-        cob_fin = campana_check.cobertura_fin_domingo
-    else:
-        cob_inicio = campana_check.cobertura_inicio_semana
-        cob_fin = campana_check.cobertura_fin_semana
-
-    if cob_inicio and cob_fin:
-        esta_en_cobertura = False
-        if cob_inicio <= cob_fin:
-            esta_en_cobertura = cob_inicio <= hora_actual_check <= cob_fin
-        else:
-            esta_en_cobertura = hora_actual_check >= cob_inicio or hora_actual_check <= cob_fin
+        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+        ahora_arg = datetime.now(tz_argentina)
+        dia_semana_check = ahora_arg.weekday()
+        hora_actual_check = ahora_arg.time()
         
-        if not esta_en_cobertura:
-            raise HTTPException(status_code=403, detail="La campaña se encuentra fuera del horario de cobertura WFM.")
+        if dia_semana_check == 5:
+            cob_inicio = campana_check.cobertura_inicio_sabado
+            cob_fin = campana_check.cobertura_fin_sabado
+        elif dia_semana_check == 6:
+            cob_inicio = campana_check.cobertura_inicio_domingo
+            cob_fin = campana_check.cobertura_fin_domingo
+        else:
+            cob_inicio = campana_check.cobertura_inicio_semana
+            cob_fin = campana_check.cobertura_fin_semana
+
+        if cob_inicio and cob_fin:
+            esta_en_cobertura = False
+            if cob_inicio <= cob_fin:
+                esta_en_cobertura = cob_inicio <= hora_actual_check <= cob_fin
+            else:
+                esta_en_cobertura = hora_actual_check >= cob_inicio or hora_actual_check <= cob_fin
+            
+            if not esta_en_cobertura:
+                raise HTTPException(status_code=403, detail="La campaña se encuentra fuera del horario de cobertura WFM.")
+    elif datos.activity_type == "REPORTERIA":
+        if not datos.target_id:
+            raise HTTPException(status_code=400, detail="Debe especificar una tarea de reportería (target_id).")
+        # Verificar que la tarea exista y esté PENDIENTE
+        q_tarea = select(models.BolsaTareasReporteria).filter(models.BolsaTareasReporteria.id == datos.target_id)
+        res_t = await db.execute(q_tarea)
+        tarea = res_t.scalars().first()
+        if not tarea:
+            raise HTTPException(status_code=404, detail="Tarea de reportería no encontrada.")
+        if tarea.estado != "PENDIENTE":
+            raise HTTPException(status_code=400, detail="Esta tarea ya está en proceso o fue completada.")
 
     # --- FASE 2: VERIFICACIÓN ESPECÍFICA ---
     query_target = select(models.SesionCampana).filter(
@@ -99,82 +111,94 @@ async def check_in_campana(
     # --- FASE 3: CREACIÓN DE NUEVA SESIÓN ---
     nueva_sesion = models.SesionCampana(
         analista_id=current_analista.id,
-        campana_id=datos.campana_id,
+        campana_id=datos.campana_id if datos.activity_type == "CAMPAÑA" else None,
+        tipo_actividad=datos.activity_type,
+        target_id=datos.target_id,
         fecha_inicio=datetime.now(timezone.utc)
     )
     db.add(nueva_sesion)
+    
+    if datos.activity_type == "REPORTERIA":
+        tarea.estado = "EN_PROCESO"
+        tarea.analista_id = current_analista.id
+        db.add(tarea)
+
     await db.commit()
     await db.refresh(nueva_sesion) 
     
-    # --- FASE 4: GENERACIÓN DE RUTINA (Lógica Colaborativa) ---
-    q_tarea_existente = select(models.Tarea).filter(
-        models.Tarea.campana_id == datos.campana_id,
-        models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= hoy_inicio_utc
-    )
-    result_tarea = await db.execute(q_tarea_existente)
-    tarea_compartida = result_tarea.scalars().first()
-
-    if not tarea_compartida:
-        tz_argentina = pytz.timezone("America/Argentina/Tucuman")
-        ahora_arg = datetime.now(tz_argentina)
-        dia_semana_int = ahora_arg.weekday()
-
-        mapa_dias = {
-            0: models.ItemPlantillaChecklist.lunes,
-            1: models.ItemPlantillaChecklist.martes,
-            2: models.ItemPlantillaChecklist.miercoles,
-            3: models.ItemPlantillaChecklist.jueves,
-            4: models.ItemPlantillaChecklist.viernes,
-            5: models.ItemPlantillaChecklist.sabado,
-            6: models.ItemPlantillaChecklist.domingo
-        }
-        columna_dia_hoy = mapa_dias[dia_semana_int]
-
-        q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
-            models.ItemPlantillaChecklist.campana_id == datos.campana_id,
-            columna_dia_hoy == True
+    # --- FASE 4: GENERACIÓN DE RUTINA (Lógica Colaborativa, solo para Campañas) ---
+    if datos.activity_type == "CAMPAÑA":
+        q_tarea_existente = select(models.Tarea).filter(
+            models.Tarea.campana_id == datos.campana_id,
+            models.Tarea.es_generada_automaticamente == True,
+            models.Tarea.fecha_creacion >= hoy_inicio_utc
         )
-        res_items = await db.execute(q_items_plantilla)
-        items_plantilla = res_items.scalars().all()
+        result_tarea = await db.execute(q_tarea_existente)
+        tarea_compartida = result_tarea.scalars().first()
 
-        vencimiento_utc = ahora_arg.replace(hour=23, minute=59, second=59).astimezone(timezone.utc)
+        if not tarea_compartida:
+            tz_argentina = pytz.timezone("America/Argentina/Tucuman")
+            ahora_arg = datetime.now(tz_argentina)
+            dia_semana_int = ahora_arg.weekday()
 
-        nueva_tarea = models.Tarea(
-            titulo=f"Rutina GTR - {ahora_arg.strftime('%d/%m')}",
-            descripcion=f"Checklist automático generado para la campaña.",
-            es_generada_automaticamente=True,
-            campana_id=datos.campana_id,
-            analista_id=None, # Rutina compartida
-            fecha_creacion=ahora_utc,
-            fecha_vencimiento=vencimiento_utc
+            mapa_dias = {
+                0: models.ItemPlantillaChecklist.lunes,
+                1: models.ItemPlantillaChecklist.martes,
+                2: models.ItemPlantillaChecklist.miercoles,
+                3: models.ItemPlantillaChecklist.jueves,
+                4: models.ItemPlantillaChecklist.viernes,
+                5: models.ItemPlantillaChecklist.sabado,
+                6: models.ItemPlantillaChecklist.domingo
+            }
+            columna_dia_hoy = mapa_dias[dia_semana_int]
+
+            q_items_plantilla = select(models.ItemPlantillaChecklist).filter(
+                models.ItemPlantillaChecklist.campana_id == datos.campana_id,
+                columna_dia_hoy == True
+            )
+            res_items = await db.execute(q_items_plantilla)
+            items_plantilla = res_items.scalars().all()
+
+            vencimiento_utc = ahora_arg.replace(hour=23, minute=59, second=59).astimezone(timezone.utc)
+
+            nueva_tarea = models.Tarea(
+                titulo=f"Rutina GTR - {ahora_arg.strftime('%d/%m')}",
+                descripcion=f"Checklist automático generado para la campaña.",
+                es_generada_automaticamente=True,
+                campana_id=datos.campana_id,
+                analista_id=None, # Rutina compartida
+                fecha_creacion=ahora_utc,
+                fecha_vencimiento=vencimiento_utc
+            )
+            db.add(nueva_tarea)
+            await db.commit()
+            await db.refresh(nueva_tarea)
+
+            for item in items_plantilla:
+                checklist_item = models.ChecklistItem(
+                    tarea_id=nueva_tarea.id,
+                    descripcion=item.descripcion,
+                    hora_sugerida=item.hora_sugerida,
+                    completado=False
+                )
+                db.add(checklist_item)
+            
+            await db.commit()
+
+    if datos.activity_type == "CAMPAÑA":
+        result_full = await db.execute(
+            select(models.SesionCampana).options(
+                selectinload(models.SesionCampana.campana).options(
+                    selectinload(models.Campana.lobs),
+                    selectinload(models.Campana.analistas_asignados)
+                )
+            ).filter(models.SesionCampana.id == nueva_sesion.id)
         )
-        db.add(nueva_tarea)
-        await db.commit()
-        await db.refresh(nueva_tarea)
+        return result_full.scalars().first()
+    else:
+        return nueva_sesion # Reportería no tiene campaña que precargar
 
-        for item in items_plantilla:
-            checklist_item = models.ChecklistItem(
-                tarea_id=nueva_tarea.id,
-                descripcion=item.descripcion,
-                hora_sugerida=item.hora_sugerida,
-                completado=False
-            )
-            db.add(checklist_item)
-        
-        await db.commit()
-
-    result_full = await db.execute(
-        select(models.SesionCampana).options(
-            selectinload(models.SesionCampana.campana).options(
-                selectinload(models.Campana.lobs),
-                selectinload(models.Campana.analistas_asignados)
-            )
-        ).filter(models.SesionCampana.id == nueva_sesion.id)
-    )
-    return result_full.scalars().first()
-
-@router.post("/check-out", summary="Dejar de gestionar una campaña")
+@router.post("/check-out", summary="Dejar de gestionar una actividad")
 async def check_out_campana(
     datos: CheckInCreate,
     db: AsyncSession = Depends(get_db),
@@ -182,19 +206,40 @@ async def check_out_campana(
 ):
     query = select(models.SesionCampana).filter(
         models.SesionCampana.analista_id == current_analista.id,
-        models.SesionCampana.campana_id == datos.campana_id,
+        models.SesionCampana.tipo_actividad == datos.activity_type,
         models.SesionCampana.fecha_fin.is_(None)
     )
+    if datos.activity_type == "CAMPAÑA":
+        query = query.filter(models.SesionCampana.campana_id == datos.campana_id)
+    else:
+        query = query.filter(models.SesionCampana.target_id == datos.target_id)
+        
     result = await db.execute(query)
     sesion = result.scalars().first()
 
     if not sesion:
-        raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
+        raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta actividad.")
+
+    if datos.activity_type == "REPORTERIA":
+        q_tarea = select(models.BolsaTareasReporteria).filter(models.BolsaTareasReporteria.id == datos.target_id)
+        res_t = await db.execute(q_tarea)
+        tarea = res_t.scalars().first()
+        
+        if tarea:
+            if datos.abort:
+                tarea.estado = "PENDIENTE"
+                tarea.analista_id = None
+            else:
+                if not datos.comentario or not datos.comentario.strip():
+                    raise HTTPException(status_code=400, detail="Debes proporcionar un comentario de cierre para finalizar la reportería.")
+                tarea.estado = "COMPLETADO"
+                tarea.comentario_final = datos.comentario
+            db.add(tarea)
 
     sesion.fecha_fin = datetime.now(timezone.utc)
     await db.commit()
     
-    return {"message": "Sesión finalizada correctamente", "campana_id": datos.campana_id}
+    return {"message": "Sesión finalizada correctamente", "target_id": datos.target_id or datos.campana_id}
 
 @router.get("/cobertura", response_model=List[CoberturaCampana], summary="Radar de Cobertura (Con Nombres y Horarios)")
 async def obtener_cobertura_operativa(
@@ -286,7 +331,8 @@ async def obtener_mis_sesiones_activas(
         )
     ).filter(
         models.SesionCampana.analista_id == current_analista.id,
-        models.SesionCampana.fecha_fin.is_(None)
+        models.SesionCampana.fecha_fin.is_(None),
+        models.SesionCampana.tipo_actividad == "CAMPAÑA"
     )
     
     result = await db.execute(query)

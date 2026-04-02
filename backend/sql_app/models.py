@@ -245,12 +245,41 @@ class SesionCampana(Base):
     __tablename__ = "sesiones_campana"
     id = Column(Integer, primary_key=True, index=True)
     analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=False)
-    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=False)
+    campana_id = Column(Integer, ForeignKey("campanas.id"), nullable=True) # Ahora es opcional
+    tipo_actividad = Column(String, default="CAMPAÑA") # CAMPAÑA, REPORTERIA, KANBAN
+    target_id = Column(Integer, nullable=True) # ID genérico para la bolsa de tareas, entregable, etc.
     fecha_inicio = Column(DateTime(timezone=True), server_default=func.now())
     fecha_fin = Column(DateTime(timezone=True), nullable=True)
     adherencia = Column(String, default="EN_TURNO")
     analista = relationship("Analista", back_populates="sesiones")
     campana = relationship("Campana", back_populates="sesiones")
+
+# --- REPORTERÍA ---
+class CatalogoTareasReporteria(Base):
+    __tablename__ = "catalogo_tareas_reporteria"
+    id = Column(Integer, primary_key=True, index=True)
+    categoria = Column(String(100), nullable=False, default="General")
+    nombre = Column(String, nullable=False)
+    hora_vencimiento = Column(Time, nullable=True)
+    activa = Column(Boolean, default=True)
+    fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
+
+class BolsaTareasReporteria(Base):
+    __tablename__ = "bolsa_tareas_reporteria"
+    id = Column(Integer, primary_key=True, index=True)
+    categoria = Column(String(100), nullable=False, default="General")
+    nombre = Column(String, nullable=False)
+    descripcion = Column(Text, nullable=True)
+    hora_vencimiento = Column(Time, nullable=True)
+    estado = Column(String, default="PENDIENTE") # PENDIENTE, EN_PROCESO, COMPLETADO
+    analista_id = Column(Integer, ForeignKey("analistas.id"), nullable=True)
+    fecha_tarea = Column(Date, nullable=False, server_default=func.current_date())
+    comentario_final = Column(Text, nullable=True)
+    creada_en = Column(DateTime(timezone=True), server_default=func.now())
+    actualizada_en = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    analista = relationship("Analista")
+
 
 class Tarea(Base):
     __tablename__ = "tareas"

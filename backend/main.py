@@ -29,9 +29,12 @@ from .sql_app.crud import get_analista_by_email
 from .routers import (
     analistas, campanas, bitacora, tareas, 
     incidencias, dashboard, sesiones, 
-    hhee_router, wfm_router, entregables
+    hhee_router, wfm_router, entregables,
+    reporteria
 )
 from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
+from .jobs import run_cron_jobs
+import asyncio
 
 # --- 1. DEFINICIÓN DE LA FUNCIÓN LIFESPAN ---
 @asynccontextmanager
@@ -45,10 +48,14 @@ async def lifespan(app: FastAPI):
         print("Conectado a Redis y limitador inicializado.")
     except Exception as e:
         print(f"No se pudo conectar a Redis: {e}")
+        
+    print("--- 1.5 Iniciando Cronjobs en segundo plano ---")
+    tarea_cron = asyncio.create_task(run_cron_jobs())
     
     yield  # La aplicación se ejecuta aquí
     
     # --- Código que se ejecuta DESPUÉS de que la aplicación termine ---
+    tarea_cron.cancel()
     print("--- Aplicación finalizada. ---")
 
 # --- 2. CREACIÓN Y CONFIGURACIÓN DE LA APP (USANDO LA FUNCIÓN YA DEFINIDA) ---
@@ -96,6 +103,7 @@ app.include_router(incidencias.router, prefix="/gtr", dependencies=gtr_wfm_restr
 app.include_router(dashboard.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(sesiones.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(entregables.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
+app.include_router(reporteria.router, prefix="/api", dependencies=gtr_wfm_restriction) # Se usará /api/reporteria en frontend
 app.include_router(hhee_router.router, prefix="/hhee")
 app.include_router(wfm_router.router, dependencies=gtr_wfm_restriction)
 

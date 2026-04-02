@@ -1,18 +1,9 @@
-import asyncio
-import sys
+from backend.sql_app.database import SessionLocal
+from backend.sql_app.models import SesionCampana
 
-sys.path.append("c:\\Users\\bernardino.20\\Documents\\Proyectos\\Portal_GTR_Publico")
-
-from backend.database import AsyncSessionLocal
-from sqlalchemy import text
-
-async def main():
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(text("SELECT id, titulo, fecha_apertura FROM incidencias ORDER BY id DESC LIMIT 5;"))
-        rows = result.fetchall()
-        print("Ultimas incidencias en DB:")
-        for row in rows:
-            print(f"ID: {row[0]}, Titulo: {row[1]}, Fecha: {row[2]}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+try:
+    db = SessionLocal()
+    count = db.query(SesionCampana).count()
+    print("DB_STATUS: OK", count)
+except Exception as e:
+    print("DB_STATUS: ERROR", str(e))

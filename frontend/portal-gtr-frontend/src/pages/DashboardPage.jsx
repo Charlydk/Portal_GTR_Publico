@@ -13,6 +13,9 @@ import WidgetAlertas from '../components/dashboard/WidgetAlertas';
 import WidgetAlertasSupervisor from '../components/dashboard/WidgetAlertasSupervisor';
 import CampaignSelector from '../components/dashboard/CampaignSelector';
 import EntregablesWidget from '../components/dashboard/EntregablesWidget';
+import ReporteriaWidget from '../components/dashboard/ReporteriaWidget';
+import GestionCatalogModal from '../components/dashboard/GestionCatalogModal';
+import HistoricoReporteriaModal from '../components/dashboard/HistoricoReporteriaModal';
 
 function DashboardPage() {
     const { user } = useAuth();
@@ -27,12 +30,17 @@ function DashboardPage() {
     const [misIncidencias, setMisIncidencias] = useState([]);
     const [showCampaignModal, setShowCampaignModal] = useState(false);
     const [misSesionesActivas, setMisSesionesActivas] = useState([]); 
+    const [misTareasReporteria, setMisTareasReporteria] = useState([]);
     const [showRegistroModal, setShowRegistroModal] = useState(false);
 
     // Estados Supervisor
     const [cumplimientoCampanas, setCumplimientoCampanas] = useState([]);
     const [estadoAnalistas, setEstadoAnalistas] = useState([]);
+    const [bolsaTotal, setBolsaTotal] = useState([]);
+    const [reporteriaRadar, setReporteriaRadar] = useState({ activos: 0, nombres: [] });
     const [showRegistroModalSup, setShowRegistroModalSup] = useState(false);
+    const [showCatalogModal, setShowCatalogModal] = useState(false);
+    const [showAuditModal, setShowAuditModal] = useState(false);
     const [showRutinasModal, setShowRutinasModal] = useState(false);
     const [showDotacionModal, setShowDotacionModal] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(null);
@@ -87,6 +95,21 @@ function DashboardPage() {
         }
     };
 
+    // Soporte para abrir el catálogo desde el Navbar vía URL
+    useEffect(() => {
+        const query = new URLSearchParams(window.location.search);
+        if (query.get('action') === 'manageCatalog') {
+            setShowCatalogModal(true);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, [window.location.search]);
+
+    useEffect(() => {
+        const handleShowCatalog = () => setShowCatalogModal(true);
+        window.addEventListener('show-catalog-modal', handleShowCatalog);
+        return () => window.removeEventListener('show-catalog-modal', handleShowCatalog);
+    }, []);
+
     const cargarDatosEspecificosAnalista = async (dataCobertura) => {
         const resInc = await fetchWithAuth(`${API_BASE_URL}/gtr/incidencias/mis-incidencias`);
         if (resInc.ok) setMisIncidencias(await resInc.json());
@@ -96,20 +119,35 @@ function DashboardPage() {
             const dataSesiones = await resSesiones.json();
             setMisSesionesActivas(dataSesiones);
         }
+
+        const resBolsa = await fetchWithAuth(`${API_BASE_URL}/api/reporteria/bolsa`);
+        if (resBolsa.ok) {
+            const bolsa = await resBolsa.json();
+            const misTareasEnProceso = bolsa.filter(t => t.estado === 'EN_PROCESO' && Number(t.analista_id) === Number(user.id));
+            setMisTareasReporteria(misTareasEnProceso);
+        }
     };
 
     const cargarDatosEspecificosSupervisor = async (dataCobertura) => {
         const hoy = new Date().toISOString().split('T')[0];
-        const [resTareas, resAnalistas] = await Promise.all([
+        const [resTareas, resAnalistas, resBolsa] = await Promise.all([
             fetchWithAuth(`${API_BASE_URL}/gtr/monitor/tareas?fecha=${hoy}`),
-            fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`)
+            fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`),
+            fetchWithAuth(`${API_BASE_URL}/api/reporteria/bolsa`)
         ]);
 
         if (resTareas.ok && resAnalistas.ok) {
             const tareas = await resTareas.json();
             const analistas = await resAnalistas.json();
+            
+            let bolsa = [];
+            if (resBolsa.ok) {
+                bolsa = await resBolsa.json();
+                setBolsaTotal(bolsa);
+            }
+
             procesarCumplimiento(tareas, dataCobertura);
-            procesarEstadoAnalistas(analistas, dataCobertura);
+            procesarEstadoAnalistas(analistas, dataCobertura, bolsa);
         }
     };
 
@@ -138,24 +176,66 @@ function DashboardPage() {
         setCumplimientoCampanas(reporte.sort((a, b) => b.tiene_tareas - a.tiene_tareas || b.vencidas - a.vencidas));
     };
 
-    const procesarEstadoAnalistas = (todosAnalistas, cobertura) => {
+    const procesarEstadoAnalistas = (todosAnalistas, cobertura, bolsa) => {
+        const hoyDate = new Date();
+        hoyDate.setHours(0,0,0,0);
+        
         const mapaActivos = {}; 
         cobertura.forEach(camp => {
             camp.nombres_analistas.forEach(nombreCompleto => {
-                if (!mapaActivos[nombreCompleto]) mapaActivos[nombreCompleto] = [];
-                mapaActivos[nombreCompleto].push(camp.nombre_campana);
+                const lower = nombreCompleto.toLowerCase();
+                if (!mapaActivos[lower]) mapaActivos[lower] = [];
+                mapaActivos[lower].push(camp.nombre_campana);
             });
         });
 
+        const mapaReporteria = {};
+        const analistasRepoSet = new Set();
+
+        if (bolsa) {
+            bolsa.filter(t => t.estado === 'EN_PROCESO').forEach(t => {
+                const as = todosAnalistas.find(a => a.id === t.analista_id);
+                if(as) {
+                    const fullName = `${as.nombre} ${as.apellido}`;
+                    analistasRepoSet.add(fullName);
+                    const lower = fullName.toLowerCase();
+                    if(!mapaReporteria[lower]) mapaReporteria[lower] = [];
+                    
+                    const now = new Date();
+                    let isTimeOverdue = false;
+                    
+                    const dateParts = t.fecha_tarea.split('-');
+                    const tareaDate = new Date(dateParts[0], dateParts[1]-1, dateParts[2]);
+                    tareaDate.setHours(0,0,0,0);
+
+                    if (t.hora_vencimiento) {
+                        const [h, m, s] = t.hora_vencimiento.split(':').map(Number);
+                        const deadline = new Date(dateParts[0], dateParts[1]-1, dateParts[2], h, m, s || 0);
+                        if (now > deadline) isTimeOverdue = true;
+                    }
+                    
+                    const marker = (tareaDate < hoyDate || isTimeOverdue) ? ' 🚨' : '';
+                    const cat = t.categoria || 'General';
+                    const item = `[Repo]${cat}${marker}`;
+                    if (!mapaReporteria[lower].includes(item)) {
+                        mapaReporteria[lower].push(item);
+                    }
+                }
+            });
+        }
+        setReporteriaRadar({ activos: analistasRepoSet.size, nombres: Array.from(analistasRepoSet) });
+
         const estado = todosAnalistas.map(a => {
-            const key = Object.keys(mapaActivos).find(k => k.toLowerCase().includes(a.nombre.toLowerCase()));
-            const campañas = key ? mapaActivos[key] : [];
+            const lowerName = `${a.nombre} ${a.apellido}`.toLowerCase();
+            const campañas = mapaActivos[lowerName] || [];
+            const reporteria = mapaReporteria[lowerName] || [];
+            const actividades = [...campañas, ...reporteria];
 
             return {
                 id: a.id,
                 nombre: `${a.nombre} ${a.apellido}`,
-                campanas: campañas,
-                estado: campañas.length > 0 ? 'ACTIVO' : 'LIBRE'
+                actividades: actividades,
+                estado: actividades.length > 0 ? 'ACTIVO' : 'LIBRE'
             };
         });
         setEstadoAnalistas(estado.sort((a, b) => (a.estado === 'ACTIVO' ? -1 : 1)));
@@ -266,11 +346,11 @@ function DashboardPage() {
                             <Card.Body className="py-2 px-3">
                                 <div className="d-flex justify-content-between align-items-center mb-2">
                                     <h6 className="mb-0 fw-bold text-muted small">📡 RADAR DE COBERTURA</h6>
-                                    <div className="d-flex gap-2">
-                                        <Badge bg="danger" className="fw-normal">🔴 {sinCobertura.length}</Badge>
-                                        <Badge bg="success" className="fw-normal">🟢 {conCobertura.length}</Badge>
-                                        <Badge bg="secondary" className="fw-normal">⚫ {cerradas.length}</Badge>
-                                    </div>
+                                <div className="d-flex gap-2">
+                                    <Badge bg="danger" className="fw-normal">🔴 {sinCobertura.length}</Badge>
+                                    <Badge bg="success" className="fw-normal">🟢 {conCobertura.length}</Badge>
+                                    <Badge bg="secondary" className="fw-normal">⚫ {cerradas.length}</Badge>
+                                </div>
                                 </div>
                                 <div className="d-flex flex-wrap gap-2">
                                     {sinCobertura.map(c => (
@@ -287,6 +367,13 @@ function DashboardPage() {
                                             </Badge>
                                         </OverlayTrigger>
                                     ))}
+                                    {reporteriaRadar.activos > 0 && (
+                                        <OverlayTrigger placement="top" overlay={<Tooltip><strong>Online:</strong> {reporteriaRadar.nombres.join(', ')}</Tooltip>}>
+                                            <Badge bg="dark" className="p-2 shadow-sm" style={{fontSize:'0.75rem', cursor:'help'}}>
+                                                📂 Dev/Rep ({reporteriaRadar.activos})
+                                            </Badge>
+                                        </OverlayTrigger>
+                                    )}
                                     {cerradas.map(c => (
                                         <Badge key={c.campana_id} bg="secondary" className="p-2" style={{fontSize:'0.75rem', opacity:'0.6'}}>
                                             ⚫ {c.nombre_campana}
@@ -319,15 +406,23 @@ function DashboardPage() {
                     </Col>
                 </Row>
 
-                {/* ZONA PRINCIPAL: Entregables y Pulso Operacional */}
+                {/* ZONA PRINCIPAL: Entregables, Reportería y Pulso Operacional */}
                 <Row className="g-3">
-                    <Col lg={7}>
-                        <div className="mb-3">
+                    <Col lg={4} md={12}>
+                        <div className="h-100">
                             <EntregablesWidget role={user.role} />
                         </div>
                     </Col>
-                    <Col lg={5}>
-                        <WidgetAlertasSupervisor />
+                    <Col lg={4} md={12}>
+                         <ReporteriaWidget 
+                            bolsa={bolsaTotal} 
+                            onShowAudit={() => setShowAuditModal(true)} 
+                        />
+                    </Col>
+                    <Col lg={4} md={12}>
+                        <div className="h-100">
+                            <WidgetAlertasSupervisor />
+                        </div>
                     </Col>
                 </Row>
 
@@ -382,7 +477,11 @@ function DashboardPage() {
                                         <td className="text-end pe-3">
                                             {a.estado === 'ACTIVO' ? (
                                                 <div className="d-flex flex-wrap justify-content-end gap-1">
-                                                    {a.campanas.map((c, i) => <Badge key={i} bg="success" className="fw-normal" style={{fontSize:'0.65rem'}}>{c}</Badge>)}
+                                                    {a.actividades.map((c, i) => (
+                                                        <Badge key={i} bg={c.startsWith('[Repo]') ? "dark" : "success"} className="fw-normal" style={{fontSize:'0.65rem'}}>
+                                                            {c.startsWith('[Repo]') ? c.replace('[Repo]', '') : c}
+                                                        </Badge>
+                                                    ))}
                                                 </div>
                                             ) : <Badge bg="light" text="secondary" className="border fw-normal small">Inactivo / Libre</Badge>}
                                         </td>
@@ -435,12 +534,15 @@ function DashboardPage() {
             <div className="d-flex justify-content-between align-items-start mb-4">
                 <div>
                     <h2 className="mb-0">Hola, {user.nombre}</h2>
-                    <div className="d-flex align-items-center mt-1 mb-2">
+                    <div className="d-flex align-items-center mt-1 mb-2 flex-wrap">
                         <span className="text-muted me-2">Activo en:</span>
-                        {misSesionesActivas.length > 0 ? (
-                            misSesionesActivas.map((s, i) => <Badge key={i} bg="success" className="me-1">{s.campana.nombre}</Badge>)
-                        ) : (
+                        {misSesionesActivas.length === 0 && misTareasReporteria.length === 0 ? (
                             <Badge bg="secondary">Ninguna (Inicia sesión)</Badge>
+                        ) : (
+                            <>
+                                {misSesionesActivas.map((s, i) => <Badge key={`c-${i}`} bg="success" className="me-1 mb-1">{s.campana.nombre}</Badge>)}
+                                {misTareasReporteria.length > 0 && <Badge bg="dark" className="me-1 mb-1">Dev/Rep</Badge>}
+                            </>
                         )}
                     </div>
                 </div>
@@ -542,6 +644,9 @@ function DashboardPage() {
                 handleClose={() => setShowCampaignModal(false)}
                 onUpdate={cargarDatosDashboard} 
             />
+
+            <GestionCatalogModal show={showCatalogModal} onHide={() => setShowCatalogModal(false)} />
+            <HistoricoReporteriaModal show={showAuditModal} onHide={() => setShowAuditModal(false)} />
         </Container>
     );
 }
