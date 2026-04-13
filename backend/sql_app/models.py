@@ -260,8 +260,19 @@ class CatalogoTareasReporteria(Base):
     id = Column(Integer, primary_key=True, index=True)
     categoria = Column(String(100), nullable=False, default="General")
     nombre = Column(String, nullable=False)
+    descripcion = Column(Text, nullable=True)
     hora_vencimiento = Column(Time, nullable=True)
     activa = Column(Boolean, default=True)
+    
+    # Días de la semana para generación automática
+    lunes = Column(Boolean, default=True)
+    martes = Column(Boolean, default=True)
+    miercoles = Column(Boolean, default=True)
+    jueves = Column(Boolean, default=True)
+    viernes = Column(Boolean, default=True)
+    sabado = Column(Boolean, default=False)
+    domingo = Column(Boolean, default=False)
+    
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
 class BolsaTareasReporteria(Base):

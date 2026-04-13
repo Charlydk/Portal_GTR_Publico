@@ -467,6 +467,13 @@ class CatalogoTareaBase(BaseModel):
     descripcion: Optional[str] = None
     hora_vencimiento: Optional[time] = None
     activa: bool = True
+    lunes: Optional[bool] = True
+    martes: Optional[bool] = True
+    miercoles: Optional[bool] = True
+    jueves: Optional[bool] = True
+    viernes: Optional[bool] = True
+    sabado: Optional[bool] = False
+    domingo: Optional[bool] = False
 
 class CatalogoTareaCreate(CatalogoTareaBase):
     pass

@@ -13,6 +13,7 @@ import WidgetAlertas from '../components/dashboard/WidgetAlertas';
 import WidgetAlertasSupervisor from '../components/dashboard/WidgetAlertasSupervisor';
 import CampaignSelector from '../components/dashboard/CampaignSelector';
 import EntregablesWidget from '../components/dashboard/EntregablesWidget';
+import MisTareasAnalistaWidget from '../components/dashboard/MisTareasAnalistaWidget';
 import ReporteriaWidget from '../components/dashboard/ReporteriaWidget';
 import GestionCatalogModal from '../components/dashboard/GestionCatalogModal';
 import HistoricoReporteriaModal from '../components/dashboard/HistoricoReporteriaModal';
@@ -95,20 +96,7 @@ function DashboardPage() {
         }
     };
 
-    // Soporte para abrir el catálogo desde el Navbar vía URL
-    useEffect(() => {
-        const query = new URLSearchParams(window.location.search);
-        if (query.get('action') === 'manageCatalog') {
-            setShowCatalogModal(true);
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, [window.location.search]);
 
-    useEffect(() => {
-        const handleShowCatalog = () => setShowCatalogModal(true);
-        window.addEventListener('show-catalog-modal', handleShowCatalog);
-        return () => window.removeEventListener('show-catalog-modal', handleShowCatalog);
-    }, []);
 
     const cargarDatosEspecificosAnalista = async (dataCobertura) => {
         const resInc = await fetchWithAuth(`${API_BASE_URL}/gtr/incidencias/mis-incidencias`);
@@ -123,6 +111,7 @@ function DashboardPage() {
         const resBolsa = await fetchWithAuth(`${API_BASE_URL}/api/reporteria/bolsa`);
         if (resBolsa.ok) {
             const bolsa = await resBolsa.json();
+            setBolsaTotal(bolsa); // Save all tasks so the widget can manage Available vs Taken
             const misTareasEnProceso = bolsa.filter(t => t.estado === 'EN_PROCESO' && Number(t.analista_id) === Number(user.id));
             setMisTareasReporteria(misTareasEnProceso);
         }
@@ -519,6 +508,10 @@ function DashboardPage() {
                         <PanelRegistroWidget compact={false} />
                     </Modal.Body>
                 </Modal>
+
+                {/* MODALES SUPERVISOR — Catálogo y Auditoría */}
+                <GestionCatalogModal show={showCatalogModal} onHide={() => setShowCatalogModal(false)} />
+                <HistoricoReporteriaModal show={showAuditModal} onHide={() => setShowAuditModal(false)} />
             </Container>
         );
     }
@@ -589,9 +582,13 @@ function DashboardPage() {
                         </Card.Body>
                     </Card>
 
-                    {/* 2. MIS ENTREGABLES */}
+                    {/* 2. MIS TAREAS & REPORTERÍA (NUEVO WIDGET UNIFICADO) */}
                     <div className="mb-4">
-                        <EntregablesWidget role={user.role} />
+                        <MisTareasAnalistaWidget 
+                            bolsa={bolsaTotal} 
+                            userId={user.id}
+                            onUpdateRequested={() => cargarDatosDashboard(true)} 
+                        />
                     </div>
 
                     {/* 3. MIS INCIDENCIAS */}
@@ -606,6 +603,11 @@ function DashboardPage() {
                         <Button variant="primary" className="py-3 shadow-sm fw-bold border-0" onClick={() => setShowCampaignModal(true)} style={{background: 'linear-gradient(135deg, #0d6efd, #0a58ca)'}}>
                             🔄 Gestionar mi Actividad
                         </Button>
+                        {(user.role === 'SUPERVISOR' || user.role === 'RESPONSABLE') && (
+                            <Button variant="outline-dark" className="py-2 shadow-sm fw-semibold" onClick={() => setShowCatalogModal(true)}>
+                                📋 Ver Catálogo Reportería
+                            </Button>
+                        )}
                     </div>
                     <WidgetAlertas variant="main" />
                 </Col>

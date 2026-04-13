@@ -13,6 +13,8 @@ from ..schemas.models import (
     SesionActiva, CheckInCreate, CoberturaCampana, SesionCampanaSchema
 )
 
+from ..utils import get_timezone_by_country
+
 router = APIRouter(
     prefix="/sesiones",
     tags=["Sesiones"]
@@ -24,9 +26,15 @@ async def check_in_campana(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    # Usamos UTC para todo el manejo de base de datos
+    # Definimos "hoy" según la zona horaria del analista
+    analista_pais = current_analista.equipo.codigo_pais if current_analista.equipo else "AR"
+    tz_local = pytz.timezone(get_timezone_by_country(analista_pais))
+    
+    ahora_local = datetime.now(tz_local)
+    hoy_inicio_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    hoy_inicio_utc = hoy_inicio_local.astimezone(timezone.utc)
+    
     ahora_utc = datetime.now(timezone.utc)
-    hoy_inicio_utc = ahora_utc.replace(hour=0, minute=0, second=0, microsecond=0)
 
     # --- FASE 1: LIMPIEZA DE ZOMBIS ---
     q_zombis = select(models.SesionCampana).filter(
@@ -218,7 +226,9 @@ async def check_out_campana(
     sesion = result.scalars().first()
 
     if not sesion:
-        raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta actividad.")
+        if datos.activity_type == "CAMPAÑA":
+            raise HTTPException(status_code=404, detail="No tienes una sesión activa en esta campaña.")
+        # Para REPORTERIA, si no hay sesión formal pero quiere completarla/liberarla, se lo permitimos (skip 404)
 
     if datos.activity_type == "REPORTERIA":
         q_tarea = select(models.BolsaTareasReporteria).filter(models.BolsaTareasReporteria.id == datos.target_id)
@@ -236,7 +246,9 @@ async def check_out_campana(
                 tarea.comentario_final = datos.comentario
             db.add(tarea)
 
-    sesion.fecha_fin = datetime.now(timezone.utc)
+    if sesion:
+        sesion.fecha_fin = datetime.now(timezone.utc)
+    
     await db.commit()
     
     return {"message": "Sesión finalizada correctamente", "target_id": datos.target_id or datos.campana_id}
@@ -321,7 +333,12 @@ async def obtener_mis_sesiones_activas(
     db: AsyncSession = Depends(get_db),
     current_analista: models.Analista = Depends(get_current_analista)
 ):
-    inicio_dia_hoy_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    analista_pais = current_analista.equipo.codigo_pais if current_analista.equipo else "AR"
+    tz_local = pytz.timezone(get_timezone_by_country(analista_pais))
+    
+    ahora_local = datetime.now(tz_local)
+    hoy_inicio_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    inicio_dia_hoy_utc = hoy_inicio_local.astimezone(timezone.utc)
 
     query = select(models.SesionCampana).options(
         selectinload(models.SesionCampana.campana)

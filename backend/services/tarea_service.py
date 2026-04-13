@@ -100,6 +100,28 @@ class TareaService:
                 )
             )
 
+            # Filtro de fecha para no saturar con tareas viejas completadas
+            if not estado:
+                from ..utils import get_timezone_by_country
+                import pytz
+                from datetime import timezone
+                
+                analista_pais = analista.equipo.codigo_pais if analista.equipo else "AR"
+                tz_local = pytz.timezone(get_timezone_by_country(analista_pais))
+                
+                # Calculamos el inicio del día local en UTC
+                ahora_local = datetime.now(tz_local)
+                hoy_inicio_local = ahora_local.replace(hour=0, minute=0, second=0, microsecond=0)
+                hoy_inicio_utc = hoy_inicio_local.astimezone(timezone.utc)
+
+                # Mostramos: Pendientes/En Progreso (siempre) O cualquier estado si es de hoy
+                query = query.filter(
+                    or_(
+                        models.Tarea.progreso.in_([ProgresoTarea.PENDIENTE, ProgresoTarea.EN_PROGRESO]),
+                        models.Tarea.fecha_creacion >= hoy_inicio_utc
+                    )
+                )
+
         if estado:
             query = query.filter(models.Tarea.progreso == estado)
 
@@ -108,3 +130,4 @@ class TareaService:
 
         result = await db.execute(query)
         return result.scalars().all()
+

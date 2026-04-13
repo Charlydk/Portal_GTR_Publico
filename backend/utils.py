@@ -40,4 +40,19 @@ def get_current_hhee_period():
         else:
             start = date(today.year, today.month - 1, 26)
         end = date(today.year, today.month, 25)
-    return start, end
+def get_timezone_by_country(country_code: str) -> str:
+    """
+    Devuelve la zona horaria correspondiente al código de país.
+    Chile (CL) usa America/Santiago.
+    Argentina (AR) usa America/Argentina/Tucuman (por defecto).
+    """
+    if not country_code:
+        return "America/Argentina/Tucuman"
+    
+    country_code = country_code.upper()
+    if country_code == "CL":
+        return "America/Santiago"
+    elif country_code == "AR":
+        return "America/Argentina/Tucuman"
+    
+    return "America/Argentina/Tucuman"

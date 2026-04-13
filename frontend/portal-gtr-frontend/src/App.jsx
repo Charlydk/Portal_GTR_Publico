@@ -42,6 +42,7 @@ import Planificacion from './pages/planificacion/Planificacion.jsx';
 import KanbanBackofficePage from './pages/KanbanBackofficePage.jsx';
 import DetalleEntregablePage from './pages/DetalleEntregablePage.jsx';
 import NotificadorEntregables from './components/NotificadorEntregables.jsx';
+import CatalogoReporteriaPage from './pages/CatalogoReporteriaPage.jsx';
 
 
 const AppContent = () => {
@@ -116,6 +117,7 @@ const AppContent = () => {
             {/* ELIMINADO: Route path="/asignar-campanas" (Ya no se asigna estático) */}
             
             <Route path="/plantillas-checklist" element={<GestionPlantillasPage />} />
+            <Route path="/admin/catalogo-reporteria" element={<CatalogoReporteriaPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
           </Route>
 

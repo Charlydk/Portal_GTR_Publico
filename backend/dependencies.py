@@ -40,17 +40,20 @@ async def get_current_analista(
 ) -> models.Analista:
     """
     Versión ligera de autenticación (por defecto).
-    Solo carga los datos básicos del usuario sin relaciones pesadas.
+    Carga datos básicos + equipo para manejo de zonas horarias.
     """
     email = await _get_authenticated_email(token)
     result = await db.execute(
-        select(models.Analista).filter(models.Analista.email == email)
+        select(models.Analista)
+        .options(selectinload(models.Analista.equipo))
+        .filter(models.Analista.email == email)
     )
     analista = result.scalars().first()
 
     if analista is None:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     return analista
+
 
 async def get_current_analista_full(
     token: str = Depends(oauth2_scheme),
