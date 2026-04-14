@@ -529,4 +529,43 @@ class EntregableComentario(Base):
     fecha_creacion = Column(DateTime(timezone=True), server_default=func.now())
 
     entregable = relationship("Entregable", back_populates="comentarios")
-    autor = relationship("Analista", foreign_keys=[autor_id])
+    autor = relationship("Analista", foreign_keys=[autor_id])
+
+# ==============================================================================
+# NUEVOS MODELOS FASE 3: REPORTE DE AUSENTISMO
+# ==============================================================================
+
+class AusentismoUsuario(Base):
+    __tablename__ = "ausentismo_usuarios"
+    id = Column(Integer, primary_key=True, index=True)
+    rut = Column(String, unique=True, index=True, nullable=False)
+    nombre = Column(String, nullable=True)
+    apellido = Column(String, nullable=True)
+    id_mediatel = Column(String, nullable=True, index=True)
+    id_avaya = Column(String, nullable=True, index=True)
+    id_adereso = Column(String, nullable=True, index=True)
+
+    planificaciones = relationship("AusentismoPlanificacion", back_populates="usuario", cascade="all, delete-orphan")
+    conexiones = relationship("AusentismoConexion", back_populates="usuario", cascade="all, delete-orphan")
+
+class AusentismoPlanificacion(Base):
+    __tablename__ = "ausentismo_planificacion"
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("ausentismo_usuarios.id"), nullable=False)
+    fecha = Column(Date, nullable=False, index=True)
+    hora_inicio = Column(Time, nullable=True)
+    hora_fin = Column(Time, nullable=True)
+    campana = Column(String, default="Walmart")
+
+    usuario = relationship("AusentismoUsuario", back_populates="planificaciones")
+
+class AusentismoConexion(Base):
+    __tablename__ = "ausentismo_conexiones"
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("ausentismo_usuarios.id"), nullable=False)
+    herramienta = Column(String, nullable=False) # 'Adereso', 'Mediatel', 'Avaya'
+    evento = Column(String, nullable=True) 
+    hora_inicio = Column(DateTime(timezone=True), nullable=False, index=True)
+    hora_fin = Column(DateTime(timezone=True), nullable=True)
+
+    usuario = relationship("AusentismoUsuario", back_populates="conexiones")

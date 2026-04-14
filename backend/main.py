@@ -30,7 +30,7 @@ from .routers import (
     analistas, campanas, bitacora, tareas, 
     incidencias, dashboard, sesiones, 
     hhee_router, wfm_router, entregables,
-    reporteria
+    reporteria, ausentismo
 )
 from .dependencies import get_current_analista, get_current_analista_full, require_role, get_current_analista_with_campaigns
 from .jobs import run_cron_jobs
@@ -104,6 +104,7 @@ app.include_router(dashboard.router, prefix="/gtr", dependencies=gtr_wfm_restric
 app.include_router(sesiones.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(entregables.router, prefix="/gtr", dependencies=gtr_wfm_restriction)
 app.include_router(reporteria.router, prefix="/api", dependencies=gtr_wfm_restriction) # Se usará /api/reporteria en frontend
+app.include_router(ausentismo.router, prefix="/api", dependencies=gtr_wfm_restriction)
 app.include_router(hhee_router.router, prefix="/hhee")
 app.include_router(wfm_router.router, dependencies=gtr_wfm_restriction)
 

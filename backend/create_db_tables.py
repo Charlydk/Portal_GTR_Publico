@@ -14,7 +14,8 @@ from .sql_app.models import (
     HistorialEstadoTarea, Incidencia, ActualizacionIncidencia,
     ValidacionHHEE,
     SolicitudHHEE,
-    Entregable
+    Entregable,
+    AusentismoUsuario, AusentismoPlanificacion, AusentismoConexion
 )
 # -------------------------------------------------------------
 

@@ -60,6 +60,7 @@ function NavbarComponent() {
                                 <NavDropdown.Divider />
                                 <NavDropdown.Item as={Link} to="/backoffice/kanban" onClick={() => setExpanded(false)}>📦 Kanban Backoffice</NavDropdown.Item>
                                 <NavDropdown.Divider />
+                                <NavDropdown.Item as={Link} to="/ausentismo" onClick={() => setExpanded(false)}>📊 Reporte Ausentismo</NavDropdown.Item>
                                 <NavDropdown.Item as={Link} to="/planificacion-turnos" onClick={() => setExpanded(false)}>Planificación Turnos (WFM)</NavDropdown.Item>
                             </NavDropdown>
                         )}

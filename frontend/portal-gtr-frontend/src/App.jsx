@@ -43,6 +43,7 @@ import KanbanBackofficePage from './pages/KanbanBackofficePage.jsx';
 import DetalleEntregablePage from './pages/DetalleEntregablePage.jsx';
 import NotificadorEntregables from './components/NotificadorEntregables.jsx';
 import CatalogoReporteriaPage from './pages/CatalogoReporteriaPage.jsx';
+import AusentismoPage from './pages/AusentismoPage.jsx';
 
 
 const AppContent = () => {
@@ -100,6 +101,7 @@ const AppContent = () => {
             {/* Kanban Backoffice */}
             <Route path="/backoffice/kanban" element={<KanbanBackofficePage />} />
             <Route path="/backoffice/entregables/:id" element={<DetalleEntregablePage />} />
+            <Route path="/ausentismo" element={<AusentismoPage />} />
           </Route>
 
           {/* Rutas ADMINISTRATIVAS (Supervisor y Responsable) */}
