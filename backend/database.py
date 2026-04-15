@@ -28,7 +28,7 @@ if ":6543" in DATABASE_URL:
         poolclass=NullPool,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 120  # 2 min para soportar cargas masivas de Excel
+            "command_timeout": 30  # 30s: suficiente para batches de 500 filas
         }
     )
 else:
@@ -42,7 +42,7 @@ else:
         pool_recycle=1800,
         pool_pre_ping=True,
         connect_args={
-            "command_timeout": 120  # 2 min para soportar cargas masivas de Excel
+            "command_timeout": 30  # 30s: suficiente para batches de 500 filas
         }
     )
 
