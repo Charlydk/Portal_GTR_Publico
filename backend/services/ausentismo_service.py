@@ -195,6 +195,10 @@ async def parse_and_insert_mediatel(file_bytes: bytes, is_csv: bool, db: AsyncSe
         df = pd.read_excel(BytesIO(file_bytes))
         
     # AGENTID, AGENTNAME, FECHA, LOGINDATE, LOGOUTDATE, EVENTNAME
+    # Solo EVENTTYPE=0 (Log In/Out) representa la sesión completa del agente.
+    # El resto (Baño, Break, Colación, etc.) son sub-eventos que NO deben sumarse.
+    if "EVENTTYPE" in df.columns:
+        df = df[df["EVENTTYPE"] == 0]
     
     stmt = select(AusentismoUsuario).where(AusentismoUsuario.id_mediatel.isnot(None))
     result = await db.execute(stmt)
