@@ -110,8 +110,10 @@ async def parse_and_insert_planificacion(file_bytes: bytes, db: AsyncSession):
             })
 
     if items:
-        # Borramos planificación previa para ese rango si quisiéramos sobrescribir, 
-        # pero por simplicidad de POC solo insertamos.
+        unique_dates = list(set(i['fecha'] for i in items if i['fecha']))
+        for d in unique_dates:
+            await db.execute(delete(AusentismoPlanificacion).where(AusentismoPlanificacion.fecha == d))
+            
         await db.execute(insert(AusentismoPlanificacion).values(items))
         await db.commit()
         
@@ -158,6 +160,18 @@ async def parse_and_insert_adereso(file_bytes: bytes, db: AsyncSession):
             continue
             
     if items:
+        unique_dates = list(set(i['hora_inicio'].date() for i in items if i['hora_inicio']))
+        for d in unique_dates:
+            dt_start = datetime.combine(d, datetime.min.time())
+            dt_end = datetime.combine(d, datetime.max.time())
+            await db.execute(
+                delete(AusentismoConexion).where(
+                    AusentismoConexion.herramienta == "Adereso",
+                    AusentismoConexion.hora_inicio >= dt_start,
+                    AusentismoConexion.hora_inicio <= dt_end
+                )
+            )
+            
         await db.execute(insert(AusentismoConexion).values(items))
         await db.commit()
         
@@ -202,6 +216,18 @@ async def parse_and_insert_mediatel(file_bytes: bytes, is_csv: bool, db: AsyncSe
             continue
             
     if items:
+        unique_dates = list(set(i['hora_inicio'].date() for i in items if i['hora_inicio']))
+        for d in unique_dates:
+            dt_start = datetime.combine(d, datetime.min.time())
+            dt_end = datetime.combine(d, datetime.max.time())
+            await db.execute(
+                delete(AusentismoConexion).where(
+                    AusentismoConexion.herramienta == "Mediatel",
+                    AusentismoConexion.hora_inicio >= dt_start,
+                    AusentismoConexion.hora_inicio <= dt_end
+                )
+            )
+            
         await db.execute(insert(AusentismoConexion).values(items))
         await db.commit()
         
