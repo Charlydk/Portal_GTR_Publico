@@ -293,8 +293,15 @@ async def get_reporte_ausentismo(fecha_str: str, db: AsyncSession):
         def sum_durations(logs):
             total_sec = 0
             for l in logs:
-                if l.hora_fin:
-                    total_sec += (pd.to_datetime(l.hora_fin) - pd.to_datetime(l.hora_inicio)).total_seconds()
+                # Si no tiene hora_fin, el agente sigue conectado → usamos now() como cierre provisional
+                fin = pd.to_datetime(l.hora_fin) if l.hora_fin else pd.Timestamp.now(tz='UTC')
+                ini = pd.to_datetime(l.hora_inicio)
+                # Normalizamos timezone para que la resta no falle
+                if ini.tzinfo is None: ini = ini.tz_localize('UTC')
+                if fin.tzinfo is None: fin = fin.tz_localize('UTC')
+                diff = (fin - ini).total_seconds()
+                if diff > 0:
+                    total_sec += diff
             return total_sec / 3600
 
         h_adereso = sum_durations(adereso_logs)
