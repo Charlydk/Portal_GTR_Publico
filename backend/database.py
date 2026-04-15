@@ -28,7 +28,7 @@ if ":6543" in DATABASE_URL:
         poolclass=NullPool,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 20
+            "command_timeout": 120  # 2 min para soportar cargas masivas de Excel
         }
     )
 else:
@@ -36,13 +36,13 @@ else:
     engine = create_async_engine(
         DATABASE_URL,
         echo=False,
-        pool_size=10,         # Reducido de 20 para evitar saturar el plan gratuito
-        max_overflow=5,       # Reducido de 10
-        pool_timeout=20,
+        pool_size=10,
+        max_overflow=5,
+        pool_timeout=30,
         pool_recycle=1800,
         pool_pre_ping=True,
         connect_args={
-            "command_timeout": 20 # Evita que la app quede "colgada" si la DB no responde
+            "command_timeout": 120  # 2 min para soportar cargas masivas de Excel
         }
     )
 

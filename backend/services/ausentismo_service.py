@@ -7,6 +7,19 @@ from sqlalchemy import delete, insert
 from ..sql_app.models import AusentismoUsuario, AusentismoPlanificacion, AusentismoConexion
 from datetime import datetime, date
 
+# ---- helper de insert por lotes ------------------------------------
+BATCH_SIZE = 500
+
+async def _batch_insert(db: AsyncSession, model, items: list):
+    """Divide items en chunks de BATCH_SIZE e inserta uno por vez.
+    Así cada sentencia corre dentro del command_timeout de la conexión.
+    """
+    for i in range(0, len(items), BATCH_SIZE):
+        chunk = items[i:i + BATCH_SIZE]
+        await db.execute(insert(model).values(chunk))
+    await db.commit()
+# -------------------------------------------------------------------
+
 async def upsert_ausentismo_usuarios(file_bytes: bytes, db: AsyncSession):
     df = pd.read_excel(BytesIO(file_bytes))
     
@@ -113,9 +126,8 @@ async def parse_and_insert_planificacion(file_bytes: bytes, db: AsyncSession):
         unique_dates = list(set(i['fecha'] for i in items if i['fecha']))
         for d in unique_dates:
             await db.execute(delete(AusentismoPlanificacion).where(AusentismoPlanificacion.fecha == d))
-            
-        await db.execute(insert(AusentismoPlanificacion).values(items))
         await db.commit()
+        await _batch_insert(db, AusentismoPlanificacion, items)
         
     return {"status": "success", "inserted": len(items)}
 
@@ -171,9 +183,8 @@ async def parse_and_insert_adereso(file_bytes: bytes, db: AsyncSession):
                     AusentismoConexion.hora_inicio <= dt_end
                 )
             )
-            
-        await db.execute(insert(AusentismoConexion).values(items))
         await db.commit()
+        await _batch_insert(db, AusentismoConexion, items)
         
     return {"status": "success", "inserted": len(items)}
 
@@ -227,9 +238,8 @@ async def parse_and_insert_mediatel(file_bytes: bytes, is_csv: bool, db: AsyncSe
                     AusentismoConexion.hora_inicio <= dt_end
                 )
             )
-            
-        await db.execute(insert(AusentismoConexion).values(items))
         await db.commit()
+        await _batch_insert(db, AusentismoConexion, items)
         
     return {"status": "success", "inserted": len(items)}
 
