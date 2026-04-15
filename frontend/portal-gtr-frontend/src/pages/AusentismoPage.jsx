@@ -13,12 +13,16 @@ const AusentismoPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'nombre', direction: 'asc' });
 
-    const isToday = fecha === new Date().toISOString().split('T')[0];
+    const isToday = fecha === new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santiago' });
 
-    // Formato de hora "HH:MM" actual para cruce de franja
-    const getCurrentTimeStr = () => {
-        const d = new Date();
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    // Hora actual en Chile (todo el sistema opera en horario Santiago)
+    const getChileTimeStr = () => {
+        return new Date().toLocaleTimeString('en-GB', { 
+            timeZone: 'America/Santiago',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
     };
 
     const handleUpload = async (endpoint, file) => {
@@ -64,12 +68,13 @@ const AusentismoPage = () => {
     const kpis = useMemo(() => {
         if (!reporte.length) return null;
 
-        const nowHHMM = getCurrentTimeStr();
+        const nowHHMM = getChileTimeStr();
 
         const baseStats = () => ({
             total: 0, 
             ausentes: 0, 
-            plan_franja: 0, 
+            ausentes_franja: 0,   // ausentes cuyo turno YA empezó
+            dotacion_esperada: 0, // planificados cuyo turno YA empezó
             presentes_plan: 0, 
             presentes_extra: 0
         });
@@ -85,14 +90,16 @@ const AusentismoPage = () => {
         const processRow = (grp, r) => {
             grp.total++;
             
-            // Logica cruzada de estados
             if (r.estado === 'Ausente') grp.ausentes++;
             if (r.estado === 'Presente') grp.presentes_plan++;
             if (r.estado === 'Turno Extra') grp.presentes_extra++;
 
-            // Planificacos hasta la franja (sólo aplica al día de hoy para métricas)
-            if (r.hora_inicio_plan && r.hora_inicio_plan <= nowHHMM && r.estado !== 'Libre' && r.estado !== 'Turno Extra') {
-                grp.plan_franja++;
+            // Dotación esperada: agentes con turno planificado que ya debería haber comenzado
+            const turnoEmpezado = r.hora_inicio_plan && r.hora_inicio_plan <= nowHHMM 
+                                  && r.estado !== 'Libre' && r.estado !== 'Turno Extra';
+            if (turnoEmpezado) {
+                grp.dotacion_esperada++;
+                if (r.estado === 'Ausente') grp.ausentes_franja++;
             }
         };
 
@@ -112,10 +119,16 @@ const AusentismoPage = () => {
             }
         });
 
-        const formatGrp = (grp) => ({
-            obj: grp,
-            pct: grp.total === 0 ? 0 : Math.round((grp.ausentes / grp.total) * 100)
-        });
+        const formatGrp = (grp) => {
+            // Hoy: ausentismo = ausentes_franja / dotacion_esperada (solo los que ya debían estar)
+            // Otro día: ausentismo = ausentes / total (foto completa del día)
+            const num = isToday ? grp.ausentes_franja : grp.ausentes;
+            const den = isToday ? grp.dotacion_esperada : grp.total;
+            return {
+                obj: grp,
+                pct: den === 0 ? 0 : Math.round((num / den) * 100)
+            };
+        };
 
         return {
             front: formatGrp(groups.front),
@@ -187,18 +200,22 @@ const AusentismoPage = () => {
                         </Badge>
                     </h4>
                     {isToday && (
-                        <div className="text-start mt-2 border-top pt-2" style={{fontSize: '0.7rem', lineHeight: '1.2'}}>
+                        <div className="text-start mt-2 border-top pt-2" style={{fontSize: '0.7rem', lineHeight: '1.6'}}>
                             <div className="d-flex justify-content-between text-muted">
-                                <span>Plan Franja:</span>
-                                <strong>{data.obj.plan_franja}</strong>
+                                <span>Dotación esperada:</span>
+                                <strong>{data.obj.dotacion_esperada}</strong>
                             </div>
                             <div className="d-flex justify-content-between text-success">
-                                <span>Presentes Plan:</span>
+                                <span>Presentes (plan):</span>
                                 <strong>{data.obj.presentes_plan}</strong>
                             </div>
                             <div className="d-flex justify-content-between text-info">
-                                <span>Presentes Extra:</span>
+                                <span>Presentes (extra):</span>
                                 <strong>{data.obj.presentes_extra}</strong>
+                            </div>
+                            <div className="d-flex justify-content-between text-danger">
+                                <span>Ausentes franja:</span>
+                                <strong>{data.obj.ausentes_franja}</strong>
                             </div>
                         </div>
                     )}
