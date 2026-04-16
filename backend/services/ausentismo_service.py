@@ -86,7 +86,9 @@ async def parse_and_insert_planificacion(file_bytes: bytes, db: AsyncSession):
     
     items = []
     for _, row in df.iterrows():
-        rut = str(row.get("RUT 2 / CUIL", "")).strip()
+        # Normalizar RUT: eliminar decimales que pandas agrega al leer números (62528133.0 → 62528133)
+        rut_raw = str(row.get("RUT 2 / CUIL", "")).strip()
+        rut = rut_raw.split(".")[0] if "." in rut_raw else rut_raw
         if not rut or rut == "nan":
             continue
             
@@ -144,8 +146,16 @@ async def parse_and_insert_adereso(file_bytes: bytes, db: AsyncSession):
     
     items = []
     for _, row in df.iterrows():
-        nombre = str(row.get("Nombre Completo", "")).lower().split(" - ")[0].strip()
-        u_id = user_map.get(nombre)
+        nombre_raw = str(row.get("Nombre Completo", "")).strip()
+        nombre_lower = nombre_raw.lower()
+        
+        # Intentamos match directo (para paraguayos con "- PRY")
+        u_id = user_map.get(nombre_lower)
+        
+        # Si no matchea, intentamos el split (para el formato estándar "Nombre - ID")
+        if not u_id and " - " in nombre_raw:
+            nombre_split = nombre_raw.split(" - ")[0].lower().strip()
+            u_id = user_map.get(nombre_split)
         
         if not u_id:
             continue
@@ -267,8 +277,16 @@ async def get_reporte_ausentismo(fecha_str: str, db: AsyncSession):
         # Filtrar planificacion del dia
         plan = [p for p in u.planificaciones if p.fecha == target_date]
         
-        # Filtrar conexiones que inciaron ese dia (segun regla de negocio)
-        cons = [c for c in u.conexiones if c.hora_inicio.date() == target_date]
+        # Filtrar conexiones activas en ese dia:
+        # incluye sesiones que iniciaron antes pero siguen abiertas O finalizan ese dia
+        cons = [
+            c for c in u.conexiones
+            if c.hora_inicio.date() == target_date
+            or (
+                c.hora_inicio.date() < target_date
+                and (c.hora_fin is None or c.hora_fin.date() >= target_date)
+            )
+        ]
         
         if not plan and not cons:
             continue
