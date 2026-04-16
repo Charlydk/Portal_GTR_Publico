@@ -7,8 +7,20 @@ from sqlalchemy import delete, insert
 from ..sql_app.models import AusentismoUsuario, AusentismoPlanificacion, AusentismoConexion
 from datetime import datetime, date
 
-# ---- helper de insert por lotes ------------------------------------
-BATCH_SIZE = 500
+# -------------------------------------------------------------------
+# ---- helpers de normalización y tiempo -----------------------------
+def normalize_rut(val):
+    """Limpia el RUT de decimales, espacios y leading zeros."""
+    if not val or pd.isna(val):
+        return None
+    s = str(val).strip()
+    # Eliminar .0 al final (común en pandas leyendo números de Excel)
+    if s.endswith(".0"):
+        s = s[:-2]
+    # Quitar cualquier carácter que no sea dígito ni K (para RUTs chilenos completos)
+    # Pero aquí parece que usan el cuerpo del RUT, así que solo dígitos
+    s = "".join(filter(str.isdigit, s))
+    return s.lstrip("0") if s else None
 
 async def _batch_insert(db: AsyncSession, model, items: list):
     """Divide items en chunks de BATCH_SIZE e inserta uno por vez.
@@ -25,8 +37,8 @@ async def upsert_ausentismo_usuarios(file_bytes: bytes, db: AsyncSession):
     
     recs_map = {}
     for _, row in df.iterrows():
-        rut = str(row.get("RUT 2", "")).strip()
-        if not rut or rut == "nan":
+        rut = normalize_rut(row.get("RUT 2"))
+        if not rut:
             continue
             
         id_avaya = str(row.get("Usuarios Avaya", ""))
@@ -39,7 +51,7 @@ async def upsert_ausentismo_usuarios(file_bytes: bytes, db: AsyncSession):
             "apellido": str(row.get("Last Name", "")),
             "id_avaya": None if id_avaya.lower() == "nan" else id_avaya.replace(".0", ""),
             "id_mediatel": None if id_mediatel.lower() == "nan" else id_mediatel.replace(".0", ""),
-            "id_adereso": None if id_adereso.lower() == "nan" else id_adereso
+            "id_adereso": None if id_adereso.lower() == "nan" else id_adereso.strip()
         }
         
     recs_to_insert = list(recs_map.values())
@@ -86,10 +98,9 @@ async def parse_and_insert_planificacion(file_bytes: bytes, db: AsyncSession):
     
     items = []
     for _, row in df.iterrows():
-        # Normalizar RUT: eliminar decimales que pandas agrega al leer números (62528133.0 → 62528133)
-        rut_raw = str(row.get("RUT 2 / CUIL", "")).strip()
-        rut = rut_raw.split(".")[0] if "." in rut_raw else rut_raw
-        if not rut or rut == "nan":
+        # Normalizar RUT usando el helper robusto
+        rut = normalize_rut(row.get("RUT 2 / CUIL"))
+        if not rut:
             continue
             
         u_id = rut_map.get(rut)
@@ -142,19 +153,21 @@ async def parse_and_insert_adereso(file_bytes: bytes, db: AsyncSession):
     stmt = select(AusentismoUsuario).where(AusentismoUsuario.id_adereso.isnot(None))
     result = await db.execute(stmt)
     users = result.scalars().all()
-    user_map = {u.id_adereso.lower(): u.id for u in users}
+    # Normalizar llaves: minúsculas y sin espacios laterales
+    user_map = {u.id_adereso.lower().strip(): u.id for u in users}
     
     items = []
     for _, row in df.iterrows():
         nombre_raw = str(row.get("Nombre Completo", "")).strip()
-        nombre_lower = nombre_raw.lower()
+        # Normalizar: minúsculas y reemplazar guiones largos por cortos
+        nombre_norm = nombre_raw.lower().replace("–", "-")
         
-        # Intentamos match directo (para paraguayos con "- PRY")
-        u_id = user_map.get(nombre_lower)
+        # 1. Intento: Match exacto (ID completo, ej: "Adriana Colman - PRY")
+        u_id = user_map.get(nombre_norm)
         
-        # Si no matchea, intentamos el split (para el formato estándar "Nombre - ID")
-        if not u_id and " - " in nombre_raw:
-            nombre_split = nombre_raw.split(" - ")[0].lower().strip()
+        # 2. Intento: Match por split (ID estándar, ej: "Nombre - ID")
+        if not u_id and "-" in nombre_norm:
+            nombre_split = nombre_norm.split("-")[0].strip()
             u_id = user_map.get(nombre_split)
         
         if not u_id:
@@ -308,22 +321,37 @@ async def get_reporte_ausentismo(fecha_str: str, db: AsyncSession):
         adereso_logs = [c for c in cons if c.herramienta == "Adereso"]
         mediatel_logs = [c for c in cons if c.herramienta == "Mediatel"]
         
-        def sum_durations(logs):
+        def sum_durations(logs, t_date):
+            # Regla Walmart: Ventana operativa estricta 07:00 - 23:00
+            # Todo logueo fuera de este rango se ignora/trunca.
+            window_start = datetime.combine(t_date, time(7, 0, 0))
+            window_end = datetime.combine(t_date, time(23, 0, 0))
+            
+            # Normalizar a UTC para comparación
+            import pytz
+            w_start_utc = pytz.UTC.localize(window_start)
+            w_end_utc = pytz.UTC.localize(window_end)
+
             total_sec = 0
             for l in logs:
-                # Si no tiene hora_fin, el agente sigue conectado → usamos now() como cierre provisional
-                fin = pd.to_datetime(l.hora_fin) if l.hora_fin else pd.Timestamp.now(tz='UTC')
+                # 1. Obtener inicio/fin real (con fallback a ahora si sigue abierto)
                 ini = pd.to_datetime(l.hora_inicio)
-                # Normalizamos timezone para que la resta no falle
-                if ini.tzinfo is None: ini = ini.tz_localize('UTC')
-                if fin.tzinfo is None: fin = fin.tz_localize('UTC')
-                diff = (fin - ini).total_seconds()
+                if ini.tzinfo is None: ini = pytz.UTC.localize(ini)
+                
+                fin = pd.to_datetime(l.hora_fin) if l.hora_fin else pd.Timestamp.now(tz='UTC')
+                if fin.tzinfo is None: fin = pytz.UTC.localize(fin)
+                
+                # 2. Truncar a la ventana operativa [07:00, 23:00]
+                actual_start = max(ini, w_start_utc)
+                actual_end = min(fin, w_end_utc)
+                
+                diff = (actual_end - actual_start).total_seconds()
                 if diff > 0:
                     total_sec += diff
             return total_sec / 3600
 
-        h_adereso = sum_durations(adereso_logs)
-        h_mediatel = sum_durations(mediatel_logs)
+        h_adereso = sum_durations(adereso_logs, target_date)
+        h_mediatel = sum_durations(mediatel_logs, target_date)
         
         # Detección de concurrencia
         concurrente = False
