@@ -1,6 +1,6 @@
 // RUTA: src/components/dashboard/EntregablesWidget.jsx
 import React, { useState, useEffect } from 'react';
-import { Card, Badge, ListGroup, Spinner, ProgressBar } from 'react-bootstrap';
+import { Card, Badge, ListGroup, Spinner, ProgressBar, Button } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL, fetchWithAuth } from '../../api';
 
@@ -49,40 +49,20 @@ function EntregablesWidget({ role }) {
             </Card.Header>
             <Card.Body className="pt-0">
                 {total > 0 ? (
-                    <>
-                        <div className="mb-3">
+                    <div className="d-flex flex-column h-100 justify-content-center mt-3">
+                        <div className="mb-4">
                             <div className="d-flex justify-content-between small mb-1">
                                 <span className="text-muted">Progreso actual ({data.en_progreso}/{total})</span>
                                 <span className="fw-bold">{progress}%</span>
                             </div>
-                            <ProgressBar now={progress} variant="info" style={{height: '6px'}} className="rounded-pill shadow-sm" />
+                            <ProgressBar now={progress} variant="info" style={{height: '10px'}} className="rounded-pill shadow-sm" />
                         </div>
-
-                        <ListGroup variant="flush">
-                            {data.recientes.map(item => (
-                                <ListGroup.Item 
-                                    key={item.id} 
-                                    action 
-                                    onClick={() => navigate(`/backoffice/entregables/${item.id}`)}
-                                    className="px-0 py-2 border-0 d-flex justify-content-between align-items-center"
-                                    style={{fontSize: '0.85rem'}}
-                                >
-                                    <div className="text-truncate me-2">
-                                        <div className="fw-semibold text-dark text-truncate">{item.titulo}</div>
-                                        <small className="text-muted">{item.campana_nombre}</small>
-                                    </div>
-                                    <Badge bg={item.estado === 'EN_PROGRESO' ? 'warning' : 'secondary'} className="fw-normal" style={{fontSize: '0.65rem'}}>
-                                        {item.estado === 'EN_PROGRESO' ? '⚡' : '📋'}
-                                    </Badge>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                        <div className="text-center mt-2">
-                            <small className="text-primary fw-bold" style={{cursor: 'pointer'}} onClick={() => navigate('/backoffice/kanban')}>
-                                Ver tablero completo →
-                            </small>
+                        <div className="text-center mt-auto">
+                            <Button variant="outline-primary" size="sm" className="fw-bold px-4 rounded-pill" onClick={() => navigate('/backoffice/kanban')}>
+                                Ver Tablero Completo ➡
+                            </Button>
                         </div>
-                    </>
+                    </div>
                 ) : (
                     <div className="text-center py-4">
                         <div className="fs-3 mb-2">🎉</div>

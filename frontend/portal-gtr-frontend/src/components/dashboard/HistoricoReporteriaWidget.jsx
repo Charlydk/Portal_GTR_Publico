@@ -66,12 +66,12 @@ const HistoricoReporteriaWidget = () => {
                                 <th>Fecha/Hora</th>
                                 <th>Reporte</th>
                                 <th>Analista</th>
-                                <th>Comentario / Resultado</th>
+                                <th>Estado / Comentario</th>
                             </tr>
                         </thead>
                         <tbody>
                             {historico.length === 0 ? (
-                                <tr><td colSpan="4" className="text-center py-4 text-muted">No se encontraron reportes finalizados en este rango.</td></tr>
+                                <tr><td colSpan="4" className="text-center py-4 text-muted">No se encontraron reportes en este rango.</td></tr>
                             ) : (
                                 historico.map((h) => (
                                     <tr key={h.id}>
@@ -92,7 +92,16 @@ const HistoricoReporteriaWidget = () => {
                                             ) : '-'}
                                         </td>
                                         <td>
-                                            <div className="text-truncate" style={{maxWidth: '200px'}} title={h.comentario_final}>
+                                            <div className="mb-1">
+                                                {h.estado === 'COMPLETADO' ? (
+                                                    <Badge bg="success" style={{fontSize: '0.65rem'}}>✅ Completado</Badge>
+                                                ) : h.estado === 'EN_PROCESO' ? (
+                                                    <Badge bg="info" style={{fontSize: '0.65rem'}}>⏳ En Proceso</Badge>
+                                                ) : (
+                                                    <Badge bg="danger" style={{fontSize: '0.65rem'}}>🚨 Pendiente / Vencida</Badge>
+                                                )}
+                                            </div>
+                                            <div className="text-truncate text-muted" style={{maxWidth: '200px', fontSize: '0.8rem'}} title={h.comentario_final}>
                                                 {h.comentario_final || '(sin comentario)'}
                                             </div>
                                         </td>

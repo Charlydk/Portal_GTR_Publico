@@ -9,14 +9,11 @@ import { useNavigate } from 'react-router-dom';
 // Widgets
 import PanelRegistroWidget from '../components/dashboard/PanelRegistroWidget';
 import MisIncidenciasWidget from '../components/dashboard/MisIncidenciasWidget';
-import WidgetAlertas from '../components/dashboard/WidgetAlertas'; 
-import WidgetAlertasSupervisor from '../components/dashboard/WidgetAlertasSupervisor';
 import CampaignSelector from '../components/dashboard/CampaignSelector';
 import EntregablesWidget from '../components/dashboard/EntregablesWidget';
 import MisTareasAnalistaWidget from '../components/dashboard/MisTareasAnalistaWidget';
 import ReporteriaWidget from '../components/dashboard/ReporteriaWidget';
 import GestionCatalogModal from '../components/dashboard/GestionCatalogModal';
-import HistoricoReporteriaModal from '../components/dashboard/HistoricoReporteriaModal';
 
 function DashboardPage() {
     const { user } = useAuth();
@@ -41,7 +38,6 @@ function DashboardPage() {
     const [reporteriaRadar, setReporteriaRadar] = useState({ activos: 0, nombres: [] });
     const [showRegistroModalSup, setShowRegistroModalSup] = useState(false);
     const [showCatalogModal, setShowCatalogModal] = useState(false);
-    const [showAuditModal, setShowAuditModal] = useState(false);
     const [showRutinasModal, setShowRutinasModal] = useState(false);
     const [showDotacionModal, setShowDotacionModal] = useState(false);
     const [lastUpdated, setLastUpdated] = useState(null);
@@ -118,29 +114,50 @@ function DashboardPage() {
     };
 
     const cargarDatosEspecificosSupervisor = async (dataCobertura) => {
-        const hoy = new Date().toISOString().split('T')[0];
-        const [resTareas, resAnalistas, resBolsa] = await Promise.all([
-            fetchWithAuth(`${API_BASE_URL}/gtr/monitor/tareas?fecha=${hoy}`),
-            fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`),
+        const [resBolsa] = await Promise.all([
             fetchWithAuth(`${API_BASE_URL}/api/reporteria/bolsa`)
         ]);
 
-        if (resTareas.ok && resAnalistas.ok) {
-            const tareas = await resTareas.json();
-            const analistas = await resAnalistas.json();
-            
-            let bolsa = [];
-            if (resBolsa.ok) {
-                bolsa = await resBolsa.json();
-                setBolsaTotal(bolsa);
-            }
-
-            procesarCumplimiento(tareas, dataCobertura);
-            procesarEstadoAnalistas(analistas, dataCobertura, bolsa);
+        if (resBolsa.ok) {
+            const bolsa = await resBolsa.json();
+            setBolsaTotal(bolsa);
+            // Solo procesamos reporteria radar, pero las campanas y analistas se cargaran en su modal deferido.
+            procesarReporteriaRadar(bolsa);
         }
     };
 
     // --- PROCESADORES SUPERVISOR ---
+    const procesarReporteriaRadar = (bolsa) => {
+        const analistasRepoSet = new Set();
+        bolsa.filter(t => t.estado === 'EN_PROCESO').forEach(t => {
+            // Como no cargamos todosAnalistas al inicio, usamos el nombre si viene en t o un placeholder.
+            // O mejor aún, el backend ya manda t.analista_nombre en /api/reporteria/bolsa
+            if (t.analista_nombre) {
+                analistasRepoSet.add(t.analista_nombre);
+            }
+        });
+        setReporteriaRadar({ activos: analistasRepoSet.size, nombres: Array.from(analistasRepoSet) });
+    };
+
+    // La función loadModalData se encargará de cargar on-demand
+    const loadModalData = async (type) => {
+        const hoy = new Date().toISOString().split('T')[0];
+        if (type === 'rutinas') {
+            const resTareas = await fetchWithAuth(`${API_BASE_URL}/gtr/monitor/tareas?fecha=${hoy}`);
+            if (resTareas.ok) {
+                const tareas = await resTareas.json();
+                procesarCumplimiento(tareas, coberturaGlobal);
+            }
+        }
+        if (type === 'dotacion') {
+            const resAnalistas = await fetchWithAuth(`${API_BASE_URL}/gtr/analistas/listado-simple/`);
+            if (resAnalistas.ok) {
+                const analistas = await resAnalistas.json();
+                procesarEstadoAnalistas(analistas, coberturaGlobal, bolsaTotal);
+            }
+        }
+    };
+
     const procesarCumplimiento = (tareas, cobertura) => {
         const reporte = cobertura.map(c => {
             const tareasCampaña = tareas.filter(t => t.campana_id === c.campana_id);
@@ -186,33 +203,17 @@ function DashboardPage() {
                 const as = todosAnalistas.find(a => a.id === t.analista_id);
                 if(as) {
                     const fullName = `${as.nombre} ${as.apellido}`;
-                    analistasRepoSet.add(fullName);
                     const lower = fullName.toLowerCase();
                     if(!mapaReporteria[lower]) mapaReporteria[lower] = [];
                     
-                    const now = new Date();
-                    let isTimeOverdue = false;
-                    
-                    const dateParts = t.fecha_tarea.split('-');
-                    const tareaDate = new Date(dateParts[0], dateParts[1]-1, dateParts[2]);
-                    tareaDate.setHours(0,0,0,0);
-
-                    if (t.hora_vencimiento) {
-                        const [h, m, s] = t.hora_vencimiento.split(':').map(Number);
-                        const deadline = new Date(dateParts[0], dateParts[1]-1, dateParts[2], h, m, s || 0);
-                        if (now > deadline) isTimeOverdue = true;
-                    }
-                    
-                    const marker = (tareaDate < hoyDate || isTimeOverdue) ? ' 🚨' : '';
                     const cat = t.categoria || 'General';
-                    const item = `[Repo]${cat}${marker}`;
+                    const item = `[Repo]${cat}`;
                     if (!mapaReporteria[lower].includes(item)) {
                         mapaReporteria[lower].push(item);
                     }
                 }
             });
         }
-        setReporteriaRadar({ activos: analistasRepoSet.size, nombres: Array.from(analistasRepoSet) });
 
         const estado = todosAnalistas.map(a => {
             const lowerName = `${a.nombre} ${a.apellido}`.toLowerCase();
@@ -231,23 +232,15 @@ function DashboardPage() {
     };
 
     // ========================================================================
-    // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPACTOS — solo 2 KPIs)
+    // WIDGETS DE INCIDENCIAS SUPERVISOR (COMPACTOS — solo Activos)
     // ========================================================================
     const renderIncidentWidgetsSupervisor = () => (
         <Row className="g-2 mb-3">
-            <Col xs={6}>
+            <Col xs={12}>
                 <Card className="bg-danger text-white text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&estado=EN_PROGRESO')}>
                     <Card.Body className="p-2">
                         <h4 className="mb-0 fw-bold">{statsIncidencias?.total_incidencias_activas || 0}</h4>
-                        <small style={{fontSize:'0.75rem'}}>Activas 👆</small>
-                    </Card.Body>
-                </Card>
-            </Col>
-            <Col xs={6}>
-                <Card className="bg-warning text-dark text-center shadow-sm h-100 py-1 action-hover" style={{cursor: 'pointer'}} onClick={() => navigate('/control-incidencias?estado=ABIERTA&asignado=false')}>
-                    <Card.Body className="p-2">
-                        <h4 className="mb-0 fw-bold">{statsIncidencias?.incidencias_sin_asignar || 0}</h4>
-                        <small style={{fontSize:'0.75rem'}}>Sin Asignar 👆</small>
+                        <small style={{fontSize:'0.75rem'}}>Incidencias Activas 👆</small>
                     </Card.Body>
                 </Card>
             </Col>
@@ -378,40 +371,39 @@ function DashboardPage() {
                             <Button 
                                 variant={cumplimientoCampanas.some(c => c.vencidas > 0) ? "danger" : "outline-primary"} 
                                 className="w-100 py-2 shadow-sm d-flex justify-content-between align-items-center"
-                                onClick={() => setShowRutinasModal(true)}
+                                onClick={() => {
+                                    loadModalData('rutinas');
+                                    setShowRutinasModal(true);
+                                }}
                             >
                                 <span className="fw-bold">📊 Rutinas</span>
-                                {cumplimientoCampanas.some(c => c.vencidas > 0) && <Badge bg="white" text="danger" pill>⚠️</Badge>}
                             </Button>
                             <Button 
                                 variant="outline-secondary" 
                                 className="w-100 py-2 shadow-sm d-flex justify-content-between align-items-center"
-                                onClick={() => setShowDotacionModal(true)}
+                                onClick={() => {
+                                    loadModalData('dotacion');
+                                    setShowDotacionModal(true);
+                                }}
                             >
                                 <span className="fw-bold">👥 Dotación</span>
-                                <Badge bg="secondary" pill>{estadoAnalistas.length}</Badge>
                             </Button>
                         </div>
                     </Col>
                 </Row>
 
-                {/* ZONA PRINCIPAL: Entregables, Reportería y Pulso Operacional */}
+                {/* ZONA PRINCIPAL: Entregables y Reportería */}
                 <Row className="g-3">
-                    <Col lg={4} md={12}>
+                    <Col lg={6} md={12}>
                         <div className="h-100">
                             <EntregablesWidget role={user.role} />
                         </div>
                     </Col>
-                    <Col lg={4} md={12}>
+                    <Col lg={6} md={12}>
                          <ReporteriaWidget 
                             bolsa={bolsaTotal} 
-                            onShowAudit={() => setShowAuditModal(true)} 
+                            onShowAudit={() => navigate('/reporteria/auditoria')} 
                         />
-                    </Col>
-                    <Col lg={4} md={12}>
-                        <div className="h-100">
-                            <WidgetAlertasSupervisor />
-                        </div>
                     </Col>
                 </Row>
 
@@ -511,7 +503,6 @@ function DashboardPage() {
 
                 {/* MODALES SUPERVISOR — Catálogo y Auditoría */}
                 <GestionCatalogModal show={showCatalogModal} onHide={() => setShowCatalogModal(false)} />
-                <HistoricoReporteriaModal show={showAuditModal} onHide={() => setShowAuditModal(false)} />
             </Container>
         );
     }
@@ -597,7 +588,7 @@ function DashboardPage() {
                     </div>
                 </Col>
 
-                {/* COLUMNA DERECHA (40%): ALERTAS Y BOTÓN ACTIVIDAD */}
+                {/* COLUMNA DERECHA (40%): BOTONES DE GESTION */}
                 <Col lg={5}>
                     <div className="d-grid gap-3 mb-4">
                         <Button variant="primary" className="py-3 shadow-sm fw-bold border-0" onClick={() => setShowCampaignModal(true)} style={{background: 'linear-gradient(135deg, #0d6efd, #0a58ca)'}}>
@@ -609,7 +600,6 @@ function DashboardPage() {
                             </Button>
                         )}
                     </div>
-                    <WidgetAlertas variant="main" />
                 </Col>
             </Row>
 
@@ -648,7 +638,6 @@ function DashboardPage() {
             />
 
             <GestionCatalogModal show={showCatalogModal} onHide={() => setShowCatalogModal(false)} />
-            <HistoricoReporteriaModal show={showAuditModal} onHide={() => setShowAuditModal(false)} />
         </Container>
     );
 }

@@ -28,7 +28,7 @@ if ":6543" in DATABASE_URL:
         poolclass=NullPool,
         connect_args={
             "statement_cache_size": 0,
-            "command_timeout": 30  # 30s: suficiente para batches de 500 filas
+            "command_timeout": 60  # 60s: margen para latencia de Supabase bajo carga
         }
     )
 else:
@@ -38,11 +38,11 @@ else:
         echo=False,
         pool_size=10,
         max_overflow=5,
-        pool_timeout=30,
+        pool_timeout=60,
         pool_recycle=1800,
         pool_pre_ping=True,
         connect_args={
-            "command_timeout": 30  # 30s: suficiente para batches de 500 filas
+            "command_timeout": 60  # 60s: margen para latencia de Supabase bajo carga
         }
     )
 

@@ -46,8 +46,7 @@ async def obtener_historico_reporteria(
         selectinload(models.BolsaTareasReporteria.analista)
     ).filter(
         models.BolsaTareasReporteria.fecha_tarea >= desde,
-        models.BolsaTareasReporteria.fecha_tarea <= hasta,
-        models.BolsaTareasReporteria.estado == "COMPLETADO"
+        models.BolsaTareasReporteria.fecha_tarea <= hasta
     ).order_by(models.BolsaTareasReporteria.actualizada_en.desc())
     
     result = await db.execute(query)

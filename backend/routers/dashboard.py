@@ -195,42 +195,30 @@ async def get_alertas_supervisor(
     """
     tz_argentina = pytz.timezone("America/Argentina/Tucuman")
     ahora_arg = datetime.now(tz_argentina)
-    
-    inicio_dia = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # Obtener todas las sesiones activas de hoy (cualquier analista)
-    from sqlalchemy.future import select as sql_select
-    q_sesiones = (
-        sql_select(models.SesionCampana)
-        .filter(models.SesionCampana.fecha_fin.is_(None))
-    )
+    inicio_dia_utc = ahora_arg.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(pytz.utc)
+
+    # ── Sesiones abiertas que empezaron hoy — filtrado en SQL ────────────────
+    q_sesiones = select(models.SesionCampana.campana_id).filter(
+        models.SesionCampana.fecha_fin.is_(None),
+        models.SesionCampana.fecha_inicio >= inicio_dia_utc
+    ).distinct()
     res_sesiones = await db.execute(q_sesiones)
-    sesiones = res_sesiones.scalars().all()
-    
-    # Filtrar manualmente las sesiones de hoy
-    sesiones_hoy = []
-    for s in sesiones:
-        if s.fecha_inicio.tzinfo is None:
-            inicio_local = pytz.utc.localize(s.fecha_inicio).astimezone(tz_argentina)
-        else:
-            inicio_local = s.fecha_inicio.astimezone(tz_argentina)
-        if inicio_local >= inicio_dia:
-            sesiones_hoy.append(s)
-    
-    if not sesiones_hoy:
+    ids_campanas_activas = [row[0] for row in res_sesiones.all()]
+
+    if not ids_campanas_activas:
         return []
-    
-    ids_campanas_activas = list(set(s.campana_id for s in sesiones_hoy))
-    
+
+    # ── Tareas del día con sus checklist items — 1 sola query ───────────────
     q_tareas = select(models.Tarea).options(
-        selectinload(models.Tarea.campana)
+        selectinload(models.Tarea.campana),
+        selectinload(models.Tarea.checklist_items)
     ).filter(
         models.Tarea.campana_id.in_(ids_campanas_activas),
         models.Tarea.es_generada_automaticamente == True,
-        models.Tarea.fecha_creacion >= inicio_dia.astimezone(pytz.utc)
+        models.Tarea.fecha_creacion >= inicio_dia_utc
     )
     res_tareas = await db.execute(q_tareas)
-    tareas = res_tareas.scalars().all()
+    tareas = res_tareas.scalars().unique().all()
 
     if not tareas:
         return []
@@ -240,19 +228,16 @@ async def get_alertas_supervisor(
     dt_actual = dummy_date.replace(hour=ahora_arg.hour, minute=ahora_arg.minute)
 
     for tarea in tareas:
-        q_items = select(models.ChecklistItem).filter(
-            models.ChecklistItem.tarea_id == tarea.id,
-            models.ChecklistItem.completado == False,
-            models.ChecklistItem.hora_sugerida.is_not(None)
-        )
-        res_items = await db.execute(q_items)
-        items = res_items.scalars().all()
-
-        for item in items:
+        # Los items ya vienen cargados — sin query adicional
+        items_pendientes = [
+            item for item in tarea.checklist_items
+            if not item.completado and item.hora_sugerida is not None
+        ]
+        for item in items_pendientes:
             hora_item = item.hora_sugerida
             dt_item = dummy_date.replace(hour=hora_item.hour, minute=hora_item.minute)
             diferencia_minutos = (dt_actual - dt_item).total_seconds() / 60
-            
+
             estado = None
             if diferencia_minutos > 15:
                 estado = "CRITICO"
@@ -260,7 +245,7 @@ async def get_alertas_supervisor(
                 estado = "EN_CURSO"
             elif -45 <= diferencia_minutos < 0:
                 estado = "ATENCION"
-            
+
             if estado:
                 alertas.append({
                     "id": item.id,
@@ -270,8 +255,7 @@ async def get_alertas_supervisor(
                     "tarea_id": tarea.id,
                     "campana_nombre": tarea.campana.nombre
                 })
-    
-    # Ordenar: CRITICO primero
+
     orden = {"CRITICO": 0, "EN_CURSO": 1, "ATENCION": 2}
     alertas.sort(key=lambda a: (orden.get(a["tipo"], 3), a["hora"]))
     return alertas

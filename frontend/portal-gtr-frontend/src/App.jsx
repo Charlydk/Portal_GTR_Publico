@@ -44,7 +44,7 @@ import DetalleEntregablePage from './pages/DetalleEntregablePage.jsx';
 import NotificadorEntregables from './components/NotificadorEntregables.jsx';
 import CatalogoReporteriaPage from './pages/CatalogoReporteriaPage.jsx';
 import AusentismoPage from './pages/AusentismoPage.jsx';
-
+import AuditoriaReporteriaPage from './pages/AuditoriaReporteriaPage.jsx';
 
 const AppContent = () => {
   const { user } = useAuth();
@@ -120,6 +120,7 @@ const AppContent = () => {
             
             <Route path="/plantillas-checklist" element={<GestionPlantillasPage />} />
             <Route path="/admin/catalogo-reporteria" element={<CatalogoReporteriaPage />} />
+            <Route path="/reporteria/auditoria" element={<AuditoriaReporteriaPage />} />
             <Route path="/aprobar-hhee" element={<AprobacionHHEEPage />}/>
           </Route>
 
